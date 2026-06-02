@@ -71,7 +71,7 @@ export default function WatchlistPage() {
         title="Watchlist"
         subtitle={items.length + " actif" + (items.length > 1 ? "s" : "") + " suivis" + updatedLabel}
       />
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
         {/* Search + refresh */}
         <div className="flex items-center gap-3">
@@ -87,7 +87,7 @@ export default function WatchlistPage() {
           </button>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-5">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
           {/* Asset list */}
           <div className="lg:col-span-2 space-y-2">
             <SectionHeader title="Mes actifs" description="Cliquer pour voir le graphique" />

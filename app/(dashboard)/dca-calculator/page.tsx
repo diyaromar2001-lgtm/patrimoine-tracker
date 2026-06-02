@@ -74,9 +74,9 @@ export default function DCACalculatorPage() {
   return (
     <div className="flex flex-col">
       <Topbar title="Calculateur DCA" subtitle="Simulez votre stratégie d'investissement régulier" />
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
-        <div className="grid gap-6 lg:grid-cols-5">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
           {/* Controls */}
           <div className="lg:col-span-2 space-y-5">
             <SectionHeader title="Paramètres" description="Ajustez votre simulation" />

@@ -1,6 +1,5 @@
-// Sidebar has "use client" at the top — Next.js enforces the RSC → Client
-// boundary automatically. No dynamic() wrapper needed here.
 import { Sidebar } from "@/components/layout/sidebar"
+import { MobileNav } from "@/components/layout/mobile-nav"
 
 export default function DashboardLayout({
   children,
@@ -8,11 +7,19 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex h-full min-h-dvh" style={{ backgroundColor: "var(--background)" }}>
-      <Sidebar />
-      <div className="flex flex-1 flex-col" style={{ marginLeft: "240px" }}>
-        <main className="flex-1">{children}</main>
+    <div className="min-h-dvh" style={{ backgroundColor: "var(--background)" }}>
+      {/* Sidebar — desktop only */}
+      <div className="hidden lg:block">
+        <Sidebar />
       </div>
+
+      {/* Main content — offset on desktop, full width on mobile */}
+      <div className="lg:ml-60 pb-16 lg:pb-0">
+        <main>{children}</main>
+      </div>
+
+      {/* Bottom nav — mobile only */}
+      <MobileNav />
     </div>
   )
 }

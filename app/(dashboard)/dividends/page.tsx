@@ -91,10 +91,10 @@ export default function DividendsPage() {
   return (
     <div className="flex flex-col">
       <Topbar title="Dividendes" subtitle="Revenus passifs de vos placements" />
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
           {[
             { label: "Revenu annuel estimé", value: formatCurrency(totalAnnual), sub: totalValue > 0 ? ((totalAnnual / totalValue) * 100).toFixed(2) + "% yield" : "", icon: TrendingUp, color: "#22c55e" },
             { label: "Revenu mensuel moyen", value: formatCurrency(totalAnnual / 12), sub: formatCurrency(totalAnnual / 52) + "/sem.", icon: CalendarDays, color: "#3b82f6" },
@@ -139,9 +139,9 @@ export default function DividendsPage() {
         )}
 
         {/* Controls */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <SectionHeader title="Calendrier des dividendes" description={filtered.length + " événement" + (filtered.length > 1 ? "s" : "")} />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
               {(["list","calendar"] as const).map(v => (
                 <button key={v} onClick={() => setViewMode(v)} className="px-3 py-1.5 text-xs font-medium transition-colors"

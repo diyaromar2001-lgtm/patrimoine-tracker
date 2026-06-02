@@ -70,8 +70,8 @@ export default function PortfoliosPage() {
   return (
     <div className="flex flex-col">
       <Topbar title="Portefeuilles" subtitle={portfolios.length + " portefeuilles · " + formatCurrency(totalValue)} />
-      <div className="flex-1 space-y-6 p-6">
-        <div className="grid grid-cols-3 gap-4">
+      <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           {[
             { label: "Valeur totale", value: formatCurrency(totalValue), color: "#3b82f6" },
             { label: "P&L total", value: (totalPnl >= 0 ? "+" : "") + formatCurrency(totalPnl), color: totalPnl >= 0 ? "#22c55e" : "#ef4444" },
@@ -120,7 +120,7 @@ export default function PortfoliosPage() {
                   {isOpen && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} style={{ overflow: "hidden" }}>
                       <div className="border-t" style={{ borderColor: "var(--border)" }}>
-                        <div className="grid px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)", gridTemplateColumns: "1fr 70px 90px 90px 90px 90px 36px" }}>
+                        <div className="hidden sm:grid px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)", gridTemplateColumns: "1fr 70px 90px 90px 90px 90px 36px" }}>
                           <span>Actif</span><span className="text-right">Qté</span><span className="text-right">Px moy.</span><span className="text-right">Px actuel</span><span className="text-right">Valeur</span><span className="text-right">P&L</span><span />
                         </div>
                         {portfolio.assets.length === 0 && <div className="flex flex-col items-center py-8"><p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucun actif dans ce portefeuille</p></div>}
@@ -132,23 +132,39 @@ export default function PortfoliosPage() {
                           const aPnlPct = assetPnlPct(effectiveAsset)
                           const color   = ASSET_CLASS_COLORS[asset.assetClass]
                           return (
-                            <div key={asset.id} className="grid items-center px-5 py-3 transition-colors hover:bg-zinc-800/20" style={{ gridTemplateColumns: "1fr 70px 90px 90px 90px 90px 36px", borderTop: "1px solid var(--border-subtle)" }}>
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>{asset.ticker.slice(0, 3)}</div>
-                                <div className="min-w-0">
+                            <div key={asset.id} style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                              {/* Mobile card */}
+                              <div className="sm:hidden flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/20 transition-colors">
+                                <div className="h-9 w-9 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>{asset.ticker.slice(0, 3)}</div>
+                                <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
-                                  <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
+                                  <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>{asset.quantity} × {formatCurrency(effectiveAsset.currentPrice)}{livePrice && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-green-500 align-middle" />}</p>
                                 </div>
+                                <div className="text-right">
+                                  <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(aValue)}</p>
+                                  <ChangeBadge value={aPnlPct} showIcon={false} />
+                                </div>
+                                <button onClick={() => handleDeleteAsset(portfolio.id, asset.id)} className="flex-shrink-0 flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-500/20 transition-colors" style={{ color: "var(--foreground-dim)" }}><X className="h-3.5 w-3.5" /></button>
                               </div>
-                              <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{asset.quantity}</p>
-                              <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{formatCurrency(asset.avgBuyPrice)}</p>
-                              <p className="text-right text-xs tabular-nums font-medium flex items-center justify-end gap-1" style={{ color: "var(--foreground)" }}>
-                                {formatCurrency(effectiveAsset.currentPrice)}
-                                {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />}
-                              </p>
-                              <p className="text-right text-xs tabular-nums font-semibold" style={{ color: "var(--foreground)" }}>{formatCurrency(aValue)}</p>
-                              <div className="flex justify-end"><ChangeBadge value={aPnlPct} showIcon={false} /></div>
-                              <button onClick={() => handleDeleteAsset(portfolio.id, asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-red-500/20" style={{ color: "var(--foreground-dim)" }}><X className="h-3.5 w-3.5" /></button>
+                              {/* Desktop row */}
+                              <div className="hidden sm:grid items-center px-5 py-3 transition-colors hover:bg-zinc-800/20" style={{ gridTemplateColumns: "1fr 70px 90px 90px 90px 90px 36px" }}>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>{asset.ticker.slice(0, 3)}</div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
+                                    <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
+                                  </div>
+                                </div>
+                                <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{asset.quantity}</p>
+                                <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{formatCurrency(asset.avgBuyPrice)}</p>
+                                <p className="text-right text-xs tabular-nums font-medium flex items-center justify-end gap-1" style={{ color: "var(--foreground)" }}>
+                                  {formatCurrency(effectiveAsset.currentPrice)}
+                                  {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />}
+                                </p>
+                                <p className="text-right text-xs tabular-nums font-semibold" style={{ color: "var(--foreground)" }}>{formatCurrency(aValue)}</p>
+                                <div className="flex justify-end"><ChangeBadge value={aPnlPct} showIcon={false} /></div>
+                                <button onClick={() => handleDeleteAsset(portfolio.id, asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-red-500/20" style={{ color: "var(--foreground-dim)" }}><X className="h-3.5 w-3.5" /></button>
+                              </div>
                             </div>
                           )
                         })}

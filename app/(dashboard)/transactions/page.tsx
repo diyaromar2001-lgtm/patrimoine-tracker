@@ -52,10 +52,10 @@ export default function TransactionsPage() {
   return (
     <div className="flex flex-col">
       <Topbar title="Transactions" subtitle={`${transactions.length} transaction${transactions.length > 1 ? "s" : ""}`} />
-      <div className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
           {[
             { label: "Total achats", value: formatCurrency(totalBuy), color: "#ef4444" },
             { label: "Total ventes", value: formatCurrency(totalSell), color: "#22c55e" },
@@ -93,7 +93,7 @@ export default function TransactionsPage() {
 
         {/* Table */}
         <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-          <div className="grid px-5 py-3 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)", gridTemplateColumns: "1fr 80px 70px 90px 70px 80px 32px" }}>
+          <div className="hidden sm:grid px-5 py-3 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)", gridTemplateColumns: "1fr 80px 70px 90px 70px 80px 32px" }}>
             <span>Actif</span><span className="text-center">Type</span><span className="text-right">Qté</span><span className="text-right">Prix unit.</span><span className="text-right">Frais</span><span className="text-right">Date</span><span />
           </div>
 
@@ -110,8 +110,27 @@ export default function TransactionsPage() {
             const acColor = ASSET_CLASS_COLORS[tx.assetClass]
             return (
               <motion.div key={tx.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
-                className="grid items-center px-5 py-3.5 transition-colors hover:bg-zinc-800/20"
-                style={{ gridTemplateColumns: "1fr 80px 70px 90px 70px 80px 32px", borderTop: "1px solid var(--border-subtle)" }}>
+                style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                {/* Mobile card */}
+                <div className="sm:hidden flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/20 transition-colors">
+                  <div className="h-9 w-9 flex-shrink-0 rounded-lg flex items-center justify-center" style={{ backgroundColor: color + "18" }}>
+                    <Icon className="h-4 w-4" style={{ color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{tx.assetName}</p>
+                    <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>
+                      <span className="rounded px-1.5 py-0.5 mr-1" style={{ backgroundColor: color + "18", color }}>{TX_LABELS[tx.type]}</span>
+                      {new Date(tx.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(tx.price * tx.quantity)}</p>
+                    <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>x{tx.quantity}</p>
+                  </div>
+                </div>
+                {/* Desktop row */}
+                <div className="hidden sm:grid items-center px-5 py-3.5 hover:bg-zinc-800/20 transition-colors"
+                  style={{ gridTemplateColumns: "1fr 80px 70px 90px 70px 80px 32px" }}>
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: color + "18" }}>
                     <Icon className="h-3.5 w-3.5" style={{ color }} />
@@ -134,6 +153,7 @@ export default function TransactionsPage() {
                 <button onClick={() => handleDelete(tx.id)} className="flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-red-500/20 ml-auto" style={{ color: "var(--foreground-dim)" }}>
                   <X className="h-3.5 w-3.5" />
                 </button>
+                </div>
               </motion.div>
             )
           })}

@@ -48,7 +48,7 @@ export function StatCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: index * 0.07, ease: "easeOut" }}
-      className="group relative overflow-hidden rounded-xl border p-5 transition-colors duration-200"
+      className="group relative overflow-hidden rounded-xl border p-3 sm:p-5 transition-colors duration-200"
       style={{
         backgroundColor: "var(--background-card)",
         borderColor: "var(--border)",
@@ -95,7 +95,7 @@ export function StatCard({
         ) : (
           <>
             <p
-              className="text-2xl font-bold tracking-tight tabular-nums"
+              className="text-lg sm:text-2xl font-bold tracking-tight tabular-nums"
               style={{ color: "var(--foreground)" }}
             >
               {value}

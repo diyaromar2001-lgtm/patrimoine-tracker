@@ -32,7 +32,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col">
       <Topbar title="Paramètres" subtitle="Gérez votre compte et vos préférences" />
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-4 sm:p-6">
         <div className="mx-auto max-w-3xl space-y-6">
 
           {/* Profile */}

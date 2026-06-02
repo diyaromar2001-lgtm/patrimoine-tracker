@@ -93,7 +93,7 @@ export default function DashboardPage() {
     <div className="flex flex-col">
       <Topbar title="Dashboard" subtitle="Vue d'ensemble de votre patrimoine" />
 
-      <div className="flex-1 space-y-8 p-6">
+      <div className="flex-1 space-y-5 sm:space-y-8 p-4 sm:p-6">
 
         {/* ─── Hero ───────────────────────────────────────────── */}
         <section>
@@ -113,7 +113,7 @@ export default function DashboardPage() {
                   Patrimoine net total
                 </p>
                 <div className="mt-2 flex items-baseline gap-3">
-                  <span className="text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--foreground)" }}>
+                  <span className="text-2xl sm:text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--foreground)" }}>
                     {formatCurrency(totalValue)}
                   </span>
                   <ChangeBadge value={todayPnlPct} size="md" />
@@ -136,7 +136,7 @@ export default function DashboardPage() {
 
         {/* ─── KPIs ───────────────────────────────────────────── */}
         <section>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
             <StatCard label="Valeur nette totale" value={formatCurrency(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="#3b82f6" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + formatCurrency(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
             <StatCard label="P&L total" value={(totalPnl >= 0 ? "+" : "") + formatCurrency(totalPnl)} change={totalPnlPct} changeLabel="depuis le début" icon={TrendingUp} iconColor="#22c55e" index={2} />
@@ -145,7 +145,7 @@ export default function DashboardPage() {
         </section>
 
         {/* ─── Chart + Allocation ─────────────────────────────── */}
-        <div className="grid gap-6 lg:grid-cols-5">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
           {/* Performance chart */}
           <section className="lg:col-span-3 space-y-3">
             <div className="flex items-center justify-between">
@@ -212,7 +212,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ─── Top Holdings + Recent Tx ────────────────────────── */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
           {/* Top 5 holdings */}
           <section className="space-y-3">
             <SectionHeader
