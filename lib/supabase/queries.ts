@@ -137,12 +137,16 @@ export async function createTransaction(tx: Omit<Transaction, "id">) {
     quantity:     tx.quantity,
     price:        tx.price,
     fees:         tx.fees,
-    currency:     tx.currency,
+    currency:     tx.currency ?? "CHF",
     date:         tx.date,
-    notes:        tx.notes,
+    notes:        tx.notes ?? null,
   }).select().single()
 
-  return error ? null : data
+  if (error) {
+    console.error("[createTransaction] Supabase error:", error.message, error.details, error.hint)
+    return null
+  }
+  return data
 }
 
 export async function updateTransaction(id: string, tx: Partial<Omit<Transaction, "id">>) {

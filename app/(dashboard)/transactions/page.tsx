@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AssetClassBadge } from "@/components/ui/badge"
-import { useTransactions } from "@/hooks/use-supabase-data"
+import { useTransactions, usePortfolios } from "@/hooks/use-supabase-data"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import { formatCurrency } from "@/lib/utils"
@@ -277,7 +277,11 @@ function TxModal({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
-  const { transactions, addTransaction, editTransaction, removeTransaction, loading: dbLoading } = useTransactions()
+  const { transactions, addTransaction, editTransaction, removeTransaction } = useTransactions()
+  const { portfolios } = usePortfolios()
+  // Use the first real portfolio ID (Supabase UUID), not hardcoded "p1"
+  const defaultPortfolioId = portfolios[0]?.id ?? "p1"
+
   const [search,     setSearch]     = useState("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "all">("all")
   const [modal,      setModal]      = useState<{ mode: "add" | "edit"; initial: typeof EMPTY_FORM & { id?: string } } | null>(null)
@@ -322,7 +326,7 @@ export default function TransactionsPage() {
       })
     } else {
       const tx: Omit<Transaction, "id"> = {
-        portfolioId: "p1",
+        portfolioId: defaultPortfolioId,
         ticker: form.ticker.toUpperCase(), assetName: form.assetName,
         assetClass: form.assetClass, type: form.type,
         quantity: parseFloat(form.quantity), price: parseFloat(form.price),

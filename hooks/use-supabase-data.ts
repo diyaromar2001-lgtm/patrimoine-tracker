@@ -8,33 +8,37 @@ import type { Portfolio, Transaction, Asset } from "@/lib/types"
 
 // ─── Portfolios hook ──────────────────────────────────────────────────────────
 export function usePortfolios() {
-  // If Supabase is configured → start empty (real data comes from DB)
-  // If no Supabase → use mock data for dev/demo
   const [portfolios, setPortfolios] = useState<Portfolio[]>(
     isSupabaseConfigured ? [] : MOCK_PORTFOLIOS
   )
   const [loading, setLoading] = useState(isSupabaseConfigured)
-  const [fromDB,     setFromDB]     = useState(false)
 
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured) return
     setLoading(true)
-    const data = await Q.fetchPortfolios()
-    if (data) { setPortfolios(data); setFromDB(true) }
+    try {
+      const data = await Q.fetchPortfolios()
+      if (data) setPortfolios(data)
+    } catch (e) {
+      console.error("[usePortfolios] reload failed:", e)
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => { reload() }, [reload])
 
-  async function addPortfolio(p: Omit<Portfolio, "id" | "assets">) {
+  async function addPortfolio(p: Omit<Portfolio, "id" | "assets">): Promise<string | null> {
     if (!isSupabaseConfigured) {
       const local: Portfolio = { ...p, id: `local-${Date.now()}`, assets: [] }
       setPortfolios(prev => [...prev, local])
       return local.id
     }
     const result = await Q.createPortfolio(p)
-    await reload()
-    return result?.id ?? null
+    if (result) {
+      await reload()
+      return result.id
+    }
+    return null
   }
 
   async function removePortfolio(id: string) {
@@ -50,18 +54,26 @@ export function usePortfolios() {
       ))
       return
     }
-    await Q.createAsset(asset)
-    await reload()
+    try {
+      await Q.createAsset(asset)
+      await reload()
+    } catch (e) {
+      console.error("[usePortfolios] addAsset failed:", e)
+    }
   }
 
   async function removeAsset(portfolioId: string, assetId: string) {
+    // Optimistic update — remove immediately from UI
     setPortfolios(prev => prev.map(p =>
       p.id === portfolioId ? { ...p, assets: p.assets.filter(a => a.id !== assetId) } : p
     ))
-    if (isSupabaseConfigured) await Q.deleteAsset(assetId)
+    if (isSupabaseConfigured) {
+      try { await Q.deleteAsset(assetId) }
+      catch (e) { console.error("[usePortfolios] removeAsset failed:", e); reload() }
+    }
   }
 
-  return { portfolios, setPortfolios, loading, fromDB, addPortfolio, removePortfolio, addAsset, removeAsset, reload }
+  return { portfolios, setPortfolios, loading, addPortfolio, removePortfolio, addAsset, removeAsset, reload }
 }
 
 // ─── Transactions hook ────────────────────────────────────────────────────────
@@ -69,37 +81,66 @@ export function useTransactions() {
   const [transactions, setTransactions] = useState<Transaction[]>(
     isSupabaseConfigured ? [] : MOCK_TRANSACTIONS
   )
-  const [loading,      setLoading]      = useState(isSupabaseConfigured)
-  const [fromDB,       setFromDB]       = useState(false)
+  const [loading, setLoading] = useState(isSupabaseConfigured)
 
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured) return
     setLoading(true)
-    const data = await Q.fetchTransactions()
-    if (data) { setTransactions(data); setFromDB(true) }
+    try {
+      const data = await Q.fetchTransactions()
+      if (data) setTransactions(data)
+    } catch (e) {
+      console.error("[useTransactions] reload failed:", e)
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => { reload() }, [reload])
 
   async function addTransaction(tx: Omit<Transaction, "id">) {
-    const local: Transaction = { ...tx, id: `local-${Date.now()}` }
+    // 1. Optimistic: add locally with temp ID
+    const tempId = `local-${Date.now()}`
+    const local: Transaction = { ...tx, id: tempId }
     setTransactions(prev => [local, ...prev])
-    if (isSupabaseConfigured) {
+
+    if (!isSupabaseConfigured) return
+
+    // 2. Save to Supabase
+    try {
       const result = await Q.createTransaction(tx)
-      if (result) await reload()
+      if (result) {
+        // Replace temp entry with real DB entry (has real UUID)
+        setTransactions(prev =>
+          prev.map(t => t.id === tempId ? { ...t, id: result.id } : t)
+        )
+      } else {
+        // Save failed — remove optimistic entry
+        console.error("[useTransactions] addTransaction: Supabase returned null")
+        setTransactions(prev => prev.filter(t => t.id !== tempId))
+        await reload()
+      }
+    } catch (e) {
+      console.error("[useTransactions] addTransaction failed:", e)
+      setTransactions(prev => prev.filter(t => t.id !== tempId))
+      await reload()
     }
   }
 
   async function editTransaction(id: string, updates: Partial<Omit<Transaction, "id">>) {
     setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
-    if (isSupabaseConfigured) await Q.updateTransaction(id, updates)
+    if (isSupabaseConfigured) {
+      try { await Q.updateTransaction(id, updates) }
+      catch (e) { console.error("[useTransactions] editTransaction failed:", e); reload() }
+    }
   }
 
   async function removeTransaction(id: string) {
     setTransactions(prev => prev.filter(t => t.id !== id))
-    if (isSupabaseConfigured) await Q.deleteTransaction(id)
+    if (isSupabaseConfigured) {
+      try { await Q.deleteTransaction(id) }
+      catch (e) { console.error("[useTransactions] removeTransaction failed:", e); reload() }
+    }
   }
 
-  return { transactions, loading, fromDB, addTransaction, editTransaction, removeTransaction, reload }
+  return { transactions, loading, addTransaction, editTransaction, removeTransaction, reload }
 }
