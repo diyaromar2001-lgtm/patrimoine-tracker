@@ -1,23 +1,41 @@
 "use client"
 
 import { useState } from "react"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
-import { Check, User, Bell, Shield, Palette, Globe, Trash2, ChevronRight } from "lucide-react"
+import { Check, User, Bell, Shield, Palette, Globe, Trash2, CheckCircle2 } from "lucide-react"
+import { useCurrency } from "@/hooks/use-currency"
+import type { AppCurrency } from "@/lib/utils"
 
-const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD"]
 const LANGUAGES = ["Français", "English", "Español", "Deutsch"]
 
+const CURRENCY_OPTIONS: { value: AppCurrency; label: string; flag: string; description: string }[] = [
+  { value: "CHF", label: "Franc suisse",  flag: "🇨🇭", description: "Affichage en CHF — devise par défaut" },
+  { value: "USD", label: "Dollar US",     flag: "🇺🇸", description: "Affichage en USD — marché américain" },
+  { value: "EUR", label: "Euro",          flag: "🇪🇺", description: "Affichage en EUR — zone euro" },
+]
+
 export default function SettingsPage() {
-  const [saved, setSaved] = useState(false)
+  const { currency: activeCurrency, setCurrency } = useCurrency()
+  const [saved, setSaved]     = useState(false)
+  const [savedField, setSavedField] = useState("")
   const [profile, setProfile] = useState({ name: "DYAROMAR", email: "contact@patrimoine.fr", avatar: "D" })
-  const [prefs, setPrefs] = useState({ currency: "EUR", language: "Français", decimalSep: "virgule" })
+  const [prefs, setPrefs]     = useState({ language: "Français" })
   const [notifications, setNotifications] = useState({ dividends: true, priceAlerts: true, weeklyReport: false, monthlyReport: true })
-  const [danger, setDanger] = useState({ confirmReset: false })
+
+  function showSaved(field = "") {
+    setSaved(true); setSavedField(field)
+    setTimeout(() => { setSaved(false); setSavedField("") }, 2000)
+  }
+
+  function handleCurrencyChange(c: AppCurrency) {
+    setCurrency(c)
+    showSaved("currency")
+  }
 
   function handleSave() {
-    setSaved(true)
+    showSaved()
     setTimeout(() => setSaved(false), 2500)
   }
 
@@ -72,28 +90,63 @@ export default function SettingsPage() {
 
           {/* Preferences */}
           <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-            <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
-              <Globe className="h-4 w-4" style={{ color: "#a78bfa" }} />
-              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Préférences</h2>
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center gap-3">
+                <Globe className="h-4 w-4" style={{ color: "#a78bfa" }} />
+                <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Devise d'affichage</h2>
+              </div>
+              <AnimatePresence>
+                {savedField === "currency" && (
+                  <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                    className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "#22c55e" }}>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Sauvegardé
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
             <div className="p-5 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Devise</label>
-                  <select value={prefs.currency} onChange={e => setPrefs(p => ({ ...p, currency: e.target.value }))}
-                    className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}>
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Langue</label>
-                  <select value={prefs.language} onChange={e => setPrefs(p => ({ ...p, language: e.target.value }))}
-                    className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}>
-                    {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </div>
+              <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>
+                Tous les montants s'afficheront dans cette devise. Les prix des actifs affichent aussi leur devise d'origine (ex: USD pour les actions US).
+              </p>
+
+              {/* Currency cards */}
+              <div className="grid gap-3 sm:grid-cols-3">
+                {CURRENCY_OPTIONS.map(opt => {
+                  const isActive = activeCurrency === opt.value
+                  return (
+                    <button key={opt.value}
+                      onClick={() => handleCurrencyChange(opt.value)}
+                      className="flex flex-col gap-2 rounded-xl border p-4 text-left transition-all hover:border-blue-500/50"
+                      style={{
+                        backgroundColor: isActive ? "#3b82f615" : "var(--background)",
+                        borderColor:     isActive ? "#3b82f6" : "var(--border)",
+                        boxShadow:       isActive ? "0 0 0 1px #3b82f640" : "none",
+                      }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-2xl">{opt.flag}</span>
+                        {isActive && <span className="h-2 w-2 rounded-full bg-blue-500" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: isActive ? "white" : "var(--foreground)" }}>
+                          {opt.value}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--foreground-muted)" }}>
+                          {opt.label}
+                        </p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Language */}
+              <div className="pt-2 border-t" style={{ borderColor: "var(--border)" }}>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Langue</label>
+                <select value={prefs.language} onChange={e => setPrefs(p => ({ ...p, language: e.target.value }))}
+                  className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
+                  style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}>
+                  {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
               </div>
             </div>
           </section>

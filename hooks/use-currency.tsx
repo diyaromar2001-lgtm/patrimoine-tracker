@@ -30,7 +30,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
 
   const setCurrency = (c: AppCurrency) => {
     setCurrency_(c)
-    try { localStorage.setItem("preferred-currency", c) } catch {}
+    try {
+      localStorage.setItem("preferred-currency", c)
+      // Notify useLivePrices hooks to re-map prices immediately
+      window.dispatchEvent(new CustomEvent("currency-changed", { detail: c }))
+    } catch {}
   }
 
   const convert = (value: number, from: AppCurrency) => convertCurrency(value, from, currency)

@@ -5,6 +5,7 @@ import { motion } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
+import { DualPrice } from "@/components/ui/dual-price"
 import { Sparkline } from "@/components/ui/sparkline"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { LiveChart } from "@/components/charts/live-chart"
@@ -93,9 +94,11 @@ export default function WatchlistPage() {
             <SectionHeader title="Mes actifs" description="Cliquer pour voir le graphique" />
             <div className="space-y-1">
               {filtered.map((item, i) => {
-                const live  = prices[item.ticker]
-                const price = live?.price ?? item.currentPrice
-                const pct   = live?.changePct ?? item.changePct24h
+                const live        = prices[item.ticker]
+                const price       = live?.price ?? item.currentPrice
+                const pct         = live?.changePct ?? item.changePct24h
+                const origPrice   = live?.originalPrice
+                const origCurrency= live?.originalCurrency
                 const color = ASSET_CLASS_COLORS[item.assetClass]
                 const isSelected = selectedTicker === item.ticker
 
@@ -130,9 +133,10 @@ export default function WatchlistPage() {
                       </div>
 
                       <div className="text-right">
-                        <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>
-                          {price > 0 ? formatCurrency(price) : "--"}
-                        </p>
+                        {price > 0
+                          ? <DualPrice price={price} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" showFlag />
+                          : <span className="text-xs" style={{ color: "var(--foreground-dim)" }}>--</span>
+                        }
                         <ChangeBadge value={pct} showIcon={false} />
                       </div>
 

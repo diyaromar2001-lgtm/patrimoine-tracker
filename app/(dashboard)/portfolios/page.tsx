@@ -4,8 +4,10 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
+import { DualPrice, DualPriceInline } from "@/components/ui/dual-price"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { useLivePrices } from "@/hooks/use-live-prices"
+import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import { MOCK_PORTFOLIOS, PORTFOLIO_HISTORY } from "@/lib/mock-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
@@ -211,7 +213,7 @@ function HoldingsTable({
   totalValue,
 }: {
   portfolio:   Portfolio
-  livePrices:  Record<string, { price: number; changePct: number }>
+  livePrices:  Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }>
   onDeleteAsset: (assetId: string) => void
   totalValue:  number
 }) {
@@ -265,8 +267,11 @@ function HoldingsTable({
       )}
 
       {sorted.map((asset, i) => {
-        const livePrice  = livePrices[asset.ticker]?.price
-        const dayChangePct = livePrices[asset.ticker]?.changePct ?? 0
+        const liveData     = livePrices[asset.ticker]
+        const livePrice    = liveData?.price
+        const dayChangePct = liveData?.changePct ?? 0
+        const origPrice    = liveData?.originalPrice
+        const origCurrency = liveData?.originalCurrency
         const eff        = livePrice ? { ...asset, currentPrice: livePrice } : asset
         const val        = assetValue(eff)
         const pnlPct     = assetPnlPct(eff)
@@ -283,10 +288,11 @@ function HoldingsTable({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
-                <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>
-                  {asset.quantity} × {formatCurrency(eff.currentPrice)}
-                  {livePrice && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-green-500 align-middle" />}
-                </p>
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>{asset.quantity} ×</span>
+                  <DualPriceInline price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} className="text-[11px]" showFlag />
+                  {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
+                </div>
               </div>
               <div className="text-right">
                 <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(val)}</p>
@@ -312,10 +318,10 @@ function HoldingsTable({
               </div>
               <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{asset.quantity}</p>
               <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{formatCurrency(asset.avgBuyPrice)}</p>
-              <p className="text-right text-xs font-medium tabular-nums flex items-center justify-end gap-1" style={{ color: "var(--foreground)" }}>
-                {formatCurrency(eff.currentPrice)}
+              <div className="flex items-center justify-end gap-1">
+                <DualPrice price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" showFlag />
                 {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
-              </p>
+              </div>
               <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(val)}</p>
               <div className="flex justify-end"><ChangeBadge value={dayChangePct} showIcon={false} /></div>
               <div className="flex justify-end"><ChangeBadge value={pnlPct} showIcon={false} /></div>
@@ -353,11 +359,11 @@ export default function PortfoliosPage() {
   const allTickers = portfolios.flatMap(p => p.assets.map(a => a.ticker))
   const { prices: livePrices } = useLivePrices(allTickers, 30_000)
 
-  // Enrich prices with changePct
+  // Enrich prices — include original currency for dual display
   const liveEnriched = useMemo(() => {
-    const out: Record<string, { price: number; changePct: number }> = {}
+    const out: Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }> = {}
     for (const [t, p] of Object.entries(livePrices)) {
-      out[t] = { price: p.price, changePct: p.changePct }
+      out[t] = { price: p.price, changePct: p.changePct, originalPrice: p.originalPrice, originalCurrency: p.originalCurrency }
     }
     return out
   }, [livePrices])
