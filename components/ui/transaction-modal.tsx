@@ -228,13 +228,15 @@ interface TransactionModalProps {
   mode:       "add" | "edit"
   initial:    TransactionFormData
   portfolios: Portfolio[]
-  onSave:     (form: TransactionFormData) => void
+  onSave:     (form: TransactionFormData) => Promise<void> | void
   onClose:    () => void
 }
 
 export function TransactionModal({ mode, initial, portfolios, onSave, onClose }: TransactionModalProps) {
   const [form, setForm]             = useState<TransactionFormData>(initial)
   const [priceFetching, setPriceFetching] = useState(false)
+  const [saving,  setSaving]  = useState(false)
+  const [saveErr, setSaveErr] = useState("")
 
   const set = (k: keyof TransactionFormData, v: string) =>
     setForm(p => ({ ...p, [k]: v }))
@@ -420,16 +422,32 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
           )}
         </div>
 
+        {/* Error message */}
+        {saveErr && (
+          <div className="mx-6 mb-2 rounded-lg border px-4 py-3 text-xs"
+            style={{ backgroundColor: "#ef444415", borderColor: "#ef444440", color: "#ef4444" }}>
+            ❌ {saveErr}
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex gap-3 px-6 pb-6">
           <button
-            onClick={() => valid && onSave(form)}
-            disabled={!valid}
+            onClick={async () => {
+              if (!valid || saving) return
+              setSaving(true); setSaveErr("")
+              try { await onSave(form) }
+              catch (e) { setSaveErr(String(e)) }
+              finally { setSaving(false) }
+            }}
+            disabled={!valid || saving}
             className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-all disabled:opacity-40"
             style={{ background: valid ? `linear-gradient(135deg, ${typeColor}, ${typeColor}bb)` : "var(--border)" }}
           >
-            <Check className="h-4 w-4" />
-            {mode === "add" ? "Enregistrer" : "Sauvegarder"}
+            {saving
+              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Enregistrement…</>
+              : <><Check className="h-4 w-4" />{mode === "add" ? "Enregistrer" : "Sauvegarder"}</>
+            }
           </button>
           <button onClick={onClose}
             className="rounded-xl border px-5 py-3 text-sm font-medium hover:bg-zinc-800 transition-colors"

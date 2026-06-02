@@ -367,7 +367,7 @@ export default function PortfoliosPage() {
   }
 
   async function handleSaveTx(form: TransactionFormData) {
-    await addTransaction({
+    const res = await addTransaction({
       portfolioId: form.portfolioId,
       ticker:      form.ticker,
       assetName:   form.assetName,
@@ -380,6 +380,7 @@ export default function PortfoliosPage() {
       date:        form.date,
       notes:       form.notes || undefined,
     })
+    if (!res.ok) throw new Error(res.error ?? "Erreur Supabase")
     setTxModal(null)
   }
   const [period,     setPeriod]     = useState<Period>("1Y")

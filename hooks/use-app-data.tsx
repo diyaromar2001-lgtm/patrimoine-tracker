@@ -21,7 +21,7 @@ interface AppData {
   addAsset:        (portfolioId: string, asset: Omit<Asset, "currentPrice">) => Promise<void>
   removeAsset:     (portfolioId: string, assetId: string) => Promise<void>
   // Transaction mutations
-  addTransaction:    (tx: Omit<Transaction, "id">) => Promise<void>
+  addTransaction:    (tx: Omit<Transaction, "id">) => Promise<{ ok: boolean; error?: string }>
   editTransaction:   (id: string, updates: Partial<Omit<Transaction, "id">>) => Promise<void>
   removeTransaction: (id: string) => Promise<void>
   // Refresh
@@ -34,7 +34,7 @@ const DEFAULT: AppData = {
   removePortfolio: async () => {},
   addAsset:        async () => {},
   removeAsset:     async () => {},
-  addTransaction:    async () => {},
+  addTransaction:    async () => ({ ok: true }),
   editTransaction:   async () => {},
   removeTransaction: async () => {},
   refresh: async () => {},
@@ -109,22 +109,31 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   // ── Transaction mutations ────────────────────────────────────────────────────
 
-  async function addTransaction(tx: Omit<Transaction, "id">) {
+  async function addTransaction(tx: Omit<Transaction, "id">): Promise<{ ok: boolean; error?: string }> {
     const tempId = `local-${Date.now()}`
     setTransactions(prev => [{ ...tx, id: tempId }, ...prev])
-    if (!isSupabaseConfigured) return
+
+    if (!isSupabaseConfigured) return { ok: true }  // local-only mode
+
     try {
       const result = await Q.createTransaction(tx)
       if (result) {
         setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
+        return { ok: true }
       } else {
-        console.error("[AppData] addTransaction: null result — removing optimistic")
+        // Supabase returned null — remove optimistic entry
         setTransactions(prev => prev.filter(t => t.id !== tempId))
+        const msg = "Supabase: insert a retourné null. Vérifiez les politiques RLS et le portfolioId."
+        console.error("[AppData] addTransaction:", msg, tx)
+        return { ok: false, error: msg }
       }
     } catch (e) {
-      console.error("[AppData] addTransaction failed:", e)
+      const msg = String(e)
+      console.error("[AppData] addTransaction exception:", msg)
       setTransactions(prev => prev.filter(t => t.id !== tempId))
+      return { ok: false, error: msg }
     }
+    return { ok: false, error: "Erreur inconnue" }
   }
 
   async function editTransaction(id: string, updates: Partial<Omit<Transaction, "id">>) {

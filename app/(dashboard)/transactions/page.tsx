@@ -84,6 +84,7 @@ export default function TransactionsPage() {
   async function handleSave(form: TransactionFormData) {
     if (modal?.mode === "edit" && form.id) {
       await editTransaction(form.id, {
+
         ticker:     form.ticker,
         assetName:  form.assetName,
         assetClass: form.assetClass,
@@ -95,7 +96,7 @@ export default function TransactionsPage() {
         notes:      form.notes || undefined,
       })
     } else {
-      await addTransaction({
+      const res = await addTransaction({
         portfolioId: form.portfolioId,
         ticker:      form.ticker.toUpperCase(),
         assetName:   form.assetName,
@@ -104,10 +105,11 @@ export default function TransactionsPage() {
         quantity:    parseFloat(form.quantity),
         price:       parseFloat(form.price),
         fees:        parseFloat(form.fees) || 0,
-        currency:    "CHF",   // ← CHF (plus EUR)
+        currency:    "CHF",
         date:        form.date,
         notes:       form.notes || undefined,
       })
+      if (!res.ok) throw new Error(res.error ?? "Erreur Supabase")
     }
     setModal(null)
   }
