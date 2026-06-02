@@ -26,22 +26,27 @@ function baseTicker(ticker: string) {
   return ticker.replace(/-EUR$|-USD$|-GBP$/, "")
 }
 
-async function fetchCryptoPrice(tickers: string[]): Promise<Record<string, { price: number; changePct: number }>> {
+async function fetchCryptoPrice(tickers: string[]): Promise<Record<string, { price: number; changePct: number; usd: number; eur: number; chf: number }>> {
   const ids = [...new Set(tickers.map(t => COINGECKO_IDS[baseTicker(t)]).filter(Boolean))]
   if (!ids.length) return {}
 
   return cacheFetch(`cg:${ids.join(",")}`, async () => {
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=eur&include_24hr_change=true`
-    const res = await fetch(url, { next: { revalidate: 30 } })
+    // Fetch CHF + USD + EUR — user can switch between them
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=chf,usd,eur&include_24hr_change=true`
+    const res = await fetch(url, { cache: "no-store" })   // always fresh
     if (!res.ok) return {}
-    const data: Record<string, { eur: number; eur_24h_change: number }> = await res.json()
-    const out: Record<string, { price: number; changePct: number }> = {}
+    const data: Record<string, { chf: number; usd: number; eur: number; chf_24h_change: number }> = await res.json()
+    const out: Record<string, { price: number; changePct: number; usd: number; eur: number; chf: number }> = {}
     for (const [id, v] of Object.entries(data)) {
       const ticker = Object.entries(COINGECKO_IDS).find(([, cid]) => cid === id)?.[0]
-      if (ticker) out[ticker] = { price: v.eur, changePct: v.eur_24h_change ?? 0 }
+      if (ticker) out[ticker] = {
+        price:     v.chf,                // CHF is now the default
+        changePct: v.chf_24h_change ?? 0,
+        chf: v.chf, usd: v.usd, eur: v.eur,
+      }
     }
     return out
-  }, 30)
+  }, 15)   // 15s cache — near real-time
 }
 
 export async function POST(req: NextRequest) {

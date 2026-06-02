@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
+import { CurrencyProvider } from "@/hooks/use-currency"
 import "./globals.css"
 
 const inter = Inter({
@@ -23,7 +24,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className={`${inter.variable} h-full`}>
-      <body className="h-full antialiased">{children}</body>
+      <body className="h-full antialiased">
+        <CurrencyProvider>{children}</CurrencyProvider>
+      </body>
     </html>
   )
 }

@@ -1,8 +1,9 @@
 "use client"
 
 import { Bell, Wallet } from "lucide-react"
-import { GlobalSearch } from "./global-search"
-import { MarketStatus } from "./market-status"
+import { GlobalSearch }     from "./global-search"
+import { MarketStatus }     from "./market-status"
+import { CurrencySwitcher } from "./currency-switcher"
 
 interface TopbarProps {
   title: string
@@ -40,9 +41,10 @@ export function Topbar({ title, subtitle }: TopbarProps) {
         </div>
       </div>
 
-      {/* Right: search + market + bell */}
+      {/* Right: search + currency + market + bell */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <GlobalSearch />
+        <CurrencySwitcher />
         <MarketStatus />
 
         <button

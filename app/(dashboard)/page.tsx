@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Topbar } from "@/components/layout/topbar"
 import { StatCard } from "@/components/ui/stat-card"
+import { useLivePrices } from "@/hooks/use-live-prices"
+import { useCurrency } from "@/hooks/use-currency"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
 import { LiveChart } from "@/components/charts/live-chart"
@@ -36,41 +38,10 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
-// ─── Compute totals ───────────────────────────────────────────────────────────
-const totalValue = MOCK_PORTFOLIOS.reduce((s, p) => s + portfolioTotalValue(p), 0)
-const totalCost  = MOCK_PORTFOLIOS.reduce((s, p) => s + portfolioTotalCost(p), 0)
-const totalPnl   = totalValue - totalCost
-const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
-
-const prev = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 2]?.value ?? totalValue
-const todayPnl    = totalValue - prev
-const todayPnlPct = prev > 0 ? (todayPnl / prev) * 100 : 0
-
-// All assets flattened
-const allAssets = MOCK_PORTFOLIOS.flatMap((p) => p.assets)
-
-// Allocation by class
-const byClass = allAssets.reduce<Record<string, number>>((acc, a) => {
-  acc[a.assetClass] = (acc[a.assetClass] ?? 0) + assetValue(a)
-  return acc
-}, {})
-const allocationEntries = Object.entries(byClass)
-  .sort(([, a], [, b]) => b - a)
-  .map(([cls, val]) => ({
-    cls: cls as keyof typeof ASSET_CLASS_LABELS,
-    val,
-    pct: totalValue > 0 ? (val / totalValue) * 100 : 0,
-  }))
-
-// Top 5 holdings
-const top5 = [...allAssets]
-  .sort((a, b) => assetValue(b) - assetValue(a))
-  .slice(0, 5)
-
-// Recent 5 transactions
-const recentTx = [...MOCK_TRANSACTIONS]
-  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  .slice(0, 5)
+// ─── Static data ─────────────────────────────────────────────────────────────
+const TOTAL_COST = MOCK_PORTFOLIOS.reduce((s, p) => s + portfolioTotalCost(p), 0)
+const ALL_ASSETS = MOCK_PORTFOLIOS.flatMap(p => p.assets)
+const RECENT_TX  = [...MOCK_TRANSACTIONS].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
 
 const PERIODS = ["1S", "1M", "3M", "6M", "1A", "Max"] as const
 type Period = (typeof PERIODS)[number]
@@ -90,9 +61,62 @@ const filterHistory = (period: Period) => {
 interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | null }
 
 export default function DashboardPage() {
-  const [period, setPeriod] = useState<Period>("1A")
-  const historySlice = filterHistory(period)
+  const [period, setPeriod]     = useState<Period>("1A")
+  const historySlice            = filterHistory(period)
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
+  const { format }              = useCurrency()
+
+  // ─── Live prices for ALL held tickers ──────────────────────────────────────
+  const allTickers = useMemo(() =>
+    MOCK_PORTFOLIOS.flatMap(p => p.assets.map(a => a.ticker)),
+    []
+  )
+  const { prices: livePrices, secondsAgo, nextRefreshIn } = useLivePrices(allTickers, 30_000)
+
+  // ─── Compute totals using live prices where available ──────────────────────
+  const totalValue = useMemo(() =>
+    MOCK_PORTFOLIOS.flatMap(p => p.assets).reduce((s, a) => {
+      const lp = livePrices[a.ticker]?.price
+      return s + (lp ? lp * a.quantity : a.currentPrice * a.quantity)
+    }, 0),
+    [livePrices]
+  )
+  const totalCost   = TOTAL_COST
+  const totalPnl    = totalValue - totalCost
+  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+
+  // Today P&L from PORTFOLIO_HISTORY (approximation)
+  const prevHistVal   = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 2]?.value ?? totalValue
+  const todayPnl      = totalValue - prevHistVal
+  const todayPnlPct   = prevHistVal > 0 ? (todayPnl / prevHistVal) * 100 : 0
+
+  // Live-enriched assets
+  const allAssetsLive = useMemo(() =>
+    ALL_ASSETS.map(a => ({
+      ...a,
+      currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice,
+    })), [livePrices])
+
+  // Allocation by class (live)
+  const allocationEntries = useMemo(() => {
+    const byClass = allAssetsLive.reduce<Record<string, number>>((acc, a) => {
+      acc[a.assetClass] = (acc[a.assetClass] ?? 0) + a.currentPrice * a.quantity
+      return acc
+    }, {})
+    return Object.entries(byClass)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cls, val]) => ({
+        cls: cls as keyof typeof ASSET_CLASS_LABELS,
+        val,
+        pct: totalValue > 0 ? (val / totalValue) * 100 : 0,
+      }))
+  }, [allAssetsLive, totalValue])
+
+  // Top 5 holdings by value (live)
+  const top5 = useMemo(() =>
+    [...allAssetsLive].sort((a, b) => (b.currentPrice * b.quantity) - (a.currentPrice * a.quantity)).slice(0, 5),
+    [allAssetsLive]
+  )
 
   // Fetch earnings for all held stock tickers
   useEffect(() => {
@@ -134,12 +158,12 @@ export default function DashboardPage() {
                 </p>
                 <div className="mt-2 flex items-baseline gap-3">
                   <span className="text-2xl sm:text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--foreground)" }}>
-                    {formatCurrency(totalValue)}
+                    {format(totalValue)}
                   </span>
                   <ChangeBadge value={todayPnlPct} size="md" />
                 </div>
                 <p className="mt-1 text-sm" style={{ color: "var(--foreground-muted)" }}>
-                  {todayPnl >= 0 ? "+" : ""}{formatCurrency(todayPnl)} aujourd'hui · {MOCK_PORTFOLIOS.length} portefeuilles
+                  {todayPnl >= 0 ? "+" : ""}{format(todayPnl)} aujourd'hui · {MOCK_PORTFOLIOS.length} portefeuilles
                 </p>
               </div>
               <Link
@@ -157,10 +181,10 @@ export default function DashboardPage() {
         {/* ─── KPIs ───────────────────────────────────────────── */}
         <section>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-            <StatCard label="Valeur nette totale" value={formatCurrency(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="#3b82f6" index={0} />
-            <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + formatCurrency(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
-            <StatCard label="P&L total" value={(totalPnl >= 0 ? "+" : "") + formatCurrency(totalPnl)} change={totalPnlPct} changeLabel="depuis le début" icon={TrendingUp} iconColor="#22c55e" index={2} />
-            <StatCard label="Valeur du portefeuille" value={formatCurrency(totalValue)} change={todayPnlPct} changeLabel="vs hier" icon={BarChart2} iconColor="#f59e0b" index={3} />
+            <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="#3b82f6" index={0} />
+            <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
+            <StatCard label="P&L total" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis le début" icon={TrendingUp} iconColor="#22c55e" index={2} />
+            <StatCard label="Valeur du portefeuille" value={format(totalValue)} change={todayPnlPct} changeLabel="vs hier" icon={BarChart2} iconColor="#f59e0b" index={3} />
           </div>
         </section>
 
@@ -261,7 +285,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
-                        {formatCurrency(assetValue(asset))}
+                        {format(assetValue(asset))}
                       </p>
                       <ChangeBadge value={pnlPct} showIcon={false} />
                     </div>
@@ -279,14 +303,14 @@ export default function DashboardPage() {
               action={<Link href="/transactions" className="text-xs hover:text-white transition-colors" style={{ color: "var(--foreground-muted)" }}>Tout voir →</Link>}
             />
             <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-              {recentTx.map((tx, i) => {
+              {RECENT_TX.map((tx, i) => {
                 const isBuy = tx.type === "buy"
                 const isDiv = tx.type === "dividend"
                 const color = isBuy ? "#22c55e" : isDiv ? "#f59e0b" : "#ef4444"
                 const label = isBuy ? "Achat" : isDiv ? "Dividende" : tx.type === "sell" ? "Vente" : "Transfert"
                 return (
                   <div key={tx.id} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-zinc-800/30"
-                    style={{ borderBottom: i < recentTx.length - 1 ? "1px solid var(--border)" : "none" }}
+                    style={{ borderBottom: i < RECENT_TX.length - 1 ? "1px solid var(--border)" : "none" }}
                   >
                     <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
                       style={{ backgroundColor: `${color}18`, color }}
@@ -300,7 +324,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <p className="text-xs font-semibold tabular-nums" style={{ color }}>
-                      {isBuy ? "-" : "+"}{formatCurrency(tx.quantity * tx.price)}
+                      {isBuy ? "-" : "+"}{format(tx.quantity * tx.price)}
                     </p>
                   </div>
                 )

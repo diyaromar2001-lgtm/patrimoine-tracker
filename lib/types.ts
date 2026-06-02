@@ -2,7 +2,7 @@
 
 export type AssetClass = "stock" | "etf" | "crypto" | "real_estate" | "bond" | "cash"
 export type TransactionType = "buy" | "sell" | "dividend" | "transfer"
-export type Currency = "EUR" | "USD" | "GBP"
+export type Currency = "CHF" | "EUR" | "USD" | "GBP"
 
 export interface Portfolio {
   id: string
