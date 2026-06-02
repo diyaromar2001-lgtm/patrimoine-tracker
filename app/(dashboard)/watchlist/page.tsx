@@ -23,7 +23,7 @@ export default function WatchlistPage() {
   const [search, setSearch] = useState("")
 
   const tickers = items.map(i => i.ticker)
-  const { prices, loading: pricesLoading, lastUpdated, refresh } = useLivePrices(tickers, 60_000)
+  const { prices, loading: pricesLoading, secondsAgo, nextRefreshIn, refresh } = useLivePrices(tickers, 30_000)
 
   const filtered = items.filter(item =>
     item.ticker.toLowerCase().includes(search.toLowerCase()) ||
@@ -61,9 +61,9 @@ export default function WatchlistPage() {
     }
   }
 
-  const updatedLabel = lastUpdated
-    ? " · Mis a jour " + lastUpdated.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    : ""
+  const updatedLabel = secondsAgo > 0
+    ? ` · Mis à jour il y a ${secondsAgo}s — prochain dans ${nextRefreshIn}s`
+    : " · Chargement…"
 
   return (
     <div className="flex flex-col">
@@ -173,7 +173,7 @@ export default function WatchlistPage() {
                 ticker={selectedTicker}
                 name={selectedName}
                 height={380}
-                showCompareSP500={true}
+                defaultCompare="SPY"
               />
             ) : (
               <div

@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Topbar } from "@/components/layout/topbar"
 import { StatCard } from "@/components/ui/stat-card"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
+import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { Sparkline } from "@/components/ui/sparkline"
 import {
@@ -29,6 +30,7 @@ import {
   TrendingUp,
   BarChart2,
   Activity,
+  Calendar,
   ArrowUpRight,
   Layers,
 } from "lucide-react"
@@ -85,9 +87,27 @@ const filterHistory = (period: Period) => {
   return PORTFOLIO_HISTORY.filter((s) => new Date(s.date) >= cutoff)
 }
 
+interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | null }
+
 export default function DashboardPage() {
   const [period, setPeriod] = useState<Period>("1A")
   const historySlice = filterHistory(period)
+  const [earnings, setEarnings] = useState<EarningsItem[]>([])
+
+  // Fetch earnings for all held stock tickers
+  useEffect(() => {
+    const stockTickers = MOCK_PORTFOLIOS
+      .flatMap(p => p.assets)
+      .filter(a => a.assetClass === "stock")
+      .map(a => a.ticker)
+      .filter((t, i, arr) => arr.indexOf(t) === i)
+      .slice(0, 8)
+    if (!stockTickers.length) return
+    fetch(`/api/earnings?tickers=${stockTickers.join(",")}`)
+      .then(r => r.json())
+      .then(setEarnings)
+      .catch(() => {})
+  }, [])
 
   return (
     <div className="flex flex-col">
@@ -288,6 +308,53 @@ export default function DashboardPage() {
             </div>
           </section>
         </div>
+
+        {/* ─── Portfolio vs S&P500 / MSCI World ── */}
+        <section className="space-y-3">
+          <SectionHeader title="Portefeuille vs Benchmarks" description="Performance relative vs S&P 500 et MSCI World (normalisé à 100)" />
+          <LiveChart ticker="SPY" name="S&P 500 (SPY)" height={260} defaultCompare="SPY,VWCE.DE" />
+        </section>
+
+        {/* ─── Earnings Calendar ─────────────────── */}
+        {earnings.length > 0 && (
+          <section className="space-y-3">
+            <SectionHeader title="Calendrier des résultats" description="Prochaines publications pour vos positions" />
+            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+              {earnings.slice(0, 6).map((e, i) => {
+                const daysLeft = Math.ceil((new Date(e.earningsDate).getTime() - Date.now()) / 86400000)
+                const isPast   = daysLeft < 0
+                const color    = ASSET_CLASS_COLORS["stock"]
+                return (
+                  <div key={e.ticker} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-zinc-800/20"
+                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                    <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
+                      style={{ backgroundColor: color + "22", color }}>
+                      {e.ticker.slice(0, 4)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>{e.ticker}</p>
+                      <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>
+                        {new Date(e.earningsDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
+                      </p>
+                    </div>
+                    {e.epsAvg != null && (
+                      <p className="text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+                        EPS moy. {e.epsAvg > 0 ? "+" : ""}{e.epsAvg.toFixed(2)}$
+                      </p>
+                    )}
+                    <span className="flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                      style={{
+                        backgroundColor: isPast ? "var(--background-hover)" : "#f59e0b18",
+                        color: isPast ? "var(--foreground-dim)" : "#f59e0b",
+                      }}>
+                      {isPast ? `il y a ${Math.abs(daysLeft)}j` : daysLeft === 0 ? "Aujourd'hui" : `dans ${daysLeft}j`}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )

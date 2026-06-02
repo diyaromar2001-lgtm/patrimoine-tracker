@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 
 export interface LivePrice {
   price:     number
@@ -9,12 +9,14 @@ export interface LivePrice {
   currency:  string
 }
 
-export function useLivePrices(tickers: string[], intervalMs = 60_000) {
-  const [prices, setPrices] = useState<Record<string, LivePrice>>({})
-  const [loading, setLoading] = useState(false)
+export function useLivePrices(tickers: string[], intervalMs = 30_000) {
+  const [prices, setPrices]         = useState<Record<string, LivePrice>>({})
+  const [loading, setLoading]       = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [secondsAgo, setSecondsAgo] = useState(0)
+  const tickersKey = [...tickers].sort().join(",")
 
-  const fetch_ = useCallback(async () => {
+  const fetchPrices = useCallback(async () => {
     if (!tickers.length) return
     setLoading(true)
     try {
@@ -23,21 +25,39 @@ export function useLivePrices(tickers: string[], intervalMs = 60_000) {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ tickers }),
       })
+      if (!res.ok) return
       const data: Record<string, LivePrice> = await res.json()
       setPrices(data)
       setLastUpdated(new Date())
-    } catch {
-      // silent — keep stale prices
-    } finally {
-      setLoading(false)
-    }
-  }, [tickers.join(",")])  // eslint-disable-line
+      setSecondsAgo(0)
+    } catch { /* keep stale */ }
+    finally { setLoading(false) }
+  }, [tickersKey]) // eslint-disable-line
 
+  // Fetch on mount + on interval
   useEffect(() => {
-    fetch_()
-    const id = setInterval(fetch_, intervalMs)
+    fetchPrices()
+    const id = setInterval(fetchPrices, intervalMs)
     return () => clearInterval(id)
-  }, [fetch_, intervalMs])
+  }, [fetchPrices, intervalMs])
 
-  return { prices, loading, lastUpdated, refresh: fetch_ }
+  // Countdown ticker (updates every second)
+  useEffect(() => {
+    if (!lastUpdated) return
+    const id = setInterval(() => {
+      setSecondsAgo(Math.floor((Date.now() - lastUpdated.getTime()) / 1000))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [lastUpdated])
+
+  const nextRefreshIn = Math.max(0, Math.round(intervalMs / 1000) - secondsAgo)
+
+  return {
+    prices,
+    loading,
+    lastUpdated,
+    secondsAgo,
+    nextRefreshIn,
+    refresh: fetchPrices,
+  }
 }

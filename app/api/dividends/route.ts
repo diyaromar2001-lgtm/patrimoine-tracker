@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import yahooFinance from "yahoo-finance2"
+import YahooFinanceClass from "yahoo-finance2"
 import { cacheFetch } from "@/lib/cache"
 
 export const runtime = "nodejs"
+
+const yf = new (YahooFinanceClass as unknown as new (o: Record<string, unknown>) => typeof YahooFinanceClass)(
+  { suppressNotices: ["yahooSurvey"] } as never
+) as typeof YahooFinanceClass
 
 export async function GET(req: NextRequest) {
   const ticker = req.nextUrl.searchParams.get("ticker")
@@ -12,35 +16,24 @@ export async function GET(req: NextRequest) {
     const data = await cacheFetch(
       `div:${ticker}`,
       async () => {
-        const summary = await yahooFinance.quoteSummary(ticker, {
+        const s = await yf.quoteSummary(ticker, {
           modules: ["calendarEvents", "summaryDetail", "defaultKeyStatistics"],
-        }) as unknown as {
-          calendarEvents?: Record<string, unknown>
-          summaryDetail?: Record<string, unknown>
-          defaultKeyStatistics?: Record<string, unknown>
-        }
-
-        const cal      = summary.calendarEvents
-        const detail   = summary.summaryDetail
-        const keyStats = summary.defaultKeyStatistics
+        }) as unknown as Record<string, Record<string, unknown>>
 
         return {
           ticker,
-          dividendRate:       detail?.dividendRate         ?? null,
-          dividendYield:      detail?.dividendYield        ?? null,
-          exDividendDate:     detail?.exDividendDate       ?? null,
-          payoutRatio:        detail?.payoutRatio          ?? null,
-          fiveYearAvgReturn:  keyStats?.fiveYearAverageReturn ?? null,
-          nextDividendDate:   cal?.dividendDate             ?? null,
-          exDate:             cal?.exDividendDate           ?? null,
+          dividendRate:    s.summaryDetail?.dividendRate       ?? null,
+          dividendYield:   s.summaryDetail?.dividendYield      ?? null,
+          exDividendDate:  s.summaryDetail?.exDividendDate     ?? null,
+          payoutRatio:     s.summaryDetail?.payoutRatio        ?? null,
+          nextDividendDate: s.calendarEvents?.dividendDate     ?? null,
+          earningsDate:    (s.calendarEvents?.earnings as Record<string, unknown>)?.earningsDate ?? null,
         }
       },
-      3600  // 1 hour cache
+      3600
     )
-
     return NextResponse.json(data)
-  } catch (e) {
-    console.error("Dividend fetch error:", e)
+  } catch {
     return NextResponse.json(null)
   }
 }
