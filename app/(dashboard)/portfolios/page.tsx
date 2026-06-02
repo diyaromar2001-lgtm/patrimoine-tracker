@@ -6,8 +6,10 @@ import { Topbar } from "@/components/layout/topbar"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { DualPrice, DualPriceInline } from "@/components/ui/dual-price"
 import { AssetSearch } from "@/components/ui/asset-search"
+import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
+import { useTransactions } from "@/hooks/use-supabase-data"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
 import { usePortfolios } from "@/hooks/use-supabase-data"
@@ -20,7 +22,7 @@ import { formatCurrency, cn } from "@/lib/utils"
 import {
   Plus, Briefcase, ChevronDown, ChevronUp, X, Check,
   ArrowUpRight, ArrowDownRight, TrendingUp, BarChart2,
-  Activity, Layers, Edit2, Trash2, Loader2,
+  Activity, Layers, Edit2, Trash2, Loader2, ArrowLeftRight,
   ArrowUp, ArrowDown, ChevronsUpDown, AlertCircle,
 } from "lucide-react"
 
@@ -356,7 +358,30 @@ export default function PortfoliosPage() {
     removeAsset: dbRemoveAsset,
     setPortfolios,
   } = usePortfolios()
+  const { addTransaction } = useTransactions()
   const [activeTab, setActiveTab] = useState("global")
+  const [txModal, setTxModal]     = useState<{ defaultPortfolioId?: string } | null>(null)
+
+  function openTxModal(portfolioId?: string) {
+    setTxModal({ defaultPortfolioId: portfolioId ?? portfolios[0]?.id ?? "" })
+  }
+
+  async function handleSaveTx(form: TransactionFormData) {
+    await addTransaction({
+      portfolioId: form.portfolioId,
+      ticker:      form.ticker,
+      assetName:   form.assetName,
+      assetClass:  form.assetClass,
+      type:        form.type,
+      quantity:    parseFloat(form.quantity),
+      price:       parseFloat(form.price),
+      fees:        parseFloat(form.fees) || 0,
+      currency:    "CHF",
+      date:        form.date,
+      notes:       form.notes || undefined,
+    })
+    setTxModal(null)
+  }
   const [period,     setPeriod]     = useState<Period>("1Y")
   const [showNewPortfolio, setShowNewPortfolio] = useState(false)
   const [newName,    setNewName]    = useState("")
@@ -541,6 +566,15 @@ export default function PortfoliosPage() {
                     <p className="mt-1 text-sm text-zinc-500">
                       {totalPnl >= 0 ? "+" : ""}{formatCurrency(totalPnl)} depuis le début
                     </p>
+                    {/* CTA button */}
+                    <button
+                      onClick={() => openTxModal()}
+                      className="mt-4 flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95"
+                      style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)", boxShadow: "0 0 20px #22c55e30" }}
+                    >
+                      <ArrowLeftRight className="h-4 w-4" />
+                      Ajouter une transaction
+                    </button>
                   </div>
 
                   {/* Mini stats */}
@@ -832,6 +866,12 @@ export default function PortfoliosPage() {
                             <ChangeBadge value={pct} showIcon={false} />
                           </div>
                         </div>
+                        <button
+                          onClick={() => openTxModal(activePortfolio.id)}
+                          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all hover:opacity-90"
+                          style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
+                          <ArrowLeftRight className="h-3.5 w-3.5" /> Ajouter transaction
+                        </button>
                         <button onClick={() => handleDeletePortfolio(activePortfolio.id)}
                           className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
                           style={{ borderColor: "#ef444440" }}>
@@ -895,6 +935,24 @@ export default function PortfoliosPage() {
             </>
           )}
         </motion.div>
+      </AnimatePresence>
+
+      {/* ─── Transaction modal ─── */}
+      <AnimatePresence>
+        {txModal && (
+          <TransactionModal
+            mode="add"
+            initial={{
+              portfolioId: txModal.defaultPortfolioId ?? portfolios[0]?.id ?? "",
+              ticker: "", assetName: "", assetClass: "stock", type: "buy",
+              quantity: "", price: "", fees: "1",
+              date: new Date().toISOString().slice(0, 10), notes: "",
+            }}
+            portfolios={portfolios}
+            onSave={handleSaveTx}
+            onClose={() => setTxModal(null)}
+          />
+        )}
       </AnimatePresence>
 
       {/* ─── New portfolio modal ─── */}
