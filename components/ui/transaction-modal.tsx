@@ -48,12 +48,15 @@ export const EMPTY_TX_FORM: TransactionFormData = {
 interface AssetSelectorProps {
   ticker:    string
   assetName: string
-  onSelect:  (r: SearchResult, price: string) => void
-  onClear:   () => void
+  /** Called immediately when user picks an asset */
+  onPick:   (r: SearchResult) => void
+  /** Called when live price fetch resolves (price="" if failed/timeout) */
+  onPrice:  (price: string) => void
+  onClear:  () => void
   priceFetching: boolean
 }
 
-function AssetSelector({ ticker, assetName, onSelect, onClear, priceFetching }: AssetSelectorProps) {
+function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetching }: AssetSelectorProps) {
   const { query, setQuery, results, loading, clear } = useAssetSearch(220)
   const [open, setOpen] = useState(false)
 
@@ -65,26 +68,25 @@ function AssetSelector({ ticker, assetName, onSelect, onClear, priceFetching }: 
 
   async function pick(r: SearchResult) {
     clear(); setOpen(false)
-    // Step 1 — show asset immediately with empty price (starts spinner)
-    onSelect(r, "")
 
-    // Step 2 — fetch live price with timeout
+    // 1. Show the chip immediately — no stale-state issue
+    onPick(r)
+
+    // 2. Fetch price in background (max 8s)
     const controller = new AbortController()
-    const timeout    = setTimeout(() => controller.abort(), 8000) // 8s max
+    const timeout    = setTimeout(() => controller.abort(), 8000)
     try {
       const res  = await fetch("/api/prices", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ tickers: [r.ticker] }),
         signal:  controller.signal,
       })
       const data = await res.json()
       const p    = data[r.ticker]?.price
-      // Always call onSelect again — with price (or empty string to stop spinner)
-      onSelect(r, p && p > 0 ? p.toFixed(2) : "")
+      onPrice(p && p > 0 ? String(p.toFixed(2)) : "")
     } catch {
-      // Timeout or network error — stop spinner, price stays empty
-      onSelect(r, "")
+      onPrice("") // timeout / network error → stop spinner
     } finally {
       clearTimeout(timeout)
     }
@@ -226,34 +228,23 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
   const set = (k: keyof TransactionFormData, v: string) =>
     setForm(p => ({ ...p, [k]: v }))
 
-  function handleAssetSelect(r: SearchResult, price: string) {
-    // price = "" means "first call (start spinner)" OR "fetch failed (stop spinner)"
-    // price = "xxx" means "price resolved (stop spinner)"
-    const isFirstCall = !form.ticker || form.ticker !== r.ticker
+  // Called IMMEDIATELY when user clicks an asset in the dropdown
+  function handlePick(r: SearchResult) {
+    setPriceFetching(true)  // start spinner — completely independent of form state
+    setForm(p => ({
+      ...p,
+      ticker:    r.ticker,
+      assetName: r.name,
+      assetClass: r.type as AssetClass,
+      price:     "",        // clear price until fetch resolves
+    }))
+  }
 
+  // Called AFTER price fetch resolves (price="" on failure/timeout)
+  function handlePrice(price: string) {
+    setPriceFetching(false) // always stop spinner
     if (price) {
-      // ✅ Price resolved — stop spinner + fill price
-      setPriceFetching(false)
-      setForm(p => ({
-        ...p,
-        ticker:     r.ticker,
-        assetName:  r.name,
-        assetClass: r.type as AssetClass,
-        price,
-      }))
-    } else if (isFirstCall) {
-      // 🔄 First call (asset just selected) — start spinner
-      setPriceFetching(true)
-      setForm(p => ({
-        ...p,
-        ticker:     r.ticker,
-        assetName:  r.name,
-        assetClass: r.type as AssetClass,
-        price:      p.price, // keep existing price until fetch resolves
-      }))
-    } else {
-      // 2nd call with empty price = fetch failed/timeout — stop spinner
-      setPriceFetching(false)
+      setForm(p => ({ ...p, price }))
     }
   }
 
@@ -338,7 +329,8 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
             <AssetSelector
               ticker={form.ticker}
               assetName={form.assetName}
-              onSelect={handleAssetSelect}
+              onPick={handlePick}
+              onPrice={handlePrice}
               onClear={clearAsset}
               priceFetching={priceFetching}
             />
