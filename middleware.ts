@@ -1,16 +1,18 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+// Routes accessibles sans authentification
+const PUBLIC_PATHS = ["/login", "/auth"]
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public routes — always accessible
-  const PUBLIC = ["/login", "/auth/callback"]
-  if (PUBLIC.some(p => pathname.startsWith(p))) {
+  // Laisser passer toutes les routes publiques sans toucher aux cookies
+  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
     return NextResponse.next()
   }
 
-  // Build a Supabase client that can read/write cookies
+  // Pour les routes protégées, vérifier la session Supabase
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -22,6 +24,7 @@ export async function middleware(request: NextRequest) {
         setAll(cs) {
           cs.forEach(({ name, value, options }) => {
             request.cookies.set(name, value)
+            response = NextResponse.next({ request })
             response.cookies.set(name, value, options)
           })
         },
@@ -29,11 +32,11 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Refresh session — required for Server Components
+  // IMPORTANT: getUser() (pas getSession()) pour valider côté serveur
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Not authenticated → redirect to /login
   if (!user) {
+    // Non authentifié → page de login
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
@@ -44,12 +47,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all routes EXCEPT:
-     *  - _next/static, _next/image (Next.js internals)
-     *  - favicon, public assets
-     *  - API routes
-     */
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)|api/).*)",
+    // Exclure: fichiers statiques, API routes, login, auth
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)|api/|login|auth).*)",
   ],
 }
