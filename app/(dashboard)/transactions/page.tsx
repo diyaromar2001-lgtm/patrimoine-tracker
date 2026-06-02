@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AssetClassBadge } from "@/components/ui/badge"
-import { MOCK_TRANSACTIONS } from "@/lib/mock-data"
+import { useTransactions } from "@/hooks/use-supabase-data"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import { formatCurrency } from "@/lib/utils"
@@ -277,7 +277,7 @@ function TxModal({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS)
+  const { transactions, addTransaction, editTransaction, removeTransaction, loading: dbLoading } = useTransactions()
   const [search,     setSearch]     = useState("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "all">("all")
   const [modal,      setModal]      = useState<{ mode: "add" | "edit"; initial: typeof EMPTY_FORM & { id?: string } } | null>(null)
@@ -313,29 +313,29 @@ export default function TransactionsPage() {
 
   function handleSave(form: typeof EMPTY_FORM & { id?: string }) {
     if (modal?.mode === "edit" && form.id) {
-      setTransactions(prev => prev.map(t => t.id === form.id ? {
-        ...t, ticker: form.ticker, assetName: form.assetName,
+      editTransaction(form.id, {
+        ticker: form.ticker, assetName: form.assetName,
         assetClass: form.assetClass, type: form.type,
         quantity: parseFloat(form.quantity), price: parseFloat(form.price),
         fees: parseFloat(form.fees) || 0, date: form.date,
         notes: form.notes || undefined,
-      } : t))
+      })
     } else {
-      const tx: Transaction = {
-        id: `t${Date.now()}`, portfolioId: "p1",
+      const tx: Omit<Transaction, "id"> = {
+        portfolioId: "p1",
         ticker: form.ticker.toUpperCase(), assetName: form.assetName,
         assetClass: form.assetClass, type: form.type,
         quantity: parseFloat(form.quantity), price: parseFloat(form.price),
         fees: parseFloat(form.fees) || 0, currency: "EUR",
         date: form.date, notes: form.notes || undefined,
       }
-      setTransactions(prev => [tx, ...prev])
+      addTransaction(tx)
     }
     setModal(null)
   }
 
   function handleDelete(id: string) {
-    setTransactions(prev => prev.filter(t => t.id !== id))
+    removeTransaction(id)
   }
 
   return (

@@ -8,8 +8,12 @@ import type { Portfolio, Transaction, Asset } from "@/lib/types"
 
 // ─── Portfolios hook ──────────────────────────────────────────────────────────
 export function usePortfolios() {
-  const [portfolios, setPortfolios] = useState<Portfolio[]>(MOCK_PORTFOLIOS)
-  const [loading,    setLoading]    = useState(isSupabaseConfigured)
+  // If Supabase is configured → start empty (real data comes from DB)
+  // If no Supabase → use mock data for dev/demo
+  const [portfolios, setPortfolios] = useState<Portfolio[]>(
+    isSupabaseConfigured ? [] : MOCK_PORTFOLIOS
+  )
+  const [loading, setLoading] = useState(isSupabaseConfigured)
   const [fromDB,     setFromDB]     = useState(false)
 
   const reload = useCallback(async () => {
@@ -62,7 +66,9 @@ export function usePortfolios() {
 
 // ─── Transactions hook ────────────────────────────────────────────────────────
 export function useTransactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS)
+  const [transactions, setTransactions] = useState<Transaction[]>(
+    isSupabaseConfigured ? [] : MOCK_TRANSACTIONS
+  )
   const [loading,      setLoading]      = useState(isSupabaseConfigured)
   const [fromDB,       setFromDB]       = useState(false)
 

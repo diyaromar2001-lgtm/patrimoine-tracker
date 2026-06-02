@@ -10,11 +10,8 @@ import { AreaChart } from "@/components/charts/area-chart"
 import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { Sparkline } from "@/components/ui/sparkline"
-import {
-  MOCK_PORTFOLIOS,
-  PORTFOLIO_HISTORY,
-  MOCK_TRANSACTIONS,
-} from "@/lib/mock-data"
+import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
+import { usePortfolios, useTransactions } from "@/hooks/use-supabase-data"
 import {
   portfolioTotalValue,
   portfolioTotalCost,
@@ -39,9 +36,7 @@ import {
 import Link from "next/link"
 
 // ─── Static data ─────────────────────────────────────────────────────────────
-const TOTAL_COST = MOCK_PORTFOLIOS.reduce((s, p) => s + portfolioTotalCost(p), 0)
-const ALL_ASSETS = MOCK_PORTFOLIOS.flatMap(p => p.assets)
-const RECENT_TX  = [...MOCK_TRANSACTIONS].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
+// These are now computed inside the component using live hook data
 
 const PERIODS = ["1S", "1M", "3M", "6M", "1A", "Max"] as const
 type Period = (typeof PERIODS)[number]
@@ -66,16 +61,26 @@ export default function DashboardPage() {
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
   const { format }              = useCurrency()
 
+  // ─── Supabase-backed data (falls back to mock when not configured) ──────────
+  const { portfolios }     = usePortfolios()
+  const { transactions }   = useTransactions()
+  const ALL_ASSETS         = useMemo(() => portfolios.flatMap(p => p.assets), [portfolios])
+  const TOTAL_COST         = useMemo(() => portfolios.reduce((s, p) => s + portfolioTotalCost(p), 0), [portfolios])
+  const RECENT_TX          = useMemo(() =>
+    [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5),
+    [transactions]
+  )
+
   // ─── Live prices for ALL held tickers ──────────────────────────────────────
   const allTickers = useMemo(() =>
-    MOCK_PORTFOLIOS.flatMap(p => p.assets.map(a => a.ticker)),
-    []
+    portfolios.flatMap(p => p.assets.map(a => a.ticker)),
+    [portfolios]
   )
   const { prices: livePrices, secondsAgo, nextRefreshIn } = useLivePrices(allTickers, 30_000)
 
   // ─── Compute totals using live prices where available ──────────────────────
   const totalValue = useMemo(() =>
-    MOCK_PORTFOLIOS.flatMap(p => p.assets).reduce((s, a) => {
+    portfolios.flatMap(p => p.assets).reduce((s, a) => {
       const lp = livePrices[a.ticker]?.price
       return s + (lp ? lp * a.quantity : a.currentPrice * a.quantity)
     }, 0),
@@ -120,7 +125,7 @@ export default function DashboardPage() {
 
   // Fetch earnings for all held stock tickers
   useEffect(() => {
-    const stockTickers = MOCK_PORTFOLIOS
+    const stockTickers = portfolios
       .flatMap(p => p.assets)
       .filter(a => a.assetClass === "stock")
       .map(a => a.ticker)
@@ -163,7 +168,7 @@ export default function DashboardPage() {
                   <ChangeBadge value={todayPnlPct} size="md" />
                 </div>
                 <p className="mt-1 text-sm" style={{ color: "var(--foreground-muted)" }}>
-                  {todayPnl >= 0 ? "+" : ""}{format(todayPnl)} aujourd'hui · {MOCK_PORTFOLIOS.length} portefeuilles
+                  {todayPnl >= 0 ? "+" : ""}{format(todayPnl)} aujourd&apos;hui · {portfolios.length} portefeuille{portfolios.length > 1 ? "s" : ""}
                 </p>
               </div>
               <Link

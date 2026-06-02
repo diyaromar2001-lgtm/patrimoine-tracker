@@ -9,7 +9,8 @@ import { AssetSearch } from "@/components/ui/asset-search"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
-import { MOCK_PORTFOLIOS, PORTFOLIO_HISTORY } from "@/lib/mock-data"
+import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
+import { usePortfolios } from "@/hooks/use-supabase-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import {
   portfolioTotalValue, portfolioTotalCost, portfolioPnl, portfolioPnlPct,
@@ -347,8 +348,15 @@ function HoldingsTable({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PortfoliosPage() {
-  const [portfolios, setPortfolios] = useState<Portfolio[]>(MOCK_PORTFOLIOS)
-  const [activeTab,  setActiveTab]  = useState("global")
+  const {
+    portfolios, loading: dbLoading,
+    addPortfolio: dbAddPortfolio,
+    removePortfolio: dbRemovePortfolio,
+    addAsset: dbAddAsset,
+    removeAsset: dbRemoveAsset,
+    setPortfolios,
+  } = usePortfolios()
+  const [activeTab, setActiveTab] = useState("global")
   const [period,     setPeriod]     = useState<Period>("1Y")
   const [showNewPortfolio, setShowNewPortfolio] = useState(false)
   const [newName,    setNewName]    = useState("")
@@ -406,47 +414,44 @@ export default function PortfoliosPage() {
   const best  = moversData[0]
   const worst = moversData[moversData.length - 1]
 
-  function handleAddPortfolio() {
+  async function handleAddPortfolio() {
     if (!newName.trim()) return
-    const p: Portfolio = {
-      id: `p${Date.now()}`, name: newName.trim(), description: newDesc.trim(),
-      color: newColor, currency: "EUR", createdAt: new Date().toISOString().slice(0, 10), assets: [],
-    }
-    setPortfolios(prev => [...prev, p])
-    setActiveTab(p.id)
+    const id = await dbAddPortfolio({
+      name: newName.trim(), description: newDesc.trim(),
+      color: newColor, currency: "CHF", createdAt: new Date().toISOString().slice(0, 10),
+    })
+    if (id) setActiveTab(id)
     setNewName(""); setNewDesc(""); setShowNewPortfolio(false)
   }
 
-  function handleAddAsset(portfolioId: string, result: SearchResult) {
-    // Fetch live price then add
-    fetch("/api/prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: [result.ticker] }) })
-      .then(r => r.json())
-      .then(data => {
-        const livePrice = data[result.ticker]?.price ?? 0
-        const asset: Asset = {
-          id: `a${Date.now()}`, portfolioId,
-          ticker: result.ticker, name: result.name,
-          assetClass: result.type as AssetClass,
-          quantity: 1, avgBuyPrice: livePrice || 1, currentPrice: livePrice || 1,
-          currency: "EUR",
-        }
-        setPortfolios(prev => prev.map(p => p.id === portfolioId ? { ...p, assets: [...p.assets, asset] } : p))
+  async function handleAddAsset(portfolioId: string, result: SearchResult) {
+    try {
+      const res       = await fetch("/api/prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: [result.ticker] }) })
+      const data      = await res.json()
+      const livePrice = data[result.ticker]?.price ?? 0
+      await dbAddAsset(portfolioId, {
+        id: `a${Date.now()}`, portfolioId,
+        ticker: result.ticker, name: result.name,
+        assetClass: result.type as AssetClass,
+        quantity: 1, avgBuyPrice: livePrice || 0,
+        currency: "CHF",
       })
-      .catch(() => {
-        const asset: Asset = {
-          id: `a${Date.now()}`, portfolioId, ticker: result.ticker, name: result.name,
-          assetClass: result.type as AssetClass, quantity: 1, avgBuyPrice: 0, currentPrice: 0, currency: "EUR",
-        }
-        setPortfolios(prev => prev.map(p => p.id === portfolioId ? { ...p, assets: [...p.assets, asset] } : p))
+    } catch {
+      await dbAddAsset(portfolioId, {
+        id: `a${Date.now()}`, portfolioId,
+        ticker: result.ticker, name: result.name,
+        assetClass: result.type as AssetClass,
+        quantity: 1, avgBuyPrice: 0, currency: "CHF",
       })
+    }
   }
 
   function handleDeleteAsset(portfolioId: string, assetId: string) {
-    setPortfolios(prev => prev.map(p => p.id === portfolioId ? { ...p, assets: p.assets.filter(a => a.id !== assetId) } : p))
+    dbRemoveAsset(portfolioId, assetId)
   }
 
   function handleDeletePortfolio(id: string) {
-    setPortfolios(prev => prev.filter(p => p.id !== id))
+    dbRemovePortfolio(id)
     setActiveTab("global")
   }
 
