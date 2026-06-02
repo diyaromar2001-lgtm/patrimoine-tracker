@@ -5,6 +5,9 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
+import { AssetSearch } from "@/components/ui/asset-search"
+import { useLivePrices } from "@/hooks/use-live-prices"
+import type { SearchResult } from "@/hooks/use-asset-search"
 import { MOCK_PORTFOLIOS } from "@/lib/mock-data"
 import {
   portfolioTotalValue, portfolioTotalCost, portfolioPnl, portfolioPnlPct,
@@ -20,6 +23,21 @@ export default function PortfoliosPage() {
   const [expandedId, setExpandedId] = useState<string | null>(MOCK_PORTFOLIOS[0]?.id ?? null)
   const [showAddPortfolio, setShowAddPortfolio] = useState(false)
   const [showAddAsset, setShowAddAsset] = useState<string | null>(null)
+
+  // Live prices for all held assets
+  const allTickers = portfolios.flatMap(p => p.assets.map(a => a.ticker))
+  const { prices: livePrices } = useLivePrices(allTickers, 90_000)
+
+  // Pre-fill form from search result
+  function handleSearchSelect(result: SearchResult, portfolioId: string) {
+    setNewAsset(prev => ({
+      ...prev,
+      ticker: result.ticker,
+      name: result.name,
+      assetClass: result.type as AssetClass,
+    }))
+    setShowAddAsset(portfolioId)
+  }
   const [newPortfolioName, setNewPortfolioName] = useState("")
   const [newPortfolioDesc, setNewPortfolioDesc] = useState("")
   const [newPortfolioColor, setNewPortfolioColor] = useState("#3b82f6")
@@ -107,8 +125,11 @@ export default function PortfoliosPage() {
                         </div>
                         {portfolio.assets.length === 0 && <div className="flex flex-col items-center py-8"><p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucun actif dans ce portefeuille</p></div>}
                         {portfolio.assets.map((asset) => {
-                          const aValue  = assetValue(asset)
-                          const aPnlPct = assetPnlPct(asset)
+                          // Use live price if available, fallback to mock
+                          const livePrice = livePrices[asset.ticker]?.price
+                          const effectiveAsset = livePrice ? { ...asset, currentPrice: livePrice } : asset
+                          const aValue  = assetValue(effectiveAsset)
+                          const aPnlPct = assetPnlPct(effectiveAsset)
                           const color   = ASSET_CLASS_COLORS[asset.assetClass]
                           return (
                             <div key={asset.id} className="grid items-center px-5 py-3 transition-colors hover:bg-zinc-800/20" style={{ gridTemplateColumns: "1fr 70px 90px 90px 90px 90px 36px", borderTop: "1px solid var(--border-subtle)" }}>
@@ -121,7 +142,10 @@ export default function PortfoliosPage() {
                               </div>
                               <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{asset.quantity}</p>
                               <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{formatCurrency(asset.avgBuyPrice)}</p>
-                              <p className="text-right text-xs tabular-nums font-medium" style={{ color: "var(--foreground)" }}>{formatCurrency(asset.currentPrice)}</p>
+                              <p className="text-right text-xs tabular-nums font-medium flex items-center justify-end gap-1" style={{ color: "var(--foreground)" }}>
+                                {formatCurrency(effectiveAsset.currentPrice)}
+                                {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />}
+                              </p>
                               <p className="text-right text-xs tabular-nums font-semibold" style={{ color: "var(--foreground)" }}>{formatCurrency(aValue)}</p>
                               <div className="flex justify-end"><ChangeBadge value={aPnlPct} showIcon={false} /></div>
                               <button onClick={() => handleDeleteAsset(portfolio.id, asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md transition-colors hover:bg-red-500/20" style={{ color: "var(--foreground-dim)" }}><X className="h-3.5 w-3.5" /></button>
@@ -144,8 +168,12 @@ export default function PortfoliosPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="border-t p-3" style={{ borderColor: "var(--border)" }}>
-                            <button onClick={() => setShowAddAsset(portfolio.id)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium hover:bg-zinc-800/50 transition-colors" style={{ color: "var(--foreground-muted)" }}><Plus className="h-3.5 w-3.5" /> Ajouter un actif</button>
+                          <div className="border-t p-3 space-y-2" style={{ borderColor: "var(--border)" }}>
+                            <AssetSearch
+                              onSelect={r => handleSearchSelect(r, portfolio.id)}
+                              placeholder="Rechercher et ajouter un actif… (AAPL, BTC, CW8…)"
+                              className="w-full max-w-sm"
+                            />
                           </div>
                         )}
                       </div>
