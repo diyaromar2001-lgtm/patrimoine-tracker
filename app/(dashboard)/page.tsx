@@ -119,6 +119,20 @@ export default function DashboardPage() {
       .catch(() => {})
   }, [hasAssets, allAssets])
 
+  // ─── Loading skeleton ───────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex flex-col">
+        <Topbar title="Dashboard" subtitle="Chargement…" />
+        <div className="flex-1 p-4 sm:p-6 space-y-4">
+          {[1,2,3].map(i => (
+            <div key={i} className="h-20 rounded-xl animate-pulse" style={{ backgroundColor: "var(--background-card)" }} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // ─── Empty onboarding state ───────────────────────────────────────────────
   if (!loading && !hasAssets) {
     return (
@@ -219,10 +233,22 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="rounded-xl border p-3" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-              <p className="text-[11px] mb-2 px-1" style={{ color: "var(--foreground-dim)" }}>
-                Graphique basé sur les prix en temps réel de vos positions actuelles
-              </p>
-              <LiveChart ticker={allTickers[0] ?? "SPY"} name={allTickers[0] ?? "S&P 500"} height={200} defaultCompare="none" />
+              {/* Only show chart for the user's first ticker — never fake-show SPY as "Mon Portefeuille" */}
+              {allTickers[0] ? (
+                <LiveChart
+                  ticker={allTickers[0]}
+                  name={allAssets.find(a => a.ticker === allTickers[0])?.name ?? allTickers[0]}
+                  height={200}
+                  defaultCompare="SPY"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 gap-2">
+                  <BarChart2 className="h-8 w-8" style={{ color: "var(--foreground-dim)" }} />
+                  <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>
+                    Ajoutez des actifs pour voir l&apos;évolution de votre portefeuille
+                  </p>
+                </div>
+              )}
             </div>
           </section>
 

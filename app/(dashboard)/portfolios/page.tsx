@@ -668,13 +668,23 @@ export default function PortfoliosPage() {
                     ))}
                   </div>
                 </div>
-                <BenchmarkChart
-                  ticker="SPY"
-                  name="Mon Portefeuille"
-                  portfolioData={PORTFOLIO_HISTORY}
-                  height={280}
-                  period={period}
-                />
+                {/* Only show benchmark chart when user has real assets */}
+                {allAssets.length > 0 ? (
+                  <BenchmarkChart
+                    ticker="SPY"
+                    name="Mon Portefeuille"
+                    portfolioData={undefined}
+                    height={280}
+                    period={period}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-40 rounded-xl border"
+                    style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", borderStyle: "dashed" }}>
+                    <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+                      Ajoutez des actifs pour voir votre performance vs benchmarks
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Allocation + Top Movers */}

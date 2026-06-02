@@ -65,19 +65,29 @@ function AssetSelector({ ticker, assetName, onSelect, onClear, priceFetching }: 
 
   async function pick(r: SearchResult) {
     clear(); setOpen(false)
-    // Immediately call onSelect with empty price — will update when fetch resolves
+    // Step 1 — show asset immediately with empty price (starts spinner)
     onSelect(r, "")
-    // Then fetch live price
+
+    // Step 2 — fetch live price with timeout
+    const controller = new AbortController()
+    const timeout    = setTimeout(() => controller.abort(), 8000) // 8s max
     try {
-      const res = await fetch("/api/prices", {
+      const res  = await fetch("/api/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers: [r.ticker] }),
+        body:    JSON.stringify({ tickers: [r.ticker] }),
+        signal:  controller.signal,
       })
       const data = await res.json()
-      const p = data[r.ticker]?.price
-      if (p && p > 0) onSelect(r, p.toFixed(2))
-    } catch {/* keep empty */ }
+      const p    = data[r.ticker]?.price
+      // Always call onSelect again — with price (or empty string to stop spinner)
+      onSelect(r, p && p > 0 ? p.toFixed(2) : "")
+    } catch {
+      // Timeout or network error — stop spinner, price stays empty
+      onSelect(r, "")
+    } finally {
+      clearTimeout(timeout)
+    }
   }
 
   // ── Selected state — show chip ───────────────────────────────────────────────
@@ -217,8 +227,12 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
     setForm(p => ({ ...p, [k]: v }))
 
   function handleAssetSelect(r: SearchResult, price: string) {
+    // price = "" means "first call (start spinner)" OR "fetch failed (stop spinner)"
+    // price = "xxx" means "price resolved (stop spinner)"
+    const isFirstCall = !form.ticker || form.ticker !== r.ticker
+
     if (price) {
-      // Price resolved — update all at once
+      // ✅ Price resolved — stop spinner + fill price
       setPriceFetching(false)
       setForm(p => ({
         ...p,
@@ -227,9 +241,9 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
         assetClass: r.type as AssetClass,
         price,
       }))
-    } else {
-      // Called immediately with empty price — show loading
-      if (!form.price) setPriceFetching(true)
+    } else if (isFirstCall) {
+      // 🔄 First call (asset just selected) — start spinner
+      setPriceFetching(true)
       setForm(p => ({
         ...p,
         ticker:     r.ticker,
@@ -237,6 +251,9 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
         assetClass: r.type as AssetClass,
         price:      p.price, // keep existing price until fetch resolves
       }))
+    } else {
+      // 2nd call with empty price = fetch failed/timeout — stop spinner
+      setPriceFetching(false)
     }
   }
 
