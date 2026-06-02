@@ -83,8 +83,19 @@ function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetch
         signal:  controller.signal,
       })
       const data = await res.json()
-      const p    = data[r.ticker]?.price
-      onPrice(p && p > 0 ? String(p.toFixed(2)) : "")
+      const d = data[r.ticker]
+      if (d) {
+        // API returns { chf, usd, eur } — read user's preferred currency
+        let currency = "chf"
+        try {
+          const stored = localStorage.getItem("preferred-currency")
+          if (stored) currency = stored.toLowerCase()
+        } catch { /* ignore */ }
+        const p = d[currency as "chf"|"usd"|"eur"] ?? d.chf ?? d.usd ?? 0
+        onPrice(p > 0 ? String(p.toFixed(2)) : "")
+      } else {
+        onPrice("")
+      }
     } catch {
       onPrice("") // timeout / network error → stop spinner
     } finally {
