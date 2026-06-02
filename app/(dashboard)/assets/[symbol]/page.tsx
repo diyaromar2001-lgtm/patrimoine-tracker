@@ -5,7 +5,7 @@ import { Topbar } from "@/components/layout/topbar"
 import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge } from "@/components/ui/badge"
 import { useCurrency } from "@/hooks/use-currency"
-import { MOCK_PORTFOLIOS, MOCK_WATCHLIST } from "@/lib/mock-data"
+import { useAppData } from "@/hooks/use-app-data"
 import { assetValue, assetPnlPct, ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import type { AssetClass } from "@/lib/types"
 import { Loader2, TrendingUp, TrendingDown, Star, Plus, ArrowLeft, AlertCircle } from "lucide-react"
@@ -40,15 +40,16 @@ function formatLargeNumber(n: number | null): string {
 export default function AssetDetailPage(props: { params: Promise<{ symbol: string }> }) {
   const { symbol } = use(props.params)
   const decodedSymbol = decodeURIComponent(symbol).toUpperCase()
+  const { portfolios } = useAppData()
 
   const [quote, setQuote]     = useState<QuoteData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
   const { format } = useCurrency()
 
-  // Find if this asset is in any portfolio
-  const heldAsset = MOCK_PORTFOLIOS.flatMap(p => p.assets).find(a => a.ticker === decodedSymbol)
-  const inWatchlist = MOCK_WATCHLIST.some(w => w.ticker === decodedSymbol)
+  // Find if this asset is in any of the user's real portfolios
+  const heldAsset   = portfolios.flatMap(p => p.assets).find(a => a.ticker === decodedSymbol)
+  const inWatchlist = false // watchlist persistence coming soon
 
   useEffect(() => {
     setLoading(true); setError(false)

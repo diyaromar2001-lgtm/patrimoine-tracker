@@ -9,7 +9,7 @@ import { DualPrice } from "@/components/ui/dual-price"
 import { Sparkline } from "@/components/ui/sparkline"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { LiveChart } from "@/components/charts/live-chart"
-import { MOCK_WATCHLIST } from "@/lib/mock-data"
+import { isSupabaseConfigured } from "@/lib/supabase/client"
 import type { WatchlistItem } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import { useLivePrices } from "@/hooks/use-live-prices"
@@ -18,9 +18,10 @@ import { formatCurrency } from "@/lib/utils"
 import { X, Eye, RefreshCw } from "lucide-react"
 
 export default function WatchlistPage() {
-  const [items, setItems] = useState<WatchlistItem[]>(MOCK_WATCHLIST)
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(MOCK_WATCHLIST[0]?.ticker ?? null)
-  const [selectedName, setSelectedName] = useState<string>(MOCK_WATCHLIST[0]?.name ?? "")
+  // Start empty when Supabase is configured (real user account)
+  const [items, setItems] = useState<WatchlistItem[]>([])
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
+  const [selectedName, setSelectedName] = useState<string>("")
   const [search, setSearch] = useState("")
 
   const tickers = items.map(i => i.ticker)
