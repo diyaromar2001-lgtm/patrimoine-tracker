@@ -7,6 +7,7 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
   const sb = createClient()
   if (!sb) return null
 
+  // RLS handles user_id filtering — no need for explicit filter
   const { data: portfoliosData, error: pErr } = await sb
     .from("portfolios")
     .select("*")
@@ -45,7 +46,10 @@ export async function createPortfolio(portfolio: Omit<Portfolio, "id" | "assets"
   const sb = createClient()
   if (!sb) return null
 
+  // user_id is set automatically via RLS (auth.uid())
+  const { data: { user } } = await sb.auth.getUser()
   const { data, error } = await sb.from("portfolios").insert({
+    user_id:     user?.id,
     name:        portfolio.name,
     description: portfolio.description,
     color:       portfolio.color,

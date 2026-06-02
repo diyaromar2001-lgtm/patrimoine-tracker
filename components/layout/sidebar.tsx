@@ -3,11 +3,13 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion } from "framer-motion"
+import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Briefcase, TrendingUp, Eye,
   Calculator, ArrowLeftRight, Settings, Wallet,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, LogOut,
 } from "lucide-react"
+import { createClient, signOut } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 const NAV = [
@@ -27,6 +29,22 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
+  const [user, setUser] = useState<{ email?: string; name?: string; avatar?: string } | null>(null)
+
+  useEffect(() => {
+    const sb = createClient()
+    if (!sb) return
+    sb.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        const meta = data.user.user_metadata ?? {}
+        setUser({
+          email:  data.user.email,
+          name:   meta.full_name ?? meta.name ?? data.user.email?.split("@")[0],
+          avatar: meta.avatar_url ?? meta.picture,
+        })
+      }
+    })
+  }, [])
 
   return (
     <aside
@@ -143,16 +161,36 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         })}
 
         {/* User strip */}
-        {!collapsed && (
-          <div className="mt-2 flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer hover:bg-zinc-800/50 transition-colors">
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-              style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}>
-              P
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-zinc-300">Portfolio</p>
-              <p className="truncate text-[11px] text-zinc-600">pro@exemple.com</p>
-            </div>
+        {user && (
+          <div className={cn(
+            "mt-2 flex items-center gap-3 rounded-lg py-2 transition-colors",
+            collapsed ? "justify-center px-2" : "px-3"
+          )}>
+            {/* Avatar */}
+            {user.avatar ? (
+              <img src={user.avatar} alt={user.name} className="h-7 w-7 flex-shrink-0 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}>
+                {(user.name ?? "U").charAt(0).toUpperCase()}
+              </div>
+            )}
+
+            {!collapsed && (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-zinc-300">{user.name}</p>
+                  <p className="truncate text-[11px] text-zinc-600">{user.email}</p>
+                </div>
+                <button
+                  onClick={signOut}
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-red-500/20 hover:text-red-400"
+                  title="Se déconnecter"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
