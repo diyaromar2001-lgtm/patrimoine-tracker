@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AssetClassBadge } from "@/components/ui/badge"
-import { useTransactions, usePortfolios } from "@/hooks/use-supabase-data"
+import { useAppData } from "@/hooks/use-app-data"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import { formatCurrency } from "@/lib/utils"
@@ -277,8 +277,7 @@ function TxModal({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
-  const { transactions, addTransaction, editTransaction, removeTransaction } = useTransactions()
-  const { portfolios } = usePortfolios()
+  const { transactions, portfolios, addTransaction, editTransaction, removeTransaction } = useAppData()
   // Use the first real portfolio ID (Supabase UUID), not hardcoded "p1"
   const defaultPortfolioId = portfolios[0]?.id ?? "p1"
 

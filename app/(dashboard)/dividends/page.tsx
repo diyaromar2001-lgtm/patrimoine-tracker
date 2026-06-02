@@ -6,10 +6,11 @@ import { AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { StatusBadge, AssetClassBadge } from "@/components/ui/badge"
-import { MOCK_DIVIDENDS, MOCK_PORTFOLIOS } from "@/lib/mock-data"
 import type { DividendEvent } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS, portfolioTotalValue } from "@/lib/types"
 import { formatCurrency } from "@/lib/utils"
+import { useAppData } from "@/hooks/use-app-data"
+import { useCurrency } from "@/hooks/use-currency"
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Plus, X, Check, ChevronLeft, ChevronRight } from "lucide-react"
 
 const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
@@ -18,10 +19,11 @@ const DAYS_FR   = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
 function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate() }
 function firstDow(y: number, m: number) { return (new Date(y, m, 1).getDay() + 6) % 7 }
 
-const PORTFOLIO_TICKERS = MOCK_PORTFOLIOS.flatMap(p => p.assets.map(a => a.ticker))
-
 export default function DividendsPage() {
-  const [dividends, setDividends] = useState<DividendEvent[]>(MOCK_DIVIDENDS)
+  const { portfolios } = useAppData()
+  const { format }     = useCurrency()
+  // Only user-added dividends — start empty
+  const [dividends, setDividends] = useState<DividendEvent[]>([])
   const [filter, setFilter] = useState<"all"|"upcoming"|"paid">("all")
   const [viewMode, setViewMode] = useState<"list"|"calendar">("list")
   const [showAdd, setShowAdd] = useState(false)
@@ -33,9 +35,11 @@ export default function DividendsPage() {
 
   // Fetch live dividend yields
   useEffect(() => {
+    if (!portfolios.length) { setLiveData({}); return }
     const fetch_ = async () => {
       const results: Record<string, { rate: number; yield: number; exDate: string | null }> = {}
-      for (const ticker of PORTFOLIO_TICKERS.slice(0, 5)) {
+      const tickers = portfolios.flatMap(p => p.assets.map(a => a.ticker)).filter((t, i, arr) => arr.indexOf(t) === i)
+      for (const ticker of tickers.slice(0, 5)) {
         try {
           const res  = await fetch("/api/dividends?ticker=" + encodeURIComponent(ticker))
           const data = await res.json()
@@ -47,9 +51,9 @@ export default function DividendsPage() {
       setLiveData(results)
     }
     fetch_()
-  }, [])
+  }, [portfolios])
 
-  const totalValue  = MOCK_PORTFOLIOS.reduce((s, p) => s + portfolioTotalValue(p), 0)
+  const totalValue  = portfolios.reduce((s, p) => s + portfolioTotalValue(p), 0)
   const totalAnnual = dividends.reduce((s, d) => {
     const mult = { annual: 1, "semi-annual": 2, quarterly: 4, monthly: 12 }[d.frequency] ?? 1
     return s + d.amount * mult
@@ -96,10 +100,10 @@ export default function DividendsPage() {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
           {[
-            { label: "Revenu annuel estimé", value: formatCurrency(totalAnnual), sub: totalValue > 0 ? ((totalAnnual / totalValue) * 100).toFixed(2) + "% yield" : "", icon: TrendingUp, color: "#22c55e" },
-            { label: "Revenu mensuel moyen", value: formatCurrency(totalAnnual / 12), sub: formatCurrency(totalAnnual / 52) + "/sem.", icon: CalendarDays, color: "#3b82f6" },
-            { label: "Prochain versement", value: nextDiv ? "+" + formatCurrency(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + " jour" + (daysToNext > 1 ? "s" : "") : "", icon: Clock, color: "#f59e0b" },
-            { label: "Reçus (année en cours)", value: formatCurrency(paidTotal), sub: paidCount + " versement" + (paidCount > 1 ? "s" : ""), icon: CheckCircle2, color: "#a78bfa" },
+            { label: "Revenu annuel estimé", value: format(totalAnnual), sub: totalValue > 0 ? ((totalAnnual / totalValue) * 100).toFixed(2) + "% yield" : "", icon: TrendingUp, color: "#22c55e" },
+            { label: "Revenu mensuel moyen", value: format(totalAnnual / 12), sub: format(totalAnnual / 52) + "/sem.", icon: CalendarDays, color: "#3b82f6" },
+            { label: "Prochain versement", value: nextDiv ? "+" + format(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + " jour" + (daysToNext > 1 ? "s" : "") : "", icon: Clock, color: "#f59e0b" },
+            { label: "Reçus (année en cours)", value: format(paidTotal), sub: paidCount + " versement" + (paidCount > 1 ? "s" : ""), icon: CheckCircle2, color: "#a78bfa" },
           ].map(({ label, value, sub, icon: Icon, color }) => (
             <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
               <div className="flex items-center gap-2 mb-2">
@@ -206,7 +210,7 @@ export default function DividendsPage() {
                       return (
                         <div key={di} className="mt-0.5 rounded px-1 text-[9px] font-semibold truncate"
                           style={{ backgroundColor: col + "22", color: col }}>
-                          {d.ticker} +{formatCurrency(d.amount)}
+                          {d.ticker} +{format(d.amount)}
                         </div>
                       )
                     })}
@@ -246,7 +250,7 @@ export default function DividendsPage() {
                   </div>
                   <p className="text-center text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{new Date(d.exDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</p>
                   <p className="text-center text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{new Date(d.payDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}</p>
-                  <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "#22c55e" }}>+{formatCurrency(d.amount)}</p>
+                  <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "#22c55e" }}>+{format(d.amount)}</p>
                   <p className="text-center text-xs" style={{ color: "var(--foreground-muted)" }}>{freqLabel}</p>
                   <div className="flex justify-end"><StatusBadge status={d.status} /></div>
                 </motion.div>

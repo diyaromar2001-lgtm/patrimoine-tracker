@@ -3,111 +3,81 @@
 import { useState, useEffect, useMemo } from "react"
 import { Topbar } from "@/components/layout/topbar"
 import { StatCard } from "@/components/ui/stat-card"
-import { useLivePrices } from "@/hooks/use-live-prices"
-import { useCurrency } from "@/hooks/use-currency"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
 import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
-import { Sparkline } from "@/components/ui/sparkline"
-import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
-import { usePortfolios, useTransactions } from "@/hooks/use-supabase-data"
+import { useAppData } from "@/hooks/use-app-data"
+import { useLivePrices } from "@/hooks/use-live-prices"
+import { useCurrency } from "@/hooks/use-currency"
 import {
-  portfolioTotalValue,
   portfolioTotalCost,
-  portfolioPnl,
-  portfolioPnlPct,
-  assetValue,
-  assetPnl,
   assetPnlPct,
-  ASSET_CLASS_LABELS,
-  ASSET_CLASS_COLORS,
+  ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
-import { formatCurrency } from "@/lib/utils"
 import {
-  Wallet,
-  TrendingUp,
-  BarChart2,
-  Activity,
-  Calendar,
-  ArrowUpRight,
-  Layers,
+  Wallet, TrendingUp, BarChart2, Activity,
+  Calendar, ArrowUpRight, Layers, Plus,
 } from "lucide-react"
 import Link from "next/link"
 
-// ─── Static data ─────────────────────────────────────────────────────────────
-// These are now computed inside the component using live hook data
-
-const PERIODS = ["1S", "1M", "3M", "6M", "1A", "Max"] as const
+// ─── Static helpers ───────────────────────────────────────────────────────────
+const PERIODS = ["1S","1M","3M","6M","1A","Max"] as const
 type Period = (typeof PERIODS)[number]
-
-const filterHistory = (period: Period) => {
-  const now = new Date()
-  const cutoff = new Date()
-  if (period === "1S") cutoff.setDate(now.getDate() - 7)
-  else if (period === "1M") cutoff.setMonth(now.getMonth() - 1)
-  else if (period === "3M") cutoff.setMonth(now.getMonth() - 3)
-  else if (period === "6M") cutoff.setMonth(now.getMonth() - 6)
-  else if (period === "1A") cutoff.setFullYear(now.getFullYear() - 1)
-  else return PORTFOLIO_HISTORY
-  return PORTFOLIO_HISTORY.filter((s) => new Date(s.date) >= cutoff)
-}
 
 interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | null }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const { portfolios, transactions, loading } = useAppData()
+  const { format } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
-  const historySlice            = filterHistory(period)
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
-  const { format }              = useCurrency()
 
-  // ─── Supabase-backed data (falls back to mock when not configured) ──────────
-  const { portfolios }     = usePortfolios()
-  const { transactions }   = useTransactions()
-  const ALL_ASSETS         = useMemo(() => portfolios.flatMap(p => p.assets), [portfolios])
-  const TOTAL_COST         = useMemo(() => portfolios.reduce((s, p) => s + portfolioTotalCost(p), 0), [portfolios])
-  const RECENT_TX          = useMemo(() =>
-    [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5),
-    [transactions]
-  )
+  // All assets from all portfolios
+  const allAssets  = useMemo(() => portfolios.flatMap(p => p.assets), [portfolios])
+  const allTickers = useMemo(() => allAssets.map(a => a.ticker), [allAssets])
+  const hasAssets  = allAssets.length > 0
 
-  // ─── Live prices for ALL held tickers ──────────────────────────────────────
-  const allTickers = useMemo(() =>
-    portfolios.flatMap(p => p.assets.map(a => a.ticker)),
+  // Live prices
+  const { prices: livePrices } = useLivePrices(allTickers, 30_000)
+
+  // Cost base (avg buy prices from DB)
+  const totalCost = useMemo(
+    () => portfolios.reduce((s, p) => s + portfolioTotalCost(p), 0),
     [portfolios]
   )
-  const { prices: livePrices, secondsAgo, nextRefreshIn } = useLivePrices(allTickers, 30_000)
 
-  // ─── Compute totals using live prices where available ──────────────────────
-  const totalValue = useMemo(() =>
-    portfolios.flatMap(p => p.assets).reduce((s, a) => {
+  // Total value using live prices where available
+  const totalValue = useMemo(
+    () => allAssets.reduce((s, a) => {
       const lp = livePrices[a.ticker]?.price
-      return s + (lp ? lp * a.quantity : a.currentPrice * a.quantity)
+      return s + (lp ?? a.currentPrice) * a.quantity
     }, 0),
-    [livePrices]
+    [allAssets, livePrices]
   )
-  const totalCost   = TOTAL_COST
+
   const totalPnl    = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
-  // Today P&L from PORTFOLIO_HISTORY (approximation)
-  const prevHistVal   = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 2]?.value ?? totalValue
-  const todayPnl      = totalValue - prevHistVal
-  const todayPnlPct   = prevHistVal > 0 ? (todayPnl / prevHistVal) * 100 : 0
+  // Today P&L: sum of each asset's day change
+  const todayPnl = useMemo(
+    () => allAssets.reduce((s, a) => {
+      const p = livePrices[a.ticker]
+      if (!p) return s
+      return s + (p.changePct / 100) * p.price * a.quantity
+    }, 0),
+    [allAssets, livePrices]
+  )
+  const todayPnlPct = totalValue > 0 ? (todayPnl / totalValue) * 100 : 0
 
-  // Live-enriched assets
-  const allAssetsLive = useMemo(() =>
-    ALL_ASSETS.map(a => ({
-      ...a,
-      currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice,
-    })), [livePrices])
-
-  // Allocation by class (live)
+  // Allocation by class
   const allocationEntries = useMemo(() => {
-    const byClass = allAssetsLive.reduce<Record<string, number>>((acc, a) => {
-      acc[a.assetClass] = (acc[a.assetClass] ?? 0) + a.currentPrice * a.quantity
-      return acc
-    }, {})
+    const byClass: Record<string, number> = {}
+    allAssets.forEach(a => {
+      const price = livePrices[a.ticker]?.price ?? a.currentPrice
+      byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + price * a.quantity
+    })
     return Object.entries(byClass)
       .sort(([, a], [, b]) => b - a)
       .map(([cls, val]) => ({
@@ -115,18 +85,29 @@ export default function DashboardPage() {
         val,
         pct: totalValue > 0 ? (val / totalValue) * 100 : 0,
       }))
-  }, [allAssetsLive, totalValue])
+  }, [allAssets, livePrices, totalValue])
 
-  // Top 5 holdings by value (live)
+  // Top 5 holdings
   const top5 = useMemo(() =>
-    [...allAssetsLive].sort((a, b) => (b.currentPrice * b.quantity) - (a.currentPrice * a.quantity)).slice(0, 5),
-    [allAssetsLive]
+    [...allAssets]
+      .map(a => ({ ...a, currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice }))
+      .sort((a, b) => (b.currentPrice * b.quantity) - (a.currentPrice * a.quantity))
+      .slice(0, 5),
+    [allAssets, livePrices]
   )
 
-  // Fetch earnings for all held stock tickers
+  // Recent transactions
+  const recentTx = useMemo(() =>
+    [...transactions]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5),
+    [transactions]
+  )
+
+  // Earnings calendar (only when we have stocks)
   useEffect(() => {
-    const stockTickers = portfolios
-      .flatMap(p => p.assets)
+    if (!hasAssets) { setEarnings([]); return }
+    const stockTickers = allAssets
       .filter(a => a.assetClass === "stock")
       .map(a => a.ticker)
       .filter((t, i, arr) => arr.indexOf(t) === i)
@@ -136,7 +117,43 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(setEarnings)
       .catch(() => {})
-  }, [])
+  }, [hasAssets, allAssets])
+
+  // ─── Empty onboarding state ───────────────────────────────────────────────
+  if (!loading && !hasAssets) {
+    return (
+      <div className="flex flex-col">
+        <Topbar title="Dashboard" subtitle="Vue d'ensemble de votre patrimoine" />
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 p-8 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl"
+            style={{ background: "linear-gradient(135deg,#3b82f615,#6366f115)", border: "1px solid #3b82f630" }}>
+            <Wallet className="h-10 w-10" style={{ color: "#3b82f6" }} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold mb-2" style={{ color: "var(--foreground)" }}>
+              Commencez à suivre votre patrimoine
+            </h2>
+            <p className="text-sm max-w-sm" style={{ color: "var(--foreground-muted)" }}>
+              Ajoutez vos premiers actifs pour voir votre valeur nette, P&amp;L et graphiques en temps réel.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 justify-center">
+            <Link href="/portfolios"
+              className="flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white transition-all hover:opacity-90"
+              style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)", boxShadow: "0 0 20px #3b82f630" }}>
+              <Plus className="h-4 w-4" />
+              Ajouter un actif
+            </Link>
+            <Link href="/transactions"
+              className="flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium transition-colors hover:bg-zinc-800"
+              style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}>
+              Saisir une transaction
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col">
@@ -144,23 +161,15 @@ export default function DashboardPage() {
 
       <div className="flex-1 space-y-5 sm:space-y-8 p-4 sm:p-6">
 
-        {/* ─── Hero ───────────────────────────────────────────── */}
+        {/* ─── Hero ─── */}
         <section>
-          <div
-            className="relative overflow-hidden rounded-2xl border p-6"
-            style={{
-              background: "linear-gradient(135deg, #0f1729 0%, #111113 60%, #0d180d 100%)",
-              borderColor: "var(--border)",
-            }}
-          >
+          <div className="relative overflow-hidden rounded-2xl border p-6"
+            style={{ background: "linear-gradient(135deg,#0f1729 0%,#111113 60%,#0d180d 100%)", borderColor: "var(--border)" }}>
             <div className="pointer-events-none absolute -top-24 -left-16 h-64 w-64 rounded-full opacity-20 blur-3xl" style={{ backgroundColor: "#3b82f6" }} />
             <div className="pointer-events-none absolute -bottom-10 right-16 h-40 w-40 rounded-full opacity-10 blur-2xl" style={{ backgroundColor: "#22c55e" }} />
-
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-widest" style={{ color: "var(--foreground-dim)" }}>
-                  Patrimoine net total
-                </p>
+                <p className="text-xs font-medium uppercase tracking-widest" style={{ color: "var(--foreground-dim)" }}>Patrimoine net total</p>
                 <div className="mt-2 flex items-baseline gap-3">
                   <span className="text-2xl sm:text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--foreground)" }}>
                     {format(totalValue)}
@@ -171,88 +180,71 @@ export default function DashboardPage() {
                   {todayPnl >= 0 ? "+" : ""}{format(todayPnl)} aujourd&apos;hui · {portfolios.length} portefeuille{portfolios.length > 1 ? "s" : ""}
                 </p>
               </div>
-              <Link
-                href="/portfolios"
-                className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
-                style={{ background: "linear-gradient(135deg, #3b82f6, #6366f1)", boxShadow: "0 0 24px #3b82f640" }}
-              >
-                Voir les portefeuilles
-                <ArrowUpRight className="h-4 w-4" />
+              <Link href="/portfolios"
+                className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
+                style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)", boxShadow: "0 0 24px #3b82f640" }}>
+                Voir les portefeuilles <ArrowUpRight className="h-4 w-4" />
               </Link>
             </div>
           </div>
         </section>
 
-        {/* ─── KPIs ───────────────────────────────────────────── */}
+        {/* ─── KPIs ─── */}
         <section>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
             <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="#3b82f6" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
             <StatCard label="P&L total" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis le début" icon={TrendingUp} iconColor="#22c55e" index={2} />
-            <StatCard label="Valeur du portefeuille" value={format(totalValue)} change={todayPnlPct} changeLabel="vs hier" icon={BarChart2} iconColor="#f59e0b" index={3} />
+            <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={3} />
           </div>
         </section>
 
-        {/* ─── Chart + Allocation ─────────────────────────────── */}
+        {/* ─── Chart + Allocation ─── */}
         <div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
-          {/* Performance chart */}
+          {/* Chart */}
           <section className="lg:col-span-3 space-y-3">
             <div className="flex items-center justify-between">
               <SectionHeader title="Évolution du patrimoine" description="Valeur nette historique" />
               <div className="flex gap-1">
-                {PERIODS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150"
+                {PERIODS.map(p => (
+                  <button key={p} onClick={() => setPeriod(p)}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
                     style={{
-                      color: period === p ? "white" : "var(--foreground-dim)",
                       backgroundColor: period === p ? "var(--accent)" : "transparent",
-                    }}
-                  >
+                      color: period === p ? "white" : "var(--foreground-dim)",
+                    }}>
                     {p}
                   </button>
                 ))}
               </div>
             </div>
-            <div
-              className="rounded-xl border p-4"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
-            >
-              <AreaChart data={historySlice} height={220} />
+            <div className="rounded-xl border p-3" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+              <p className="text-[11px] mb-2 px-1" style={{ color: "var(--foreground-dim)" }}>
+                Graphique basé sur les prix en temps réel de vos positions actuelles
+              </p>
+              <LiveChart ticker={allTickers[0] ?? "SPY"} name={allTickers[0] ?? "S&P 500"} height={200} defaultCompare="none" />
             </div>
           </section>
 
-          {/* Allocation */}
+          {/* Allocation donut */}
           <section className="lg:col-span-2 space-y-3">
             <SectionHeader title="Répartition" description="Par classe d'actifs" />
-            <div
-              className="rounded-xl border p-5"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
-            >
-              {/* Donut */}
+            <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
               <div className="mb-5 flex justify-center">
-                <div className="relative flex h-28 w-28 items-center justify-center">
+                <div className="relative h-28 w-28">
                   <DonutChart entries={allocationEntries} />
-                  <div className="absolute flex flex-col items-center text-center">
-                    <span className="text-sm font-bold tabular-nums" style={{ color: "var(--foreground)" }}>
-                      {allocationEntries.length}
-                    </span>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-sm font-bold" style={{ color: "var(--foreground)" }}>{allocationEntries.length}</span>
                     <span className="text-[10px]" style={{ color: "var(--foreground-dim)" }}>classes</span>
                   </div>
                 </div>
               </div>
-
               <div className="space-y-2.5">
                 {allocationEntries.map(({ cls, pct }) => (
                   <div key={cls} className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: ASSET_CLASS_COLORS[cls] }} />
-                    <span className="flex-1 text-xs" style={{ color: "var(--foreground-muted)" }}>
-                      {ASSET_CLASS_LABELS[cls]}
-                    </span>
-                    <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
-                      {pct.toFixed(1)}%
-                    </span>
+                    <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ASSET_CLASS_COLORS[cls] }} />
+                    <span className="flex-1 text-xs" style={{ color: "var(--foreground-muted)" }}>{ASSET_CLASS_LABELS[cls]}</span>
+                    <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{pct.toFixed(1)}%</span>
                   </div>
                 ))}
               </div>
@@ -260,37 +252,37 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* ─── Top Holdings + Recent Tx ────────────────────────── */}
+        {/* ─── Top holdings + Recent transactions ─── */}
         <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-          {/* Top 5 holdings */}
+          {/* Top 5 */}
           <section className="space-y-3">
-            <SectionHeader
-              title="Top positions"
-              description="5 plus grandes positions"
+            <SectionHeader title="Top positions" description="5 plus grandes positions"
               action={<Link href="/portfolios" className="text-xs hover:text-white transition-colors" style={{ color: "var(--foreground-muted)" }}>Tout voir →</Link>}
             />
             <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-              {top5.map((asset, i) => {
-                const pnl = assetPnl(asset)
-                const pnlPct = assetPnlPct(asset)
+              {top5.length === 0 ? (
+                <div className="flex items-center justify-center py-10">
+                  <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucune position</p>
+                </div>
+              ) : top5.map((asset, i) => {
+                const pnlPct  = assetPnlPct(asset)
+                const color   = ASSET_CLASS_COLORS[asset.assetClass]
                 return (
-                  <div key={asset.id} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-zinc-800/30"
-                    style={{ borderBottom: i < top5.length - 1 ? "1px solid var(--border)" : "none" }}
-                  >
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                      style={{ backgroundColor: ASSET_CLASS_COLORS[asset.assetClass] }}
-                    >
+                  <div key={asset.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
+                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                    <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold text-white"
+                      style={{ backgroundColor: `${color}18`, color }}>
                       {asset.ticker.slice(0, 2)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
                       <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>
-                        {asset.quantity} × {formatCurrency(asset.currentPrice)}
+                        {asset.quantity} × {format(asset.currentPrice)}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
-                        {format(assetValue(asset))}
+                        {format(asset.currentPrice * asset.quantity)}
                       </p>
                       <ChangeBadge value={pnlPct} showIcon={false} />
                     </div>
@@ -302,24 +294,25 @@ export default function DashboardPage() {
 
           {/* Recent transactions */}
           <section className="space-y-3">
-            <SectionHeader
-              title="Dernières transactions"
-              description="Activité récente"
+            <SectionHeader title="Dernières transactions" description="Activité récente"
               action={<Link href="/transactions" className="text-xs hover:text-white transition-colors" style={{ color: "var(--foreground-muted)" }}>Tout voir →</Link>}
             />
             <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-              {RECENT_TX.map((tx, i) => {
-                const isBuy = tx.type === "buy"
-                const isDiv = tx.type === "dividend"
-                const color = isBuy ? "#22c55e" : isDiv ? "#f59e0b" : "#ef4444"
-                const label = isBuy ? "Achat" : isDiv ? "Dividende" : tx.type === "sell" ? "Vente" : "Transfert"
+              {recentTx.length === 0 ? (
+                <div className="flex flex-col items-center py-10 gap-2">
+                  <Activity className="h-7 w-7" style={{ color: "var(--foreground-dim)" }} />
+                  <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucune transaction</p>
+                </div>
+              ) : recentTx.map((tx, i) => {
+                const isBuy   = tx.type === "buy"
+                const isDiv   = tx.type === "dividend"
+                const color   = isBuy ? "#22c55e" : isDiv ? "#f59e0b" : "#ef4444"
+                const label   = isBuy ? "Achat" : isDiv ? "Dividende" : tx.type === "sell" ? "Vente" : "Transfert"
                 return (
-                  <div key={tx.id} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-zinc-800/30"
-                    style={{ borderBottom: i < RECENT_TX.length - 1 ? "1px solid var(--border)" : "none" }}
-                  >
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                      style={{ backgroundColor: `${color}18`, color }}
-                    >
+                  <div key={tx.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
+                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                    <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-xs font-bold"
+                      style={{ backgroundColor: `${color}18`, color }}>
                       {tx.ticker.slice(0, 2)}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -329,7 +322,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <p className="text-xs font-semibold tabular-nums" style={{ color }}>
-                      {isBuy ? "-" : "+"}{format(tx.quantity * tx.price)}
+                      {isBuy ? "−" : "+"}{format(tx.quantity * tx.price)}
                     </p>
                   </div>
                 )
@@ -338,29 +331,22 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* ─── Portfolio vs S&P500 / MSCI World ── */}
-        <section className="space-y-3">
-          <SectionHeader title="Portefeuille vs Benchmarks" description="Performance relative vs S&P 500 et MSCI World (normalisé à 100)" />
-          <LiveChart ticker="SPY" name="S&P 500 (SPY)" height={260} defaultCompare="SPY,VWCE.DE" />
-        </section>
-
-        {/* ─── Earnings Calendar ─────────────────── */}
+        {/* ─── Earnings calendar ─── */}
         {earnings.length > 0 && (
           <section className="space-y-3">
-            <SectionHeader title="Calendrier des résultats" description="Prochaines publications pour vos positions" />
+            <SectionHeader title="Prochains résultats" description="Dates de publication pour vos positions" />
             <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
               {earnings.slice(0, 6).map((e, i) => {
                 const daysLeft = Math.ceil((new Date(e.earningsDate).getTime() - Date.now()) / 86400000)
                 const isPast   = daysLeft < 0
-                const color    = ASSET_CLASS_COLORS["stock"]
                 return (
-                  <div key={e.ticker} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-zinc-800/20"
+                  <div key={e.ticker} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/20 transition-colors"
                     style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
                     <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
-                      style={{ backgroundColor: color + "22", color }}>
+                      style={{ backgroundColor: "#3b82f622", color: "#3b82f6" }}>
                       {e.ticker.slice(0, 4)}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1">
                       <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>{e.ticker}</p>
                       <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>
                         {new Date(e.earningsDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
@@ -368,10 +354,10 @@ export default function DashboardPage() {
                     </div>
                     {e.epsAvg != null && (
                       <p className="text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
-                        EPS moy. {e.epsAvg > 0 ? "+" : ""}{e.epsAvg.toFixed(2)}$
+                        EPS {e.epsAvg > 0 ? "+" : ""}{e.epsAvg.toFixed(2)}$
                       </p>
                     )}
-                    <span className="flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                    <span className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
                       style={{
                         backgroundColor: isPast ? "var(--background-hover)" : "#f59e0b18",
                         color: isPast ? "var(--foreground-dim)" : "#f59e0b",
@@ -389,29 +375,23 @@ export default function DashboardPage() {
   )
 }
 
-// ─── Mini SVG Donut ──────────────────────────────────────────────────────────
+// ─── Mini SVG Donut ───────────────────────────────────────────────────────────
 function DonutChart({ entries }: { entries: { cls: string; pct: number }[] }) {
-  const r = 14, cx = 18, cy = 18, stroke = 3.5
+  const r = 14, cx = 18, cy = 18, stroke = 3.5, circ = 2 * Math.PI * r
   let cumulative = 0
-  const circumference = 2 * Math.PI * r
-
   return (
     <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke} />
       {entries.map(({ cls, pct }) => {
-        const dash = (pct / 100) * circumference
-        const offset = (1 - cumulative / 100) * circumference
-        cumulative += pct
+        const dash   = (pct / 100) * circ
+        const offset = (1 - cumulative / 100) * circ
+        cumulative  += pct
         return (
-          <circle
-            key={cls}
-            cx={cx} cy={cy} r={r}
-            fill="none"
+          <circle key={cls} cx={cx} cy={cy} r={r} fill="none"
             stroke={ASSET_CLASS_COLORS[cls as keyof typeof ASSET_CLASS_COLORS] ?? "#6b7280"}
             strokeWidth={stroke}
-            strokeDasharray={`${dash} ${circumference - dash}`}
-            strokeDashoffset={-circumference + offset}
-            strokeLinecap="butt"
+            strokeDasharray={`${dash} ${circ - dash}`}
+            strokeDashoffset={-circ + offset}
           />
         )
       })}

@@ -9,10 +9,9 @@ import { AssetSearch } from "@/components/ui/asset-search"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
-import { useTransactions } from "@/hooks/use-supabase-data"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
-import { usePortfolios } from "@/hooks/use-supabase-data"
+import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import {
   portfolioTotalValue, portfolioTotalCost, portfolioPnl, portfolioPnlPct,
@@ -356,9 +355,10 @@ export default function PortfoliosPage() {
     removePortfolio: dbRemovePortfolio,
     addAsset: dbAddAsset,
     removeAsset: dbRemoveAsset,
-    setPortfolios,
-  } = usePortfolios()
-  const { addTransaction } = useTransactions()
+    addTransaction,
+  } = useAppData()
+  // setPortfolios not available in AppData — mutations are reflected automatically
+  const setPortfolios = (_: unknown) => {} // noop placeholder
   const [activeTab, setActiveTab] = useState("global")
   const [txModal, setTxModal]     = useState<{ defaultPortfolioId?: string } | null>(null)
 
