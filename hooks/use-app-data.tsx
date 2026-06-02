@@ -6,7 +6,7 @@ import {
 } from "react"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import * as Q from "@/lib/supabase/queries"
-import type { Portfolio, Transaction, Asset, AssetClass } from "@/lib/types"
+import type { Portfolio, Transaction, Asset } from "@/lib/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,29 +111,104 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   async function addTransaction(tx: Omit<Transaction, "id">): Promise<{ ok: boolean; error?: string }> {
     const tempId = `local-${Date.now()}`
+
+    // ── 1. Optimistic update: add transaction ────────────────────────────────
     setTransactions(prev => [{ ...tx, id: tempId }, ...prev])
+
+    // ── 2. Optimistic update: sync portfolio assets ──────────────────────────
+    if (tx.type === "buy") {
+      setPortfolios(prev => prev.map(p => {
+        if (p.id !== tx.portfolioId) return p
+        const existing = p.assets.find(a => a.ticker === tx.ticker)
+        if (existing) {
+          // Update qty + weighted avg price
+          const newQty = existing.quantity + tx.quantity
+          const newAvg = (existing.quantity * existing.avgBuyPrice + tx.quantity * tx.price) / newQty
+          return {
+            ...p,
+            assets: p.assets.map(a =>
+              a.ticker === tx.ticker
+                ? { ...a, quantity: newQty, avgBuyPrice: newAvg }
+                : a
+            ),
+          }
+        } else {
+          // New position
+          const newAsset: Asset = {
+            id: `local-${Date.now()}`,
+            portfolioId:  tx.portfolioId,
+            ticker:       tx.ticker,
+            name:         tx.assetName,
+            assetClass:   tx.assetClass,
+            quantity:     tx.quantity,
+            avgBuyPrice:  tx.price,
+            currentPrice: tx.price,
+            currency:     tx.currency ?? "CHF",
+          }
+          return { ...p, assets: [...p.assets, newAsset] }
+        }
+      }))
+    } else if (tx.type === "sell") {
+      setPortfolios(prev => prev.map(p => {
+        if (p.id !== tx.portfolioId) return p
+        return {
+          ...p,
+          assets: p.assets
+            .map(a => a.ticker === tx.ticker
+              ? { ...a, quantity: a.quantity - tx.quantity }
+              : a
+            )
+            .filter(a => a.quantity > 0),
+        }
+      }))
+    }
 
     if (!isSupabaseConfigured) return { ok: true }  // local-only mode
 
     try {
+      // ── 3. Save transaction to Supabase ──────────────────────────────────
       const result = await Q.createTransaction(tx)
-      if (result) {
-        setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
-        return { ok: true }
-      } else {
-        // Supabase returned null — remove optimistic entry
+      if (!result) {
+        // Revert optimistic updates
         setTransactions(prev => prev.filter(t => t.id !== tempId))
-        const msg = "Supabase: insert a retourné null. Vérifiez les politiques RLS et le portfolioId."
+        await refresh()
+        const msg = "Supabase: insert retourné null. Vérifiez les politiques RLS."
         console.error("[AppData] addTransaction:", msg, tx)
         return { ok: false, error: msg }
       }
+
+      setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
+
+      // ── 4. Sync asset in Supabase ─────────────────────────────────────────
+      if (tx.type === "buy") {
+        await Q.upsertAssetFromBuy({
+          portfolioId: tx.portfolioId,
+          ticker:      tx.ticker,
+          assetName:   tx.assetName,
+          assetClass:  tx.assetClass,
+          quantity:    tx.quantity,
+          price:       tx.price,
+          currency:    tx.currency ?? "CHF",
+        })
+      } else if (tx.type === "sell") {
+        await Q.reduceAssetFromSell({
+          portfolioId: tx.portfolioId,
+          ticker:      tx.ticker,
+          quantity:    tx.quantity,
+        })
+      }
+
+      // ── 5. Reload to get consistent state (real IDs, current prices) ──────
+      await refresh()
+      return { ok: true }
+
     } catch (e) {
       const msg = String(e)
       console.error("[AppData] addTransaction exception:", msg)
       setTransactions(prev => prev.filter(t => t.id !== tempId))
+      await refresh()
       return { ok: false, error: msg }
     }
-    return { ok: false, error: "Erreur inconnue" }
   }
 
   async function editTransaction(id: string, updates: Partial<Omit<Transaction, "id">>) {

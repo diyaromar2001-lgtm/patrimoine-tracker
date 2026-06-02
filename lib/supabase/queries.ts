@@ -174,3 +174,87 @@ export async function deleteTransaction(id: string) {
   const { error } = await sb.from("transactions").delete().eq("id", id)
   return !error
 }
+// ─── Asset upsert from transaction ────────────────────────────────────────────
+
+/**
+ * Called after a BUY transaction:
+ *  - If the asset already exists in the portfolio → update qty + recalculate avg price
+ *  - Otherwise → insert a new asset row
+ */
+export async function upsertAssetFromBuy(tx: {
+  portfolioId: string
+  ticker:      string
+  assetName:   string
+  assetClass:  string
+  quantity:    number
+  price:       number
+  currency:    string
+}) {
+  const sb = createClient()
+  if (!sb) return
+
+  // Check if asset already exists in this portfolio
+  const { data: existing } = await sb
+    .from("assets")
+    .select("id, quantity, avg_buy_price")
+    .eq("portfolio_id", tx.portfolioId)
+    .eq("ticker", tx.ticker)
+    .maybeSingle()
+
+  if (existing) {
+    // Recalculate: weighted avg price
+    const oldQty  = Number(existing.quantity)
+    const oldAvg  = Number(existing.avg_buy_price)
+    const newQty  = oldQty + tx.quantity
+    const newAvg  = (oldQty * oldAvg + tx.quantity * tx.price) / newQty
+
+    const { error } = await sb.from("assets")
+      .update({ quantity: newQty, avg_buy_price: Number(newAvg.toFixed(4)) })
+      .eq("id", existing.id)
+
+    if (error) console.error("[upsertAsset] update error:", error.message, error.details)
+  } else {
+    // Create new asset row
+    const { error } = await sb.from("assets").insert({
+      portfolio_id:  tx.portfolioId,
+      ticker:        tx.ticker,
+      name:          tx.assetName,
+      asset_class:   tx.assetClass,
+      quantity:      tx.quantity,
+      avg_buy_price: tx.price,
+      currency:      tx.currency ?? "CHF",
+    })
+
+    if (error) console.error("[upsertAsset] insert error:", error.message, error.details)
+  }
+}
+
+/**
+ * Called after a SELL transaction — reduces the asset quantity.
+ * If quantity reaches 0 or below, the asset is deleted.
+ */
+export async function reduceAssetFromSell(tx: {
+  portfolioId: string
+  ticker:      string
+  quantity:    number
+}) {
+  const sb = createClient()
+  if (!sb) return
+
+  const { data: existing } = await sb
+    .from("assets")
+    .select("id, quantity")
+    .eq("portfolio_id", tx.portfolioId)
+    .eq("ticker", tx.ticker)
+    .maybeSingle()
+
+  if (!existing) return
+
+  const newQty = Number(existing.quantity) - tx.quantity
+
+  if (newQty <= 0) {
+    await sb.from("assets").delete().eq("id", existing.id)
+  } else {
+    await sb.from("assets").update({ quantity: Number(newQty.toFixed(8)) }).eq("id", existing.id)
+  }
+}
