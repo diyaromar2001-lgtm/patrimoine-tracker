@@ -7,7 +7,7 @@ interface ChartPoint { time: number; value: number }
 interface ComparisonSeries { ticker: string; data: ChartPoint[] }
 interface LiveChartData { main: ChartPoint[]; comparisons: ComparisonSeries[] }
 
-const PERIODS = ["1W","1M","3M","6M","1Y","2Y","5Y"] as const
+const PERIODS = ["1W","1M","3M","6M","1Y","2Y","5Y","MAX"] as const
 type Period = (typeof PERIODS)[number]
 
 // Comparison options: none | SPY | SPY+VWCE
@@ -111,11 +111,24 @@ export function LiveChart({ ticker, name, height = 300, defaultCompare = "none" 
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
         <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{name ?? ticker}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{name ?? ticker}</p>
+            {/* Chart shows native currency — explicit label */}
+            {compare === "none" && (
+              <span className="text-[10px] rounded px-1.5 py-0.5 tabular-nums"
+                style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-tertiary)" }}>
+                Prix natif
+              </span>
+            )}
+          </div>
           {stats && !loading && (
             <p className="text-xs tabular-nums" style={{ color: isPos ? "var(--gain)" : "var(--loss)" }}>
-              {isPos ? "▲" : "▼"} {Math.abs(stats.pct).toFixed(2)}%
-              {compare !== "none" && <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>normalisé à 100</span>}
+              {isPos ? "▲" : "▼"} {Math.abs(stats.pct).toFixed(2)} %
+              {compare !== "none" && (
+                <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  normalisé à 100 — comparaison relative
+                </span>
+              )}
             </p>
           )}
         </div>

@@ -14,13 +14,14 @@ function nDaysAgo(n: number) {
 function today() { return new Date().toISOString().slice(0, 10) }
 
 const PERIOD_CFG: Record<string, { period1: () => string; interval: "1d"|"1wk"|"1mo"; ttl: number }> = {
-  "1W": { period1: () => nDaysAgo(7),   interval: "1d",  ttl: 120  },
-  "1M": { period1: () => nDaysAgo(30),  interval: "1d",  ttl: 300  },
-  "3M": { period1: () => nDaysAgo(90),  interval: "1d",  ttl: 600  },
-  "6M": { period1: () => nDaysAgo(180), interval: "1d",  ttl: 900  },
-  "1Y": { period1: () => nDaysAgo(365), interval: "1wk", ttl: 1800 },
-  "2Y": { period1: () => nDaysAgo(730), interval: "1wk", ttl: 3600 },
-  "5Y": { period1: () => nDaysAgo(1825),"interval": "1mo", ttl: 3600 },
+  "1W":  { period1: () => nDaysAgo(7),    interval: "1d",  ttl: 120  },
+  "1M":  { period1: () => nDaysAgo(30),   interval: "1d",  ttl: 300  },
+  "3M":  { period1: () => nDaysAgo(90),   interval: "1d",  ttl: 600  },
+  "6M":  { period1: () => nDaysAgo(180),  interval: "1d",  ttl: 900  },
+  "1Y":  { period1: () => nDaysAgo(365),  interval: "1wk", ttl: 1800 },
+  "2Y":  { period1: () => nDaysAgo(730),  interval: "1wk", ttl: 3600 },
+  "5Y":  { period1: () => nDaysAgo(1825), interval: "1mo", ttl: 3600 },
+  "MAX": { period1: () => "2000-01-01",   interval: "1mo", ttl: 3600 }, // max history
 }
 
 interface ChartPoint { time: number; value: number }
