@@ -252,3 +252,59 @@ describe("generateInsights", () => {
     expect(ins.some(i => i.type === "success" && i.ticker === "BTC")).toBe(true)
   })
 })
+
+// ─── formatCurrency ───────────────────────────────────────────────────────────
+
+describe("formatCurrency (lib/utils)", () => {
+  // dynamic import to test the real formatter
+  it("pas de '$US' dans le formatage USD", async () => {
+    const { formatCurrency } = await import("./utils")
+    const result = formatCurrency(358.39, "USD")
+    expect(result).not.toContain("$US")
+    expect(result).toContain("358")
+  })
+
+  it("CHF formaté correctement", async () => {
+    const { formatCurrency } = await import("./utils")
+    const result = formatCurrency(1514.32, "CHF")
+    expect(result).toContain("1")
+    expect(result).toContain("514")
+    expect(result).toContain("CHF")
+  })
+})
+
+// ─── Source de vérité dividendes ─────────────────────────────────────────────
+
+describe("dividende — source unique via finance.ts", () => {
+  it("totalAnnualDividend === somme par actif", () => {
+    const divs = [
+      { ticker: "MSFT", amountPerShare: 0.75, frequency: "quarterly" as const, quantity: 10 },
+      { ticker: "O",    amountPerShare: 0.26, frequency: "monthly"   as const, quantity: 23 },
+    ]
+    const total = totalAnnualDividend(divs)
+    const msftAnnual = annualDividendPerShare(0.75, "quarterly") * 10  // 30
+    const oAnnual    = annualDividendPerShare(0.26, "monthly")   * 23  // ≈ 71.76
+    expect(total).toBeCloseTo(msftAnnual + oAnnual, 1)
+  })
+
+  it("dividende mensuel annualisé ×12", () => {
+    expect(annualDividendPerShare(0.26, "monthly")).toBeCloseTo(3.12, 2)
+  })
+})
+
+// ─── Cohérence P&L cross-devise ───────────────────────────────────────────────
+
+describe("P&L% identique quelle que soit la devise", () => {
+  it("même % en CHF ou USD", () => {
+    // MSFT acheté à 446 USD, prix actuel 441 USD → -1.05%
+    const pnlUSD = ((441 - 446) / 446) * 100  // -1.12%
+
+    // Converti en CHF (×0.91)
+    const avgCHF     = 446 * 0.91
+    const currentCHF = 441 * 0.91
+    const pnlCHF = ((currentCHF - avgCHF) / avgCHF) * 100
+
+    // Les % DOIVENT être identiques (car même ratio)
+    expect(pnlCHF).toBeCloseTo(pnlUSD, 5)
+  })
+})

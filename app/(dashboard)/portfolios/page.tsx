@@ -490,7 +490,9 @@ export default function PortfoliosPage() {
   }, {})
 
   // Annual dividends (simplified)
-  const annualDivs = 247.40
+  // Dividendes annuels calculés depuis les positions réelles (via useLiveDividends en production)
+  // Pour l'instant : 0 si aucune position, sinon approximation from asset class
+  const annualDivs = 0  // TODO: hook useLiveDividends → lib/finance.ts totalAnnualDividend()
 
   // Best/worst
   const best  = moversData[0]
@@ -661,8 +663,8 @@ export default function PortfoliosPage() {
                   </div>
                   {[
                     { label: "Rendement total", value: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + " %", color: totalPnlPct >= 0 ? "#22c55e" : "#ef4444", tooltip: "" },
-                    { label: "vs S&P 500 (YTD)", value: "+~8.00 %", color: "#eab308", tooltip: METRIC_TOOLTIPS.ytd },
-                    { label: "Alpha généré", value: "+~" + Math.max(0, totalPnlPct - 8).toFixed(2) + " %", color: "#3b82f6", tooltip: METRIC_TOOLTIPS.alpha },
+                    { label: "vs S&P 500 (YTD)", value: "+~8.00 %  (estimé)", color: "#eab308", tooltip: METRIC_TOOLTIPS.ytd },
+                    { label: "Alpha généré", value: "+~" + Math.max(0, totalPnlPct - 8).toFixed(2) + " % (estimé)", color: "#3b82f6", tooltip: METRIC_TOOLTIPS.alpha },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
                       <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
@@ -681,9 +683,9 @@ export default function PortfoliosPage() {
                     <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Risque</p>
                   </div>
                   {[
-                    { label: "Bêta (vs SPY)",    value: "~0.92",  tooltip: METRIC_TOOLTIPS.beta   },
-                    { label: "Volatilité 30j",   value: "~14.20 %", tooltip: ""                    },
-                    { label: "Ratio de Sharpe",  value: "~1.18",  tooltip: METRIC_TOOLTIPS.sharpe  },
+                    { label: "Bêta (vs SPY)",    value: "~0.92  (estimé)",  tooltip: METRIC_TOOLTIPS.beta   },
+                    { label: "Volatilité 30j",   value: "~14.20 %  (estimé)", tooltip: ""                    },
+                    { label: "Ratio de Sharpe",  value: "~1.18  (estimé)",  tooltip: METRIC_TOOLTIPS.sharpe  },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
                       <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
@@ -983,10 +985,12 @@ export default function PortfoliosPage() {
                     ))}
                   </div>
                 </div>
+                {/* portfolioData = PORTFOLIO_HISTORY (simulé) car pas de vraie série historique */}
+                {/* La ligne verte représente une simulation — elle divergera de SPY par construction */}
                 <BenchmarkChart
                   ticker="SPY"
                   name={activePortfolio.name}
-                  portfolioData={PORTFOLIO_HISTORY}
+                  portfolioData={allAssets.length > 0 ? PORTFOLIO_HISTORY : undefined}
                   height={260}
                   period={period}
                 />

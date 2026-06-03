@@ -5,7 +5,7 @@ import { Topbar } from "@/components/layout/topbar"
 import { StatCard } from "@/components/ui/stat-card"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
-import { LiveChart } from "@/components/charts/live-chart"
+import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { DualPriceInline } from "@/components/ui/dual-price"
 import { InsightsWidget } from "@/components/ui/insights-widget"
@@ -34,7 +34,18 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 export default function DashboardPage() {
   const { portfolios, transactions, loading } = useAppData()
   const { format, convert } = useCurrency()
-  const [period, setPeriod]     = useState<Period>("1A")
+  const [period, setPeriod] = useState<Period>("1A")
+  const historySlice = useMemo(() => {
+    const now    = new Date()
+    const cutoff = new Date()
+    if (period === "1S") cutoff.setDate(now.getDate() - 7)
+    else if (period === "1M") cutoff.setMonth(now.getMonth() - 1)
+    else if (period === "3M") cutoff.setMonth(now.getMonth() - 3)
+    else if (period === "6M") cutoff.setMonth(now.getMonth() - 6)
+    else if (period === "1A") cutoff.setFullYear(now.getFullYear() - 1)
+    else return PORTFOLIO_HISTORY
+    return PORTFOLIO_HISTORY.filter(s => new Date(s.date) >= cutoff)
+  }, [period])
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
 
   // All assets from all portfolios
@@ -277,17 +288,20 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-            <div className="rounded-xl border p-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              {/* Only show chart for the user's first ticker — never fake-show SPY as "Mon Portefeuille" */}
-              {allTickers[0] ? (
-                <LiveChart
-                  ticker={allTickers[0]}
-                  name={allAssets.find(a => a.ticker === allTickers[0])?.name ?? allTickers[0]}
-                  height={200}
-                  defaultCompare="SPY"
-                />
+            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              {/* Bandeau "données simulées" */}
+              <div className="flex items-center gap-2 px-4 py-2 border-b" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-overlay)" }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
+                <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  Historique simulé — sera remplacé par vos données réelles au fil du temps
+                </span>
+              </div>
+              {hasAssets ? (
+                <div className="p-3">
+                  <AreaChart data={historySlice} height={200} />
+                </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 gap-2">
+                <div className="flex flex-col items-center justify-center py-12 gap-2 p-3">
                   <BarChart2 className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
                   <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
                     Ajoutez des actifs pour voir l&apos;évolution de votre portefeuille

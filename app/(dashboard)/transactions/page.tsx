@@ -129,7 +129,7 @@ export default function TransactionsPage() {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            { label: "Total achats",     value: format(totalBuy),  color: "#ef4444" },
+            { label: "Capital investi",   value: format(totalBuy),  color: "#3b82f6" },  // bleu neutre
             { label: "Total ventes",     value: format(totalSell), color: "#22c55e" },
             { label: "Dividendes reçus", value: format(totalDiv),  color: "#f59e0b" },
             { label: "Frais total",      value: format(totalFees), color: "#6b7280" },

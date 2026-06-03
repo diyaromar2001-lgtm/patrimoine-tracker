@@ -8,41 +8,43 @@ export function cn(...inputs: ClassValue[]) {
 // ─── Currency ──────────────────────────────────────────────────────────────────
 export type AppCurrency = "CHF" | "USD" | "EUR"
 
-// Approximate FX rates vs CHF (CHF = 1)
 export const FX_RATES: Record<AppCurrency, number> = {
   CHF: 1,
-  USD: 1.109,   // 1 CHF ≈ 1.109 USD
-  EUR: 1.042,   // 1 CHF ≈ 1.042 EUR
+  USD: 1.109,
+  EUR: 1.042,
 }
 
-/** Convert a value denominated in `from` to `to` currency */
 export function convertCurrency(value: number, from: AppCurrency, to: AppCurrency): number {
   if (from === to) return value
-  // to CHF first, then to target
   const chf = value / FX_RATES[from]
   return chf * FX_RATES[to]
 }
 
+/**
+ * Formate un montant financier.
+ * - Utilise fr-CH comme locale (espace = séparateur milliers, . = décimale)
+ * - Remplace "$US" par "USD" (comportement natif de fr-CH pour le dollar)
+ */
 export function formatCurrency(
-  value: number,
+  value:    number,
   currency: AppCurrency = "CHF",
-  locale = "fr-CH"
+  locale    = "fr-CH"
 ): string {
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
+  const raw = new Intl.NumberFormat(locale, {
+    style:                 "currency",
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value)
+
+  // fr-CH affiche le dollar US comme "$US" → on normalise en "USD"
+  return raw.replace(/\$US\s?/g, "USD ").replace(/\s?\$US/g, " USD").trim()
 }
 
+/** Formate un % avec signe explicite : +8.99 % ou -0.25 % */
 export function formatPercent(value: number, locale = "fr-CH"): string {
-  return new Intl.NumberFormat(locale, {
-    style: "percent",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    signDisplay: "always",
-  }).format(value / 100)
+  const sign = value > 0 ? "+" : ""
+  return `${sign}${value.toFixed(2)} %`
 }
 
 export function formatNumber(value: number, locale = "fr-CH"): string {
