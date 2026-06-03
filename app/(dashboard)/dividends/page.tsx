@@ -53,18 +53,22 @@ function buildDividendEvents(
       status:     payDate > today ? "upcoming" : "paid",
     })
 
-    // Project next 3 future payments based on frequency
+    // Project next payments — advance until we have 3 FUTURE ones
+    // FIX: status is checked against today (not hardcoded "upcoming")
     const msPerPeriod = (365.25 / info.frequencyCount) * 24 * 3600 * 1000
-    for (let i = 1; i <= 3; i++) {
+    let futureCount = 0
+    for (let i = 1; futureCount < 3 && i <= 8; i++) {
       const futurePayDate = new Date(payDate.getTime() + i * msPerPeriod)
       const futureExDate  = exDate
         ? new Date(exDate.getTime() + i * msPerPeriod)
         : new Date(futurePayDate.getTime() - 14 * 24 * 3600 * 1000)
 
-      if (futurePayDate.getFullYear() - today.getFullYear() > 1) break // max 1 year ahead
+      // Stop at 2 years ahead
+      if (futurePayDate.getTime() - today.getTime() > 2 * 365.25 * 24 * 3600 * 1000) break
 
+      const isPast = futurePayDate <= today
       events.push({
-        id:         `live-${info.ticker}-future-${i}`,
+        id:         `live-${info.ticker}-p${i}`,
         ticker:     info.ticker,
         assetName:  info.name,
         assetClass: pos.assetClass as DividendEvent["assetClass"],
@@ -73,8 +77,9 @@ function buildDividendEvents(
         amount:     Math.round(totalAmount * 100) / 100,
         frequency:  info.frequency,
         currency:   info.currency as "EUR" | "USD" | "CHF" | "GBP",
-        status:     "upcoming",
+        status:     isPast ? "paid" : "upcoming",
       })
+      if (!isPast) futureCount++
     }
   }
 
