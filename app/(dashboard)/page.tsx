@@ -8,6 +8,7 @@ import { AreaChart } from "@/components/charts/area-chart"
 import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { DualPriceInline } from "@/components/ui/dual-price"
+import { InsightsWidget } from "@/components/ui/insights-widget"
 import { useAppData } from "@/hooks/use-app-data"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
@@ -401,6 +402,19 @@ export default function DashboardPage() {
               })}
             </div>
           </section>
+        )}
+
+        {/* ─── Insights automatiques ─── */}
+        {hasAssets && (
+          <InsightsWidget
+            assets={allAssets.map(a => ({
+              ticker:       a.ticker,
+              quantity:     a.quantity,
+              avgBuyPrice:  a.avgBuyPrice,
+              currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice,
+              assetClass:   a.assetClass,
+            }))}
+          />
         )}
       </div>
     </div>

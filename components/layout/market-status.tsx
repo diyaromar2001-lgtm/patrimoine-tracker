@@ -41,11 +41,11 @@ function computeMarket(): MarketState {
     next = h2 > 0 ? `ferme dans ${h2}h${m2 > 0 ? m2 : ""}` : `ferme dans ${minsLeft}min`
   }
 
-  return { isOpen, label: isOpen ? "US OPEN" : "US CLOSED", next }
+  return { isOpen, label: isOpen ? "OUVERT" : "FERMÉ", next }
 }
 
 export function MarketStatus() {
-  const [market, setMarket] = useState<MarketState>({ isOpen: false, label: "US CLOSED", next: "" })
+  const [market, setMarket] = useState<MarketState>({ isOpen: false, label: "FERMÉ", next: "" })
 
   useEffect(() => {
     setMarket(computeMarket())

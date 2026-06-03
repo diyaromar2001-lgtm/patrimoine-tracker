@@ -16,7 +16,10 @@ import {
 } from "lucide-react"
 
 const TX_COLORS: Record<TransactionType, string> = {
-  buy: "#22c55e", sell: "#ef4444", dividend: "#f59e0b", transfer: "#3b82f6",
+  buy: "#3b82f6",   // Bleu neutre — un achat n'est pas une perte
+  sell: "#a78bfa",  // Violet — vente réalisée
+  dividend: "#22c55e",  // Vert — revenu
+  transfer: "#64748b",  // Gris — transfert
 }
 const TX_LABELS: Record<TransactionType, string> = {
   buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert",

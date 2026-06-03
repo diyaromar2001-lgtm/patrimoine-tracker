@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { DualPrice, DualPriceInline } from "@/components/ui/dual-price"
+import { Tooltip, METRIC_TOOLTIPS } from "@/components/ui/tooltip"
+import { InsightsWidget } from "@/components/ui/insights-widget"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
 import { useLivePrices } from "@/hooks/use-live-prices"
@@ -613,12 +615,15 @@ export default function PortfoliosPage() {
                     <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Performance</p>
                   </div>
                   {[
-                    { label: "Rendement total", value: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + "%", color: totalPnlPct >= 0 ? "#22c55e" : "#ef4444" },
-                    { label: "vs S&P 500 (YTD)", value: "+~8%", color: "#eab308" },
-                    { label: "Alpha généré", value: "+~" + Math.max(0, totalPnlPct - 8).toFixed(1) + "%", color: "#3b82f6" },
+                    { label: "Rendement total", value: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + " %", color: totalPnlPct >= 0 ? "#22c55e" : "#ef4444", tooltip: "" },
+                    { label: "vs S&P 500 (YTD)", value: "+~8.00 %", color: "#eab308", tooltip: METRIC_TOOLTIPS.ytd },
+                    { label: "Alpha généré", value: "+~" + Math.max(0, totalPnlPct - 8).toFixed(2) + " %", color: "#3b82f6", tooltip: METRIC_TOOLTIPS.alpha },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>{r.label}</span>
+                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--foreground-muted)" }}>
+                        {r.label}
+                        {r.tooltip && <Tooltip content={r.tooltip} icon />}
+                      </span>
                       <span className="text-xs font-semibold tabular-nums" style={{ color: r.color }}>{r.value}</span>
                     </div>
                   ))}
@@ -631,12 +636,15 @@ export default function PortfoliosPage() {
                     <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Risque</p>
                   </div>
                   {[
-                    { label: "Bêta (vs SPY)", value: "~0.92" },
-                    { label: "Volatilité 30j", value: "~14.2%" },
-                    { label: "Ratio de Sharpe", value: "~1.18" },
+                    { label: "Bêta (vs SPY)",    value: "~0.92",  tooltip: METRIC_TOOLTIPS.beta   },
+                    { label: "Volatilité 30j",   value: "~14.20 %", tooltip: ""                    },
+                    { label: "Ratio de Sharpe",  value: "~1.18",  tooltip: METRIC_TOOLTIPS.sharpe  },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>{r.label}</span>
+                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--foreground-muted)" }}>
+                        {r.label}
+                        {r.tooltip && <Tooltip content={r.tooltip} icon />}
+                      </span>
                       <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{r.value}</span>
                     </div>
                   ))}
@@ -649,12 +657,15 @@ export default function PortfoliosPage() {
                     <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Revenus</p>
                   </div>
                   {[
-                    { label: "Dividendes annuels", value: format(annualDivs), color: "#22c55e" },
-                    { label: "Prochain versement", value: "dans 38j" },
-                    { label: "Yield on cost", value: ((annualDivs / totalCost) * 100).toFixed(2) + "%" },
+                    { label: "Dividendes annuels",  value: format(annualDivs), color: "#22c55e", tooltip: "" },
+                    { label: "Prochain versement",  value: "dans 38j",         color: "",         tooltip: "" },
+                    { label: "Yield on cost",        value: ((annualDivs / totalCost) * 100).toFixed(2) + " %", color: "", tooltip: METRIC_TOOLTIPS.yieldOnCost },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>{r.label}</span>
+                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--foreground-muted)" }}>
+                        {r.label}
+                        {(r as {tooltip?: string}).tooltip && <Tooltip content={(r as {tooltip: string}).tooltip} icon />}
+                      </span>
                       <span className="text-xs font-semibold tabular-nums" style={{ color: (r as {color?: string}).color ?? "var(--foreground)" }}>{r.value}</span>
                     </div>
                   ))}
@@ -847,6 +858,16 @@ export default function PortfoliosPage() {
                   })}
                 </div>
               </div>
+              {/* Insights automatiques */}
+              {allAssets.length > 0 && (
+                <InsightsWidget
+                  assets={allAssetsEnriched.map(a => ({
+                    ticker: a.ticker, quantity: a.quantity,
+                    avgBuyPrice: a.avgBuyPrice, currentPrice: a.currentPrice,
+                    assetClass: a.assetClass,
+                  }))}
+                />
+              )}
             </>
           )}
 
