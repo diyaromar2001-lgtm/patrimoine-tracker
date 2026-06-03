@@ -387,7 +387,7 @@ export default function PortfoliosPage() {
       quantity:    parseFloat(form.quantity),
       price:       parseFloat(form.price),
       fees:        parseFloat(form.fees) || 0,
-      currency:    "CHF",
+      currency:    (form.nativeCurrency || "CHF") as "CHF" | "EUR" | "USD" | "GBP",
       date:        form.date,
       notes:       form.notes || undefined,
     })
@@ -986,7 +986,7 @@ export default function PortfoliosPage() {
             initial={{
               portfolioId: txModal.defaultPortfolioId ?? portfolios[0]?.id ?? "",
               ticker: "", assetName: "", assetClass: "stock", type: "buy",
-              quantity: "", price: "", fees: "1",
+              quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
               date: new Date().toISOString().slice(0, 10), notes: "",
             }}
             portfolios={portfolios}

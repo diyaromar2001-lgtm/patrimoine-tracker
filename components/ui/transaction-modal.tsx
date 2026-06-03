@@ -1,62 +1,75 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import {
-  X, Check, Search, Loader2, RefreshCw,
-} from "lucide-react"
+import { X, Check, Search, Loader2 } from "lucide-react"
 import { useAssetSearch, type SearchResult } from "@/hooks/use-asset-search"
-import {
-  ASSET_CLASS_COLORS, ASSET_CLASS_LABELS,
-} from "@/lib/types"
+import { useCurrency } from "@/hooks/use-currency"
+import { formatCurrency } from "@/lib/utils"
+import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import type { AssetClass, TransactionType, Portfolio } from "@/lib/types"
+import type { AppCurrency } from "@/lib/utils"
 
 const TX_LABELS: Record<TransactionType, string> = {
   buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert",
 }
+// Couleurs neutres : un achat n'est pas une perte
 const TX_COLORS: Record<TransactionType, string> = {
-  buy: "#22c55e", sell: "#ef4444", dividend: "#f59e0b", transfer: "#3b82f6",
+  buy:      "#3b82f6",   // bleu — neutre
+  sell:     "#a78bfa",   // violet — réalisé
+  dividend: "#22c55e",   // vert — revenu
+  transfer: "#64748b",   // gris
+}
+
+const CURRENCY_FLAGS: Record<string, string> = {
+  USD: "🇺🇸", EUR: "🇪🇺", CHF: "🇨🇭", GBP: "🇬🇧",
 }
 
 export interface TransactionFormData {
-  id?:         string
-  portfolioId: string
-  ticker:      string
-  assetName:   string
-  assetClass:  AssetClass
-  type:        TransactionType
-  quantity:    string
-  price:       string
-  fees:        string
-  date:        string
-  notes:       string
+  id?:              string
+  portfolioId:      string
+  ticker:           string
+  assetName:        string
+  assetClass:       AssetClass
+  type:             TransactionType
+  quantity:         string
+  price:            string        // NATIVE price (in asset's currency, e.g. USD for GOOG)
+  nativeCurrency:   string        // e.g. "USD" for GOOG, "CHF" for Swiss stocks
+  fees:             string
+  date:             string
+  notes:            string
 }
 
 export const EMPTY_TX_FORM: TransactionFormData = {
-  portfolioId: "",
-  ticker: "", assetName: "", assetClass: "stock", type: "buy",
-  quantity: "", price: "", fees: "1",
+  portfolioId:    "",
+  ticker:         "", assetName: "", assetClass: "stock", type: "buy",
+  quantity:       "", price:     "", nativeCurrency: "CHF", fees: "1",
   date: new Date().toISOString().slice(0, 10),
   notes: "",
 }
 
-// ─── Asset selector field ─────────────────────────────────────────────────────
-// Shows a search box UNTIL user selects an asset.
-// After selection: shows a chip with the asset + × to reset.
-// This prevents the "double-ask" bug.
+// ─── Resolved price data from the API ────────────────────────────────────────
+interface ResolvedPrice {
+  nativePrice:    number   // e.g. 358.39 USD
+  nativeCurrency: string   // "USD"
+  chf:            number
+  usd:            number
+  eur:            number
+}
+
+// ─── Asset selector ───────────────────────────────────────────────────────────
 
 interface AssetSelectorProps {
-  ticker:    string
-  assetName: string
-  /** Called immediately when user picks an asset */
-  onPick:   (r: SearchResult) => void
-  /** Called when live price fetch resolves (price="" if failed/timeout) */
-  onPrice:  (price: string) => void
-  onClear:  () => void
+  ticker:        string
+  assetName:     string
+  nativeCurrency?: string
+  onPick:        (r: SearchResult) => void
+  onPrice:       (p: ResolvedPrice | null) => void
+  onClear:       () => void
   priceFetching: boolean
 }
 
-function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetching }: AssetSelectorProps) {
+function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onClear, priceFetching }: AssetSelectorProps) {
   const { query, setQuery, results, loading, clear } = useAssetSearch(220)
   const [open, setOpen] = useState(false)
 
@@ -68,44 +81,33 @@ function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetch
 
   async function pick(r: SearchResult) {
     clear(); setOpen(false)
+    onPick(r)  // show chip immediately
 
-    // 1. Show the chip immediately — no stale-state issue
-    onPick(r)
-
-    // 2. Fetch price in background (max 8s)
     const controller = new AbortController()
     const timeout    = setTimeout(() => controller.abort(), 8000)
     try {
       const res  = await fetch("/api/prices", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ tickers: [r.ticker] }),
-        signal:  controller.signal,
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: [r.ticker] }), signal: controller.signal,
       })
       const data = await res.json()
-      const d = data[r.ticker]
-      if (d) {
-        // API returns { chf, usd, eur } — read user's preferred currency
-        let currency = "chf"
-        try {
-          const stored = localStorage.getItem("preferred-currency")
-          if (stored) currency = stored.toLowerCase()
-        } catch { /* ignore */ }
-        const p = d[currency as "chf"|"usd"|"eur"] ?? d.chf ?? d.usd ?? 0
-        onPrice(p > 0 ? String(p.toFixed(2)) : "")
+      const d    = data[r.ticker]
+      if (d && (d.originalPrice ?? d.usd ?? d.chf) > 0) {
+        onPrice({
+          nativePrice:    d.originalPrice ?? d.usd ?? d.chf,
+          nativeCurrency: d.originalCurrency ?? "USD",
+          chf: d.chf ?? 0, usd: d.usd ?? 0, eur: d.eur ?? 0,
+        })
       } else {
-        onPrice("")
+        onPrice(null)
       }
-    } catch {
-      onPrice("") // timeout / network error → stop spinner
-    } finally {
-      clearTimeout(timeout)
-    }
+    } catch { onPrice(null) }
+    finally { clearTimeout(timeout) }
   }
 
-  // ── Selected state — show chip ───────────────────────────────────────────────
+  // ── Selected chip ─────────────────────────────────────────────────────────
   if (isSelected) {
-    const color = ASSET_CLASS_COLORS[EMPTY_TX_FORM.assetClass as AssetClass] ?? "#3b82f6"
+    const flag = nativeCurrency ? CURRENCY_FLAGS[nativeCurrency] ?? "" : ""
     return (
       <div className="flex items-center gap-3">
         <div className="flex flex-1 items-center gap-3 rounded-xl border px-4 py-3"
@@ -116,21 +118,23 @@ function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetch
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{ticker}</p>
-            <p className="text-xs truncate" style={{ color: "var(--foreground-muted)" }}>{assetName}</p>
+            <p className="text-xs truncate" style={{ color: "var(--foreground-muted)" }}>
+              {assetName}
+              {nativeCurrency && <span className="ml-1.5" style={{ color: "var(--foreground-dim)" }}>{flag} {nativeCurrency}</span>}
+            </p>
           </div>
           {priceFetching && <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" style={{ color: "#3b82f6" }} />}
         </div>
         <button onClick={onClear}
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border transition-colors hover:bg-zinc-800"
-          style={{ borderColor: "var(--border)" }}
-          title="Changer d'actif">
+          style={{ borderColor: "var(--border)" }}>
           <X className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
         </button>
       </div>
     )
   }
 
-  // ── Search state ─────────────────────────────────────────────────────────────
+  // ── Search box ────────────────────────────────────────────────────────────
   return (
     <div className="relative">
       <div className="relative">
@@ -138,28 +142,22 @@ function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetch
           ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin" style={{ color: "var(--foreground-dim)" }} />
           : <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "var(--foreground-dim)" }} />
         }
-        <input
-          type="text"
-          placeholder="Chercher un actif… AAPL, BTC, CW8, O…"
+        <input type="text" placeholder="Chercher… AAPL, BTC, CW8, GOOG…"
           value={query}
           onChange={e => setQuery(e.target.value)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onFocus={() => results.length > 0 && setOpen(true)}
           className="w-full rounded-xl border pl-9 pr-3 py-3 text-sm outline-none"
           style={{ backgroundColor: "var(--background)", borderColor: open ? "var(--accent)" : "var(--border)", color: "var(--foreground)" }}
-          autoComplete="off"
-          autoFocus
+          autoComplete="off" autoFocus
         />
       </div>
-
       <AnimatePresence>
         {open && results.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+          <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.1 }}
             className="absolute left-0 right-0 top-full z-[60] mt-1 overflow-hidden rounded-xl border shadow-2xl"
-            style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}
-          >
+            style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
             {results.map((r, i) => {
               const color = ASSET_CLASS_COLORS[r.type as AssetClass] ?? "#6b7280"
               return (
@@ -191,37 +189,6 @@ function AssetSelector({ ticker, assetName, onPick, onPrice, onClear, priceFetch
   )
 }
 
-// ─── Price field with currency context ───────────────────────────────────────
-function PriceField({
-  value,
-  onChange,
-  loading,
-}: {
-  value: string
-  onChange: (v: string) => void
-  loading: boolean
-}) {
-  return (
-    <div className="relative">
-      {loading && (
-        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin" style={{ color: "#3b82f6" }} />
-      )}
-      <input
-        type="number"
-        placeholder={loading ? "Récupération…" : "0.00"}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-        style={{
-          backgroundColor: "var(--background)",
-          borderColor: value ? "#22c55e40" : "var(--border)",
-          color: "var(--foreground)",
-        }}
-      />
-    </div>
-  )
-}
-
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 interface TransactionModalProps {
@@ -233,66 +200,82 @@ interface TransactionModalProps {
 }
 
 export function TransactionModal({ mode, initial, portfolios, onSave, onClose }: TransactionModalProps) {
-  const [form, setForm]             = useState<TransactionFormData>(initial)
+  const [form, setForm]                   = useState<TransactionFormData>(initial)
   const [priceFetching, setPriceFetching] = useState(false)
-  const [saving,  setSaving]  = useState(false)
-  const [saveErr, setSaveErr] = useState("")
+  const [saving,  setSaving]              = useState(false)
+  const [saveErr, setSaveErr]             = useState("")
+  const { currency, format, convert }     = useCurrency()
 
   const set = (k: keyof TransactionFormData, v: string) =>
     setForm(p => ({ ...p, [k]: v }))
 
-  // Called IMMEDIATELY when user clicks an asset in the dropdown
   function handlePick(r: SearchResult) {
-    setPriceFetching(true)  // start spinner — completely independent of form state
+    setPriceFetching(true)
     setForm(p => ({
       ...p,
-      ticker:    r.ticker,
-      assetName: r.name,
-      assetClass: r.type as AssetClass,
-      price:     "",        // clear price until fetch resolves
+      ticker:         r.ticker,
+      assetName:      r.name,
+      assetClass:     r.type as AssetClass,
+      price:          "",
+      nativeCurrency: "USD",  // default until price resolves
     }))
   }
 
-  // Called AFTER price fetch resolves (price="" on failure/timeout)
-  function handlePrice(price: string) {
-    setPriceFetching(false) // always stop spinner
-    if (price) {
-      setForm(p => ({ ...p, price }))
+  function handlePrice(p: ResolvedPrice | null) {
+    setPriceFetching(false)
+    if (p) {
+      setForm(prev => ({
+        ...prev,
+        price:          p.nativePrice.toFixed(2),
+        nativeCurrency: p.nativeCurrency,
+      }))
     }
   }
 
   function clearAsset() {
-    setForm(p => ({ ...p, ticker: "", assetName: "", price: "" }))
+    setForm(p => ({ ...p, ticker: "", assetName: "", price: "", nativeCurrency: "CHF" }))
     setPriceFetching(false)
   }
 
-  const valid     = form.portfolioId && form.ticker && form.assetName && form.quantity && form.price && form.date
-  const typeColor = TX_COLORS[form.type]
-  const totalAmt  = form.quantity && form.price
-    ? (parseFloat(form.quantity) * parseFloat(form.price)).toLocaleString("fr-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : null
+  // ── Total preview ─────────────────────────────────────────────────────────
+  const qty        = parseFloat(form.quantity || "0")
+  const unitPrice  = parseFloat(form.price    || "0")
+  const fees       = parseFloat(form.fees     || "0")
+  const nativeCurr = form.nativeCurrency || "CHF"
+  const flag       = CURRENCY_FLAGS[nativeCurr] ?? ""
+
+  // Total in native currency (e.g. USD)
+  const totalNative = qty * unitPrice
+
+  // Total converted to user's preferred currency
+  const totalConverted = convert(totalNative, nativeCurr as AppCurrency)
+
+  // Fees in user's currency
+  const feesConverted  = convert(fees, nativeCurr as AppCurrency)
+
+  const showTotal    = qty > 0 && unitPrice > 0
+  const sameAsCurr   = nativeCurr === currency
+  const typeColor    = TX_COLORS[form.type]
+  const sign         = form.type === "buy" ? "−" : "+"
+
+  const valid = form.portfolioId && form.ticker && form.assetName && form.quantity && form.price && form.date
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-12"
       style={{ backgroundColor: "rgba(0,0,0,0.82)" }}
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
+      onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
         className="w-full max-w-lg rounded-2xl border overflow-hidden mb-12"
         style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header + type pills */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
           <h3 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
             {mode === "add" ? "Nouvelle transaction" : "Modifier la transaction"}
           </h3>
-          {/* Type pills */}
           <div className="flex gap-1.5">
             {(Object.entries(TX_LABELS) as [TransactionType, string][]).map(([k, v]) => (
               <button key={k} onClick={() => set("type", k)}
@@ -312,11 +295,9 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          {/* Portfolio selector */}
+          {/* Portfolio */}
           <div>
-            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>
-              Portefeuille *
-            </label>
+            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Portefeuille *</label>
             <div className="flex flex-wrap gap-2">
               {portfolios.map(p => (
                 <button key={p.id} onClick={() => set("portfolioId", p.id)}
@@ -334,14 +315,13 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
             </div>
           </div>
 
-          {/* Asset selector — no double-ask */}
+          {/* Asset selector */}
           <div>
-            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>
-              Actif *
-            </label>
+            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Actif *</label>
             <AssetSelector
               ticker={form.ticker}
               assetName={form.assetName}
+              nativeCurrency={form.nativeCurrency}
               onPick={handlePick}
               onPrice={handlePrice}
               onClear={clearAsset}
@@ -360,16 +340,38 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium flex items-center gap-1.5" style={{ color: "var(--foreground-muted)" }}>
-                Prix unit. *
+                Prix unit.
+                {/* Show native currency badge */}
+                {form.ticker && (
+                  <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                    style={{ backgroundColor: "var(--background-hover)", color: "var(--foreground-dim)" }}>
+                    {flag} {nativeCurr}
+                  </span>
+                )}
                 {priceFetching && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "#3b82f6" }} />}
                 {!priceFetching && form.price && form.ticker && (
                   <span className="text-[10px] font-normal" style={{ color: "#22c55e" }}>● live</span>
                 )}
               </label>
-              <PriceField value={form.price} onChange={v => set("price", v)} loading={priceFetching} />
+              <input type="number" placeholder="0.00" value={form.price}
+                onChange={e => set("price", e.target.value)}
+                className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                style={{
+                  backgroundColor: "var(--background)",
+                  borderColor: form.price ? "#22c55e40" : "var(--border)",
+                  color: "var(--foreground)",
+                }} />
+              {/* Show price in user's currency if different */}
+              {form.price && !priceFetching && !sameAsCurr && (
+                <p className="mt-1 text-[11px]" style={{ color: "var(--foreground-dim)" }}>
+                  ≈ {format(convert(parseFloat(form.price), nativeCurr as AppCurrency))}
+                </p>
+              )}
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Frais</label>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>
+                Frais ({currency})
+              </label>
               <input type="number" placeholder="1.00" value={form.fees}
                 onChange={e => set("fees", e.target.value)}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
@@ -407,22 +409,37 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
               style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
           </div>
 
-          {/* Total preview */}
-          {totalAmt && (
-            <div className="flex items-center justify-between rounded-xl border px-4 py-3"
+          {/* ── Total preview ─────────────────────────────────────────────────── */}
+          {showTotal && (
+            <div className="rounded-xl border px-4 py-3"
               style={{ backgroundColor: typeColor + "08", borderColor: typeColor + "30" }}>
-              <div className="text-xs" style={{ color: "var(--foreground-muted)" }}>
-                {form.quantity} × {form.price}
-                {parseFloat(form.fees || "0") > 0 && <span style={{ color: "var(--foreground-dim)" }}> + {form.fees} frais</span>}
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>
+                  {qty} × {flag} {formatCurrency(unitPrice, nativeCurr as AppCurrency)}
+                  {fees > 0 && (
+                    <span style={{ color: "var(--foreground-dim)" }}>
+                      {" "}+ {format(feesConverted)} frais
+                    </span>
+                  )}
+                </span>
+                <div className="text-right">
+                  {/* NATIVE total — primary */}
+                  <p className="text-sm font-bold tabular-nums" style={{ color: typeColor }}>
+                    {sign} {flag} {formatCurrency(totalNative, nativeCurr as AppCurrency)}
+                  </p>
+                  {/* Converted total — secondary, only if different */}
+                  {!sameAsCurr && (
+                    <p className="text-[11px] tabular-nums" style={{ color: "var(--foreground-dim)" }}>
+                      ≈ {sign} {format(totalConverted)}
+                    </p>
+                  )}
+                </div>
               </div>
-              <span className="text-sm font-bold tabular-nums" style={{ color: typeColor }}>
-                {form.type === "buy" ? "−" : "+"} {totalAmt} CHF
-              </span>
             </div>
           )}
         </div>
 
-        {/* Error message */}
+        {/* Error */}
         {saveErr && (
           <div className="mx-6 mb-2 rounded-lg border px-4 py-3 text-xs"
             style={{ backgroundColor: "#ef444415", borderColor: "#ef444440", color: "#ef4444" }}>

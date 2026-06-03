@@ -59,7 +59,7 @@ export default function TransactionsPage() {
       initial: {
         portfolioId: portfolios[0]?.id ?? "",
         ticker: "", assetName: "", assetClass: "stock",
-        type: "buy", quantity: "", price: "", fees: "1",
+        type: "buy", quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
         date: new Date().toISOString().slice(0, 10), notes: "",
       },
     })
@@ -77,6 +77,7 @@ export default function TransactionsPage() {
         type:        tx.type,
         quantity:    String(tx.quantity),
         price:       String(tx.price),
+        nativeCurrency: tx.currency ?? 'CHF',
         fees:        String(tx.fees),
         date:        tx.date,
         notes:       tx.notes ?? "",
