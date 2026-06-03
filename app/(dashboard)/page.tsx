@@ -5,7 +5,8 @@ import { Topbar } from "@/components/layout/topbar"
 import { StatCard } from "@/components/ui/stat-card"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
-import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
+import { usePortfolioHistory } from "@/hooks/use-portfolio-history"
+import type { PortfolioAsset } from "@/app/api/portfolio-history/route"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
 import { DualPriceInline } from "@/components/ui/dual-price"
 import { InsightsWidget } from "@/components/ui/insights-widget"
@@ -34,18 +35,7 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 export default function DashboardPage() {
   const { portfolios, transactions, loading } = useAppData()
   const { format, convert } = useCurrency()
-  const [period, setPeriod] = useState<Period>("1A")
-  const historySlice = useMemo(() => {
-    const now    = new Date()
-    const cutoff = new Date()
-    if (period === "1S") cutoff.setDate(now.getDate() - 7)
-    else if (period === "1M") cutoff.setMonth(now.getMonth() - 1)
-    else if (period === "3M") cutoff.setMonth(now.getMonth() - 3)
-    else if (period === "6M") cutoff.setMonth(now.getMonth() - 6)
-    else if (period === "1A") cutoff.setFullYear(now.getFullYear() - 1)
-    else return PORTFOLIO_HISTORY
-    return PORTFOLIO_HISTORY.filter(s => new Date(s.date) >= cutoff)
-  }, [period])
+  const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
 
   // All assets from all portfolios
@@ -55,6 +45,21 @@ export default function DashboardPage() {
 
   // Live prices
   const { prices: livePrices } = useLivePrices(allTickers, 30_000)
+
+  // Map PERIODS to API codes + real portfolio history
+  const API_PERIOD: Record<Period, string> = {
+    "1S": "1W", "1M": "1M", "3M": "3M", "6M": "6M", "1A": "1Y", "Max": "MAX"
+  }
+  const portfolioAssets = useMemo<PortfolioAsset[]>(() =>
+    allAssets.map(a => ({
+      ticker:         a.ticker,
+      quantity:       a.quantity,
+      nativeCurrency: livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
+    })),
+    [allAssets, livePrices]
+  )
+  const { history: portfolioHistory, loading: historyLoading, isReal } =
+    usePortfolioHistory(portfolioAssets, API_PERIOD[period] ?? "1Y")
 
   // Cost base: avgBuyPrice is in native currency — convert to user's currency
   const totalCost = useMemo(
@@ -289,17 +294,41 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              {/* Bandeau "données simulées" */}
-              <div className="flex items-center gap-2 px-4 py-2 border-b" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-overlay)" }}>
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--accent)" }} />
+              {/* Source indicator */}
+              <div className="flex items-center gap-2 px-4 py-2 border-b"
+                style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-overlay)" }}>
+                <span className="h-1.5 w-1.5 rounded-full animate-pulse"
+                  style={{ backgroundColor: isReal && !historyLoading ? "#22c55e" : "var(--text-tertiary)" }} />
                 <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                  Historique simulé — sera remplacé par vos données réelles au fil du temps
+                  {historyLoading
+                    ? "Calcul de l'historique réel…"
+                    : isReal
+                    ? "Valeurs calculées depuis vos positions réelles · prix Yahoo Finance"
+                    : "Ajoutez des actifs pour voir votre évolution réelle"
+                  }
                 </span>
               </div>
+
               {hasAssets ? (
-                <div className="p-3">
-                  <AreaChart data={historySlice} height={200} />
-                </div>
+                historyLoading ? (
+                  <div className="flex items-center justify-center py-12 gap-2">
+                    <div className="h-4 w-4 rounded-full border-2 border-t-blue-500 border-r-blue-500/30 border-b-blue-500/10 border-l-blue-500/30 animate-spin" />
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                      Chargement des prix historiques…
+                    </span>
+                  </div>
+                ) : isReal ? (
+                  <div className="p-3">
+                    <AreaChart data={portfolioHistory} height={200} />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2">
+                    <BarChart2 className="h-7 w-7" style={{ color: "var(--text-tertiary)" }} />
+                    <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                      Impossible de récupérer l&apos;historique des prix
+                    </p>
+                  </div>
+                )
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 gap-2 p-3">
                   <BarChart2 className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
