@@ -7,17 +7,28 @@ export function cn(...inputs: ClassValue[]) {
 
 // ─── Currency ──────────────────────────────────────────────────────────────────
 export type AppCurrency = "CHF" | "USD" | "EUR"
+export type FXRates = Record<AppCurrency, number>
 
-export const FX_RATES: Record<AppCurrency, number> = {
+// Default FX rates (BCE approximation) — replaced at runtime by /api/fx-rates
+// 1 CHF = x USD/EUR
+export const DEFAULT_FX_RATES: FXRates = {
   CHF: 1,
-  USD: 1.109,
-  EUR: 1.042,
+  USD: 1.267,   // updated from BCE 2026-06
+  EUR: 1.091,   // updated from BCE 2026-06
 }
 
-export function convertCurrency(value: number, from: AppCurrency, to: AppCurrency): number {
+// Keep FX_RATES as alias for backward compat
+export const FX_RATES = DEFAULT_FX_RATES
+
+export function convertCurrency(
+  value:  number,
+  from:   AppCurrency,
+  to:     AppCurrency,
+  rates:  FXRates = DEFAULT_FX_RATES
+): number {
   if (from === to) return value
-  const chf = value / FX_RATES[from]
-  return chf * FX_RATES[to]
+  const chf = value / (rates[from] ?? 1)
+  return chf * (rates[to] ?? 1)
 }
 
 /**

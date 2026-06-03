@@ -308,3 +308,25 @@ describe("P&L% identique quelle que soit la devise", () => {
     expect(pnlCHF).toBeCloseTo(pnlUSD, 5)
   })
 })
+
+// ─── Taux de change live ──────────────────────────────────────────────────────
+
+// convertCurrency est importé de ./finance (qui re-exporte avec rates param)
+describe("convertCurrency avec taux BCE réels", () => {
+  // Taux BCE du 2026-06-03 : 1 CHF = 1.2669 USD = 1.0909 EUR
+  const BCE = { CHF: 1, USD: 1.2669, EUR: 1.0909 }
+
+  it("CHF → USD", () => {
+    expect(convertCurrency(1000, "CHF", "USD", BCE)).toBeCloseTo(1266.9, 0)
+  })
+  it("USD → CHF", () => {
+    expect(convertCurrency(1000, "USD", "CHF", BCE)).toBeCloseTo(789.4, 0)
+  })
+  it("USD → EUR", () => {
+    // 1000 USD → /1.2669 → *1.0909 ≈ 860.9 EUR
+    expect(convertCurrency(1000, "USD", "EUR", BCE)).toBeCloseTo(860.9, 0)
+  })
+  it("même devise → inchangé", () => {
+    expect(convertCurrency(100, "CHF", "CHF", BCE)).toBe(100)
+  })
+})

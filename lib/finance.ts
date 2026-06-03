@@ -9,13 +9,7 @@ import type { AppCurrency } from "./utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface FXRates {
-  CHF: number   // base = 1
-  USD: number   // 1 CHF = x USD
-  EUR: number   // 1 CHF = x EUR
-  GBP: number
-  [key: string]: number
-}
+export type FXRates = { [currency: string]: number }
 
 export const DEFAULT_FX_RATES: FXRates = {
   CHF: 1,

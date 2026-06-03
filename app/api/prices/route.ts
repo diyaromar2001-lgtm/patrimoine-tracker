@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import YahooFinanceClass from "yahoo-finance2"
 import { cacheFetch } from "@/lib/cache"
-import { convertCurrency, FX_RATES } from "@/lib/utils"
-import type { AppCurrency } from "@/lib/utils"
+import { convertCurrency, DEFAULT_FX_RATES } from "@/lib/utils"
+import type { AppCurrency, FXRates } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -21,12 +21,28 @@ const COINGECKO_IDS: Record<string, string> = {
 function isCrypto(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") in COINGECKO_IDS }
 function baseTicker(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") }
 
-// Convert a native price to all 3 display currencies
-function toAllCurrencies(price: number, from: AppCurrency) {
+// Fetch live FX rates — shared with /api/fx-rates
+async function getLiveFxRates(): Promise<FXRates> {
+  const result = await cacheFetch("fx-rates-for-prices", async () => {
+    try {
+      const res = await fetch("https://api.frankfurter.app/latest?from=CHF&to=USD,EUR")
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: { rates: { USD: number; EUR: number } } = await res.json()
+      return { CHF: 1, USD: data.rates.USD, EUR: data.rates.EUR }
+    } catch {
+      return DEFAULT_FX_RATES
+    }
+  }, 3600)
+  return result as unknown as FXRates
+}
+
+// Convert a native price to all 3 display currencies using LIVE rates
+async function toAllCurrencies(price: number, from: AppCurrency) {
+  const rates = await getLiveFxRates()
   return {
-    chf: convertCurrency(price, from, "CHF"),
-    usd: convertCurrency(price, from, "USD"),
-    eur: convertCurrency(price, from, "EUR"),
+    chf: convertCurrency(price, from, "CHF", rates),
+    usd: convertCurrency(price, from, "USD", rates),
+    eur: convertCurrency(price, from, "EUR", rates),
   }
 }
 
@@ -87,10 +103,8 @@ export async function POST(req: NextRequest) {
         if (!q?.symbol || !q.regularMarketPrice) continue
         const nativePrice    = q.regularMarketPrice as number
         const nativeCurrency = ((q.currency as string) ?? "USD") as AppCurrency
-        // Convert to all 3 display currencies
-        const converted = (nativeCurrency in FX_RATES)
-          ? toAllCurrencies(nativePrice, nativeCurrency)
-          : { chf: nativePrice, usd: nativePrice, eur: nativePrice }  // fallback
+        // Convert to all 3 display currencies using live FX rates
+        const converted = await toAllCurrencies(nativePrice, nativeCurrency)
 
         out[q.symbol as string] = {
           ...converted,
