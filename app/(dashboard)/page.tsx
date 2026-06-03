@@ -12,6 +12,7 @@ import { InsightsWidget } from "@/components/ui/insights-widget"
 import { useAppData } from "@/hooks/use-app-data"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
+import type { AppCurrency } from "@/lib/utils"
 import {
   portfolioTotalCost,
   assetPnlPct,
@@ -32,7 +33,7 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { portfolios, transactions, loading } = useAppData()
-  const { format } = useCurrency()
+  const { format, convert } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
 
@@ -44,10 +45,14 @@ export default function DashboardPage() {
   // Live prices
   const { prices: livePrices } = useLivePrices(allTickers, 30_000)
 
-  // Cost base (avg buy prices from DB)
+  // Cost base: avgBuyPrice is in native currency — convert to user's currency
   const totalCost = useMemo(
-    () => portfolios.reduce((s, p) => s + portfolioTotalCost(p), 0),
-    [portfolios]
+    () => allAssets.reduce((s, a) => {
+      const nativeCurr = livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
+      const costConverted = convert(a.avgBuyPrice, nativeCurr as AppCurrency)
+      return s + costConverted * a.quantity
+    }, 0),
+    [allAssets, livePrices, convert] // eslint-disable-line
   )
 
   // Total value using live prices where available
@@ -331,8 +336,12 @@ export default function DashboardPage() {
                   <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune position</p>
                 </div>
               ) : top5.map((asset, i) => {
-                const pnlPct  = assetPnlPct(asset)
-                const color   = ASSET_CLASS_COLORS[asset.assetClass]
+                // P&L% always native-to-native
+                const nativeOrig = livePrices[asset.ticker]?.originalPrice ?? asset.currentPrice
+                const pnlPct = asset.avgBuyPrice > 0
+                  ? ((nativeOrig - asset.avgBuyPrice) / asset.avgBuyPrice) * 100
+                  : 0
+                const color = ASSET_CLASS_COLORS[asset.assetClass]
                 return (
                   <div key={asset.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
                     style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>

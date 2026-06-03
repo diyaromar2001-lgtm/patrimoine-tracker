@@ -20,6 +20,7 @@ import {
   assetValue, assetPnl, assetPnlPct, ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
 import { formatCurrency, cn } from "@/lib/utils"
+import type { AppCurrency } from "@/lib/utils"
 import {
   Plus, Briefcase, ChevronDown, ChevronUp, X, Check,
   ArrowUpRight, ArrowDownRight, TrendingUp, BarChart2,
@@ -221,7 +222,7 @@ function HoldingsTable({
   onDeleteAsset: (assetId: string) => void
   totalValue:  number
 }) {
-  const { format } = useCurrency()
+  const { format, convert } = useCurrency()
   const [sortKey, setSortKey] = useState<SortKey>("value")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
 
@@ -273,15 +274,35 @@ function HoldingsTable({
 
       {sorted.map((asset, i) => {
         const liveData     = livePrices[asset.ticker]
-        const livePrice    = liveData?.price
         const dayChangePct = liveData?.changePct ?? 0
-        const origPrice    = liveData?.originalPrice
-        const origCurrency = liveData?.originalCurrency
-        const eff        = livePrice ? { ...asset, currentPrice: livePrice } : asset
-        const val        = assetValue(eff)
-        const pnlPct     = assetPnlPct(eff)
-        const weight     = totalValue > 0 ? (val / totalValue) * 100 : 0
-        const color      = ASSET_CLASS_COLORS[asset.assetClass]
+
+        // ─ Display currency (user preference) ──────────────────────────────
+        const livePriceUserCurr = liveData?.price ?? asset.currentPrice  // in user's currency
+        const origPrice         = liveData?.originalPrice                 // native (USD/EUR/CHF)
+        const origCurrency      = liveData?.originalCurrency ?? asset.currency ?? "USD"
+
+        // ─ Value in user's currency ─────────────────────────────────────────
+        const val = livePriceUserCurr * asset.quantity
+
+        // ─ P&L% ALWAYS native-to-native (currency-independent) ─────────────
+        //   Both prices in native currency → % is the same regardless of display
+        const nativeCurrent = origPrice ?? asset.currentPrice
+        const nativeAvg     = asset.avgBuyPrice  // stored in native currency
+
+        const pnlPct = nativeAvg > 0
+          ? ((nativeCurrent - nativeAvg) / nativeAvg) * 100
+          : 0
+
+        // ─ P&L amount in user's currency ────────────────────────────────────
+        // Convert native P&L to user's preferred currency
+        const nativePnl        = (nativeCurrent - nativeAvg) * asset.quantity
+        const pnlUserCurr      = convert(nativePnl, origCurrency as AppCurrency)
+
+        // ─ Avg price converted to user's currency (for display) ────────────
+        const avgPriceUserCurr = convert(nativeAvg, origCurrency as AppCurrency)
+
+        const weight = totalValue > 0 ? (val / totalValue) * 100 : 0
+        const color  = ASSET_CLASS_COLORS[asset.assetClass]
 
         return (
           <div key={asset.id} style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
@@ -295,12 +316,13 @@ function HoldingsTable({
                 <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
                 <div className="flex items-center gap-1">
                   <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{asset.quantity} ×</span>
-                  <DualPriceInline price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} className="text-[11px]" showFlag />
-                  {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
+                  <DualPriceInline price={livePriceUserCurr} originalPrice={origPrice} originalCurrency={origCurrency} className="text-[11px]" showFlag />
+                  {liveData?.price && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
                 </div>
               </div>
               <div className="text-right">
                 <p className="text-xs font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
+                {/* P&L% is native-to-native (same regardless of display currency) */}
                 <ChangeBadge value={pnlPct} showIcon={false} />
               </div>
               <button onClick={() => onDeleteAsset(asset.id)} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors flex-shrink-0" style={{ color: "var(--text-tertiary)" }}>
@@ -322,21 +344,30 @@ function HoldingsTable({
                 </div>
               </div>
               <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{asset.quantity}</p>
-              {/* Avg buy price in user's currency */}
-              <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
-                {format(asset.avgBuyPrice)}
-              </p>
-              {/* Current price: native currency PRIMARY + user currency small */}
+              {/* Avg buy price — native currency + small converted */}
+              <div className="flex justify-end">
+                <DualPriceInline
+                  price={avgPriceUserCurr}
+                  originalPrice={nativeAvg}
+                  originalCurrency={origCurrency}
+                  size="sm"
+                />
+              </div>
+              {/* Current price — native + small converted */}
               <div className="flex items-center justify-end gap-1">
-                <DualPrice price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" />
-                {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
+                <DualPrice price={livePriceUserCurr} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" />
+                {liveData?.price && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
               </div>
               {/* Total value in user's currency */}
               <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                 {format(val)}
               </p>
+              {/* Day P&L % (from live API, already native) */}
               <div className="flex justify-end"><ChangeBadge value={dayChangePct} showIcon={false} /></div>
-              <div className="flex justify-end"><ChangeBadge value={pnlPct} showIcon={false} /></div>
+              {/* Total P&L % — native/native = currency-independent ✓ */}
+              <div className="flex justify-end" title={`+${format(pnlUserCurr)}`}>
+                <ChangeBadge value={pnlPct} showIcon={false} />
+              </div>
               {/* Weight bar */}
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
@@ -359,7 +390,7 @@ function HoldingsTable({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PortfoliosPage() {
-  const { format } = useCurrency()
+  const { format, convert } = useCurrency()
   const {
     portfolios, loading: dbLoading,
     addPortfolio: dbAddPortfolio,
@@ -414,14 +445,24 @@ export default function PortfoliosPage() {
   }, [livePrices])
 
   // Global totals
-  const totalValue  = portfolios.reduce((s, p) => {
+  // totalValue: sum of (live_price_in_user_currency × qty)
+  const totalValue = portfolios.reduce((s, p) => {
     return s + p.assets.reduce((ss, a) => {
-      const lp = liveEnriched[a.ticker]?.price
-      return ss + (lp ? lp * a.quantity : assetValue(a))
+      const lp = liveEnriched[a.ticker]?.price  // already in user's currency
+      return ss + (lp ?? a.currentPrice) * a.quantity
     }, 0)
   }, 0)
-  const totalCost  = portfolios.reduce((s, p) => s + portfolioTotalCost(p), 0)
-  const totalPnl   = totalValue - totalCost
+
+  // totalCost: avgBuyPrice is in native currency → convert to user's currency
+  const totalCost = portfolios.reduce((s, p) => {
+    return s + p.assets.reduce((ss, a) => {
+      const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
+      const costUserCurr = convert(a.avgBuyPrice, nativeCurr as AppCurrency)
+      return ss + costUserCurr * a.quantity
+    }, 0)
+  }, 0)
+
+  const totalPnl    = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
   const allAssets = portfolios.flatMap(p => p.assets)
