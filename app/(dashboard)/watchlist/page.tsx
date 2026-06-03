@@ -14,7 +14,7 @@ import type { WatchlistItem } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import type { SearchResult } from "@/hooks/use-asset-search"
-import { formatCurrency } from "@/lib/utils"
+
 import { X, Eye, RefreshCw } from "lucide-react"
 
 export default function WatchlistPage() {

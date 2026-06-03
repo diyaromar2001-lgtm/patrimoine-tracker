@@ -7,6 +7,7 @@ import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
 import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
+import { DualPriceInline } from "@/components/ui/dual-price"
 import { useAppData } from "@/hooks/use-app-data"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
@@ -302,8 +303,13 @@ export default function DashboardPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
-                      <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>
-                        {asset.quantity} × {format(asset.currentPrice)}
+                      <p className="text-[11px] flex items-center gap-1" style={{ color: "var(--foreground-dim)" }}>
+                        <span>{asset.quantity} ×</span>
+                        <DualPriceInline
+                          price={asset.currentPrice}
+                          originalPrice={livePrices[asset.ticker]?.originalPrice}
+                          originalCurrency={livePrices[asset.ticker]?.originalCurrency}
+                        />
                       </p>
                     </div>
                     <div className="text-right">

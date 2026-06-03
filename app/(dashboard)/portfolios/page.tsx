@@ -219,6 +219,7 @@ function HoldingsTable({
   onDeleteAsset: (assetId: string) => void
   totalValue:  number
 }) {
+  const { format } = useCurrency()
   const [sortKey, setSortKey] = useState<SortKey>("value")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
 
@@ -297,7 +298,7 @@ function HoldingsTable({
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(val)}</p>
+                <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{format(val)}</p>
                 <ChangeBadge value={pnlPct} showIcon={false} />
               </div>
               <button onClick={() => onDeleteAsset(asset.id)} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors flex-shrink-0" style={{ color: "var(--foreground-dim)" }}>
@@ -319,12 +320,19 @@ function HoldingsTable({
                 </div>
               </div>
               <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{asset.quantity}</p>
-              <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{formatCurrency(asset.avgBuyPrice)}</p>
+              {/* Avg buy price in user's currency */}
+              <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+                {format(asset.avgBuyPrice)}
+              </p>
+              {/* Current price: native currency PRIMARY + user currency small */}
               <div className="flex items-center justify-end gap-1">
-                <DualPrice price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" showFlag />
+                <DualPrice price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" />
                 {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
               </div>
-              <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(val)}</p>
+              {/* Total value in user's currency */}
+              <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                {format(val)}
+              </p>
               <div className="flex justify-end"><ChangeBadge value={dayChangePct} showIcon={false} /></div>
               <div className="flex justify-end"><ChangeBadge value={pnlPct} showIcon={false} /></div>
               {/* Weight bar */}
@@ -349,6 +357,7 @@ function HoldingsTable({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PortfoliosPage() {
+  const { format } = useCurrency()
   const {
     portfolios, loading: dbLoading,
     addPortfolio: dbAddPortfolio,
@@ -485,7 +494,7 @@ export default function PortfoliosPage() {
 
   return (
     <div className="flex flex-col">
-      <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuilles · ${formatCurrency(totalValue)}`} />
+      <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuilles · ${format(totalValue)}`} />
 
       {/* ─── Tab bar ─── */}
       <div className="border-b overflow-x-auto" style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}>
@@ -560,12 +569,12 @@ export default function PortfoliosPage() {
                     <p className="text-xs font-medium uppercase tracking-widest text-zinc-600">Patrimoine net total</p>
                     <div className="mt-2 flex items-baseline gap-3 flex-wrap">
                       <span className="text-3xl sm:text-4xl font-bold tabular-nums tracking-tight text-white">
-                        {formatCurrency(totalValue)}
+                        {format(totalValue)}
                       </span>
                       <ChangeBadge value={totalPnlPct} size="md" />
                     </div>
                     <p className="mt-1 text-sm text-zinc-500">
-                      {totalPnl >= 0 ? "+" : ""}{formatCurrency(totalPnl)} depuis le début
+                      {totalPnl >= 0 ? "+" : ""}{format(totalPnl)} depuis le début
                     </p>
                     {/* CTA button */}
                     <button
@@ -640,7 +649,7 @@ export default function PortfoliosPage() {
                     <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Revenus</p>
                   </div>
                   {[
-                    { label: "Dividendes annuels", value: formatCurrency(annualDivs), color: "#22c55e" },
+                    { label: "Dividendes annuels", value: format(annualDivs), color: "#22c55e" },
                     { label: "Prochain versement", value: "dans 38j" },
                     { label: "Yield on cost", value: ((annualDivs / totalCost) * 100).toFixed(2) + "%" },
                   ].map(r => (
@@ -705,7 +714,7 @@ export default function PortfoliosPage() {
                               <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>{ASSET_CLASS_LABELS[cls as AssetClass] ?? cls}</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-xs tabular-nums" style={{ color: "var(--foreground-dim)" }}>{formatCurrency(val)}</span>
+                              <span className="text-xs tabular-nums" style={{ color: "var(--foreground-dim)" }}>{format(val)}</span>
                               <span className="text-xs font-semibold tabular-nums w-10 text-right" style={{ color: "var(--foreground)" }}>{pct.toFixed(1)}%</span>
                             </div>
                           </div>
@@ -747,7 +756,7 @@ export default function PortfoliosPage() {
                           <div className="text-right">
                             <ChangeBadge value={pct} showIcon={false} />
                             <p className="text-[11px] tabular-nums mt-0.5" style={{ color: "#22c55e" }}>
-                              +{formatCurrency((liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity * pct / 100)}
+                              +{format((liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity * pct / 100)}
                             </p>
                           </div>
                         </div>
@@ -813,9 +822,9 @@ export default function PortfoliosPage() {
                             <span className="text-sm font-medium" style={{ color: "var(--foreground)" }}>{p.name}</span>
                           </div>
                           <p className="text-center text-xs" style={{ color: "var(--foreground-muted)" }}>{p.assets.length}</p>
-                          <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(val)}</p>
+                          <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{format(val)}</p>
                           <div className="flex justify-end"><ChangeBadge value={dayPct} showIcon={false} /></div>
-                          <p className="text-right text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>{pnl >= 0 ? "+" : ""}{formatCurrency(pnl)}</p>
+                          <p className="text-right text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>{pnl >= 0 ? "+" : ""}{format(pnl)}</p>
                           <div className="flex justify-end"><ChangeBadge value={pct} showIcon={false} /></div>
                           <div className="flex justify-end gap-1">
                             <button onClick={e => { e.stopPropagation(); setActiveTab(p.id) }}
@@ -869,10 +878,10 @@ export default function PortfoliosPage() {
                     return (
                       <>
                         <div className="text-right">
-                          <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{formatCurrency(val)}</p>
+                          <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{format(val)}</p>
                           <div className="flex items-center gap-2 justify-end">
                             <span className="text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>
-                              {pnl >= 0 ? "+" : ""}{formatCurrency(pnl)}
+                              {pnl >= 0 ? "+" : ""}{format(pnl)}
                             </span>
                             <ChangeBadge value={pct} showIcon={false} />
                           </div>
