@@ -225,6 +225,14 @@ function HoldingsTable({
   const { format, convert } = useCurrency()
   const [sortKey, setSortKey] = useState<SortKey>("value")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
+  // JS-based responsive — avoids Tailwind v4 hidden/md:grid issues
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener("resize", check)
+    return () => window.removeEventListener("resize", check)
+  }, [])
 
   function handleSort(k: SortKey) {
     if (k === sortKey) setSortDir(d => d === "asc" ? "desc" : "asc")
@@ -253,15 +261,105 @@ function HoldingsTable({
     })
   }, [portfolio.assets, sortKey, sortDir, livePrices])
 
-  // asset | qty | avg price | current price | value | day% | total% | weight | delete
   const COL = "minmax(160px,1fr) 44px 124px 134px 110px 72px 80px 96px 30px"
 
+  // ── MOBILE layout: compact card per asset ─────────────────────────────────
+  if (isMobile) {
+    return (
+      <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+        {sorted.length === 0 && (
+          <div className="flex flex-col items-center py-8 gap-2">
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucun actif</p>
+          </div>
+        )}
+        {sorted.map((asset, i) => {
+          const liveData      = livePrices[asset.ticker]
+          const livePrice     = liveData?.price ?? asset.currentPrice
+          const dayChangePct  = liveData?.changePct ?? 0
+          const origPrice     = liveData?.originalPrice
+          const origCurrency  = liveData?.originalCurrency ?? asset.currency
+          const nativeAvg     = asset.avgBuyPrice
+          const pnlPct        = nativeAvg > 0 ? ((origPrice ?? livePrice) - nativeAvg) / nativeAvg * 100 : 0
+          const val           = livePrice * asset.quantity
+          const color         = ASSET_CLASS_COLORS[asset.assetClass]
+
+          return (
+            <div key={asset.id} style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                {/* Icon */}
+                <div className="h-9 w-9 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
+                  style={{ backgroundColor: color + "22", color }}>
+                  {asset.ticker.slice(0, 3)}
+                </div>
+
+                {/* Name + class */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                    {asset.name}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
+                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                      {asset.quantity} ×
+                    </span>
+                    {/* Current price inline */}
+                    {origPrice && origCurrency ? (
+                      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                        {origCurrency !== "CHF" ? `${origCurrency} ${origPrice.toFixed(2)}` : format(livePrice)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                        {format(livePrice)}
+                      </span>
+                    )}
+                    {liveData?.price && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
+                  </div>
+                </div>
+
+                {/* Right: value + P&L */}
+                <div className="text-right flex-shrink-0">
+                  <p className="text-sm font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                    {format(val)}
+                  </p>
+                  <div className="flex items-center gap-1.5 justify-end mt-0.5">
+                    <ChangeBadge value={dayChangePct} showIcon={false} />
+                    <ChangeBadge value={pnlPct} showIcon={false} />
+                  </div>
+                </div>
+
+                {/* Delete */}
+                <button onClick={() => onDeleteAsset(asset.id)}
+                  className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-500/20 transition-colors"
+                  style={{ color: "var(--text-tertiary)" }}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* Progress bar (weight) */}
+              <div className="px-4 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(totalValue > 0 ? (val/totalValue)*100 : 0, 100)}%`, backgroundColor: color }} />
+                  </div>
+                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+                    {totalValue > 0 ? ((val/totalValue)*100).toFixed(0) : 0}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ── DESKTOP layout: full grid table ──────────────────────────────────────
   return (
     <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
       {/* Scrollable wrapper for wide table */}
       <div className="overflow-x-auto">
       {/* Desktop header */}
-      <div className="hidden md:grid px-5 py-2.5 border-b"
+      <div className="grid px-5 py-2.5 border-b"
         style={{ borderColor: "var(--border)", minWidth: "900px", gridTemplateColumns: COL }}>
         <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Actif</span>
         {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L total","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
@@ -312,31 +410,8 @@ function HoldingsTable({
         return (
           <div key={asset.id} style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
             {/* Mobile card */}
-            <div className="md:hidden flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/20 transition-colors">
-              <div className="h-9 w-9 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
-                style={{ backgroundColor: color + "22", color }}>
-                {asset.ticker.slice(0, 3)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{asset.quantity} ×</span>
-                  <DualPriceInline price={livePriceUserCurr} originalPrice={origPrice} originalCurrency={origCurrency} className="text-[11px]" showFlag />
-                  {liveData?.price && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-xs font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
-                {/* P&L% is native-to-native (same regardless of display currency) */}
-                <ChangeBadge value={pnlPct} showIcon={false} />
-              </div>
-              <button onClick={() => onDeleteAsset(asset.id)} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors flex-shrink-0" style={{ color: "var(--text-tertiary)" }}>
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            {/* Desktop row */}
-            <div className="hidden md:grid items-center px-5 py-3 transition-colors table-row"
+            {/* Desktop-only row (isMobile handled above, returns early) */}
+            <div className="grid items-center px-5 py-3 transition-colors table-row"
               style={{ minWidth: "900px", gridTemplateColumns: COL }}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold"
