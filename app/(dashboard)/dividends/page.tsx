@@ -270,6 +270,43 @@ export default function DividendsPage() {
           </div>
         )}
 
+        {/* ─── Résumé mensuel ─── */}
+        {allDividends.length > 0 && (
+          <div className="space-y-2">
+            <SectionHeader title="Prévision mensuelle" description="Versements attendus par mois" />
+            <div className="overflow-x-auto">
+              <div className="flex gap-2 pb-1" style={{ minWidth: "max-content" }}>
+                {Array.from({ length: 12 }, (_, m) => {
+                  const monthDivs = allDividends.filter(d => new Date(d.payDate).getMonth() === m)
+                  const total = monthDivs.reduce((s, d) => s + d.amount, 0)
+                  const isCurrentMonth = m === today.getMonth()
+                  const monthName = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Aoû","Sep","Oct","Nov","Déc"][m]
+                  return (
+                    <div key={m}
+                      className="flex flex-col items-center rounded-xl border px-3 py-2.5 min-w-[56px]"
+                      style={{
+                        backgroundColor: isCurrentMonth ? "var(--accent)" + "15" : "var(--bg-elevated)",
+                        borderColor:     isCurrentMonth ? "var(--accent)" : "var(--border)",
+                      }}>
+                      <p className="text-[10px] font-medium" style={{ color: isCurrentMonth ? "var(--accent)" : "var(--text-tertiary)" }}>
+                        {monthName}
+                      </p>
+                      <p className="text-xs font-bold tabular-nums mt-0.5" style={{ color: total > 0 ? "#22c55e" : "var(--text-tertiary)" }}>
+                        {total > 0 ? format(total) : "—"}
+                      </p>
+                      {monthDivs.length > 0 && (
+                        <p className="text-[9px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                          {monthDivs.length} versmt
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Controls */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <SectionHeader

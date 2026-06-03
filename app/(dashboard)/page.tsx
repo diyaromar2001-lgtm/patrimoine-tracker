@@ -429,8 +429,10 @@ export default function DashboardPage() {
               ) : recentTx.map((tx, i) => {
                 const isBuy   = tx.type === "buy"
                 const isDiv   = tx.type === "dividend"
-                const color   = isBuy ? "#22c55e" : isDiv ? "#f59e0b" : "#ef4444"
-                const label   = isBuy ? "Achat" : isDiv ? "Dividende" : tx.type === "sell" ? "Vente" : "Transfert"
+                const isSell  = tx.type === "sell"
+                // Achat = bleu neutre (pas une perte), dividende = vert, vente = violet
+                const color   = isBuy ? "#6366f1" : isDiv ? "#22c55e" : isSell ? "#a78bfa" : "#64748b"
+                const label   = isBuy ? "Investi" : isDiv ? "Dividende" : isSell ? "Vente" : "Transfert"
                 return (
                   <div key={tx.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
                     style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
@@ -444,9 +446,14 @@ export default function DashboardPage() {
                         {label} · {new Date(tx.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })}
                       </p>
                     </div>
-                    <p className="text-xs font-semibold tabular-nums" style={{ color }}>
-                      {isBuy ? "−" : "+"}{format(tx.quantity * tx.price)}
-                    </p>
+                    <div className="text-right">
+                      <p className="text-xs font-semibold tabular-nums" style={{ color: isBuy ? "var(--text-secondary)" : color }}>
+                        {isBuy ? "" : isDiv ? "+" : isSell ? "+" : ""}{format(tx.quantity * tx.price)}
+                      </p>
+                      {isBuy && (
+                        <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>capital investi</p>
+                      )}
+                    </div>
                   </div>
                 )
               })}

@@ -133,18 +133,19 @@ export async function POST(req: NextRequest) {
     for (const asset of assets) {
       const prices = pricesByTicker.get(asset.ticker) as Map<string, number> | undefined
       const price  = prices?.get(date)
-
-      if (price != null) {
-        lastKnownPrice.set(asset.ticker, price)
-      }
+      if (price != null) lastKnownPrice.set(asset.ticker, price)
 
       const p = lastKnownPrice.get(asset.ticker)
       if (p != null) {
         const valueInUserCurr = toUserCurrency(p * asset.quantity, asset.nativeCurrency, rates, currency)
         totalValue += valueInUserCurr
-        allPricesKnown = true
       }
     }
+
+    // FIX saut vertical: n'affiche un point QUE si TOUS les actifs ont un prix connu
+    // Cela évite le saut au début quand seulement 1 actif/2 a des données
+    const allKnown = assets.every(a => lastKnownPrice.has(a.ticker))
+    allPricesKnown = allKnown
 
     if (allPricesKnown && totalValue > 0) {
       history.push({ date, value: Math.round(totalValue * 100) / 100 })

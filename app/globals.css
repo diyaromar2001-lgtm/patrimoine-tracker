@@ -409,3 +409,66 @@ body {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--border), transparent);
 }
+
+/* ═══ Mobile Responsive Fixes ═══════════════════════════════════════════════ */
+
+/* Prevent horizontal overflow on all pages */
+html, body { overflow-x: hidden; }
+
+/* Mobile: reduce padding, no horizontal scroll */
+@media (max-width: 640px) {
+  .kpi-card { padding: 14px; }
+
+  /* Tables: always scrollable on mobile */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Charts: max height on mobile to avoid overflow */
+  .chart-container { max-width: 100vw; }
+
+  /* Hero text: responsive */
+  .hero-value { font-size: clamp(24px, 8vw, 44px) !important; }
+
+  /* Compact badge */
+  .badge-gain, .badge-loss { font-size: 10px; padding: 2px 6px; }
+
+  /* Nav items: tighter */
+  .nav-item { padding: 6px 8px; font-size: 12px; }
+}
+
+/* Mobile: period selector wraps */
+@media (max-width: 480px) {
+  .period-selector { flex-wrap: wrap; gap: 2px; }
+  .period-btn { padding: 3px 8px; font-size: 10px; }
+}
+
+/* ═══ Compact Table ══════════════════════════════════════════════════════════ */
+
+.table-compact td, .table-compact th {
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.table-compact .table-row {
+  height: 40px;
+}
+
+/* ═══ Text readability ═══════════════════════════════════════════════════════ */
+
+/* Secondary text: higher contrast */
+.text-secondary-readable {
+  color: #9898b4;  /* slightly brighter than --text-secondary */
+}
+
+/* Monospace numbers */
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* ═══ Smooth chart transitions ═══════════════════════════════════════════════ */
+.chart-container * {
+  transition: opacity 200ms ease;
+}
+
+/* ═══ Mobile bottom nav safe area ═══════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  main { padding-bottom: env(safe-area-inset-bottom, 16px); }
+}
