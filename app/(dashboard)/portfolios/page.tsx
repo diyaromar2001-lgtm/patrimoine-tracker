@@ -253,11 +253,16 @@ function HoldingsTable({
     })
   }, [portfolio.assets, sortKey, sortDir, livePrices])
 
+  // asset | qty | avg price | current price | value | day% | total% | weight | delete
+  const COL = "minmax(160px,1fr) 44px 124px 134px 110px 72px 80px 96px 30px"
+
   return (
     <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+      {/* Scrollable wrapper for wide table */}
+      <div className="overflow-x-auto">
       {/* Desktop header */}
-      <div className="hidden md:grid px-5 py-3 border-b"
-        style={{ borderColor: "var(--border)", gridTemplateColumns: "1fr 60px 90px 100px 100px 80px 80px 100px 36px" }}>
+      <div className="hidden md:grid px-5 py-2.5 border-b"
+        style={{ borderColor: "var(--border)", minWidth: "900px", gridTemplateColumns: COL }}>
         <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Actif</span>
         {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L total","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
           <SortHeader key={k} label={l} sortKey={k} current={sortKey} dir={sortDir} onSort={handleSort} />
@@ -331,8 +336,8 @@ function HoldingsTable({
             </div>
 
             {/* Desktop row */}
-            <div className="hidden md:grid items-center px-5 py-3 hover:bg-zinc-800/20 transition-colors"
-              style={{ gridTemplateColumns: "1fr 60px 90px 100px 100px 80px 80px 100px 36px" }}>
+            <div className="hidden md:grid items-center px-5 py-3 transition-colors table-row"
+              style={{ minWidth: "900px", gridTemplateColumns: COL }}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold"
                   style={{ backgroundColor: color + "22", color }}>
@@ -343,19 +348,17 @@ function HoldingsTable({
                   <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
                 </div>
               </div>
-              <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{asset.quantity}</p>
-              {/* Avg buy price — native currency + small converted */}
+              {/* Qty — centred, bold */}
+              <p className="text-center text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                {asset.quantity}
+              </p>
+              {/* Avg buy price — stacked dual price */}
               <div className="flex justify-end">
-                <DualPriceInline
-                  price={avgPriceUserCurr}
-                  originalPrice={nativeAvg}
-                  originalCurrency={origCurrency}
-                  size="sm"
-                />
+                <DualPrice price={avgPriceUserCurr} originalPrice={nativeAvg} originalCurrency={origCurrency} size="xs" />
               </div>
-              {/* Current price — native + small converted */}
-              <div className="flex items-center justify-end gap-1">
-                <DualPrice price={livePriceUserCurr} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" />
+              {/* Current price — stacked dual price + live dot */}
+              <div className="flex items-center justify-end gap-1.5">
+                <DualPrice price={livePriceUserCurr} originalPrice={origPrice} originalCurrency={origCurrency} size="xs" />
                 {liveData?.price && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
               </div>
               {/* Total value in user's currency */}
@@ -384,6 +387,7 @@ function HoldingsTable({
           </div>
         )
       })}
+      </div>{/* /overflow-x-auto */}
     </div>
   )
 }
@@ -845,7 +849,7 @@ export default function PortfoliosPage() {
                 <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Résumé des portefeuilles</p>
                 <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                   <div className="grid px-5 py-3 border-b text-[11px] font-medium uppercase tracking-wider"
-                    style={{ borderColor: "var(--border)", color: "var(--text-tertiary)", gridTemplateColumns: "1fr 60px 120px 100px 100px 80px 100px" }}>
+                    style={{ borderColor: "var(--border)", color: "var(--text-tertiary)", gridTemplateColumns: "minmax(150px,1fr) 48px 110px 100px 90px 80px 90px" }}>
                     <span>Portefeuille</span>
                     <span className="text-center">Actifs</span>
                     <span className="text-right">Valeur</span>
@@ -865,7 +869,7 @@ export default function PortfoliosPage() {
                     return (
                       <div key={p.id} style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
                         <div className="grid items-center px-5 py-3 hover:bg-zinc-800/20 transition-colors cursor-pointer"
-                          style={{ gridTemplateColumns: "1fr 60px 120px 100px 100px 80px 100px" }}
+                          style={{ gridTemplateColumns: "minmax(150px,1fr) 48px 110px 100px 90px 80px 90px" }}
                           onClick={() => setExpandedRows(s => { const n = new Set(s); exp ? n.delete(p.id) : n.add(p.id); return n })}>
                           <div className="flex items-center gap-3">
                             {exp ? <ChevronUp className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-tertiary)" }} />
