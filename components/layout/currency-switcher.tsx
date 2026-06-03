@@ -17,10 +17,10 @@ export function CurrencySwitcher() {
       <button
         onClick={() => setOpen(o => !o)}
         className="hidden sm:flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-800"
-        style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}
+        style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
       >
         <span>{FLAGS[currency]}</span>
-        <span className="font-semibold" style={{ color: "var(--foreground)" }}>{currency}</span>
+        <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{currency}</span>
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -34,7 +34,7 @@ export function CurrencySwitcher() {
               exit={{ opacity: 0, y: -4, scale: 0.97 }}
               transition={{ duration: 0.1 }}
               className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-xl border shadow-2xl"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
             >
               {(["CHF","USD","EUR"] as AppCurrency[]).map(c => (
                 <button
@@ -42,8 +42,8 @@ export function CurrencySwitcher() {
                   onClick={() => { setCurrency(c); setOpen(false) }}
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm transition-colors hover:bg-zinc-800"
                   style={{
-                    color:           c === currency ? "white" : "var(--foreground-muted)",
-                    backgroundColor: c === currency ? "var(--background-hover)" : "transparent",
+                    color:           c === currency ? "white" : "var(--text-secondary)",
+                    backgroundColor: c === currency ? "var(--bg-muted)" : "transparent",
                     fontWeight:      c === currency ? 600 : 400,
                   }}
                 >

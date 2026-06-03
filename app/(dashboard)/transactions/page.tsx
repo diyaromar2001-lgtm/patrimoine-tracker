@@ -135,8 +135,8 @@ export default function TransactionsPage() {
             { label: "Frais total",      value: format(totalFees), color: "#6b7280" },
           ].map(s => (
             <div key={s.label} className="rounded-xl border p-4"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-              <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{s.label}</p>
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{s.label}</p>
               <p className="mt-1 text-lg font-bold tabular-nums" style={{ color: s.color }}>{s.value}</p>
             </div>
           ))}
@@ -146,19 +146,19 @@ export default function TransactionsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5"
-              style={{ color: "var(--foreground-dim)" }} />
+              style={{ color: "var(--text-tertiary)" }} />
             <input type="text" placeholder="Rechercher…" value={search}
               onChange={e => setSearch(e.target.value)}
               className="rounded-lg border pl-9 pr-3 py-2 text-sm outline-none"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
           </div>
           <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
             {(["all","buy","sell","dividend","transfer"] as const).map(f => (
               <button key={f} onClick={() => setTypeFilter(f)}
                 className="px-3 py-1.5 text-xs font-medium transition-colors"
                 style={{
-                  backgroundColor: typeFilter === f ? "var(--accent)" : "var(--background-card)",
-                  color:           typeFilter === f ? "white" : "var(--foreground-muted)",
+                  backgroundColor: typeFilter === f ? "var(--accent)" : "var(--bg-elevated)",
+                  color:           typeFilter === f ? "white" : "var(--text-secondary)",
                 }}>
                 {f === "all" ? "Tous" : TX_LABELS[f]}
               </button>
@@ -173,9 +173,9 @@ export default function TransactionsPage() {
 
         {/* Table */}
         <div className="rounded-xl border overflow-hidden"
-          style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
           <div className="hidden sm:grid px-5 py-3 text-[11px] font-medium uppercase tracking-wider"
-            style={{ color: "var(--foreground-dim)", gridTemplateColumns: "1fr 80px 70px 90px 70px 80px 56px" }}>
+            style={{ color: "var(--text-tertiary)", gridTemplateColumns: "1fr 80px 70px 90px 70px 80px 56px" }}>
             <span>Actif</span>
             <span className="text-center">Type</span>
             <span className="text-right">Qté</span>
@@ -187,8 +187,8 @@ export default function TransactionsPage() {
 
           {filtered.length === 0 && (
             <div className="flex flex-col items-center py-12 gap-2">
-              <ArrowLeftRight className="h-8 w-8" style={{ color: "var(--foreground-dim)" }} />
-              <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+              <ArrowLeftRight className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                 {transactions.length === 0 ? "Aucune transaction — ajoutez-en une !" : "Aucun résultat"}
               </p>
             </div>
@@ -209,26 +209,26 @@ export default function TransactionsPage() {
                     <Icon className="h-4 w-4" style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{tx.assetName}</p>
-                    <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{tx.assetName}</p>
+                    <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
                       <span className="rounded px-1.5 py-0.5 mr-1" style={{ backgroundColor: color + "18", color }}>
                         {TX_LABELS[tx.type]}
                       </span>
                       {new Date(tx.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
                     </p>
                   </div>
-                  <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>
+                  <p className="text-xs font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
                     {format(tx.price * tx.quantity)}
                   </p>
                   <div className="flex gap-1">
                     <button onClick={() => openEdit(tx)}
                       className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-zinc-700 transition-colors"
-                      style={{ color: "var(--foreground-dim)" }}>
+                      style={{ color: "var(--text-tertiary)" }}>
                       <Pencil className="h-3 w-3" />
                     </button>
                     <button onClick={() => removeTransaction(tx.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors"
-                      style={{ color: "var(--foreground-dim)" }}>
+                      style={{ color: "var(--text-tertiary)" }}>
                       <X className="h-3 w-3" />
                     </button>
                   </div>
@@ -242,9 +242,9 @@ export default function TransactionsPage() {
                       <Icon className="h-3.5 w-3.5" style={{ color }} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{tx.assetName}</p>
+                      <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{tx.assetName}</p>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>{tx.ticker}</span>
+                        <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{tx.ticker}</span>
                         <AssetClassBadge label={ASSET_CLASS_LABELS[tx.assetClass]} color={acCol} />
                       </div>
                     </div>
@@ -255,25 +255,25 @@ export default function TransactionsPage() {
                       {TX_LABELS[tx.type]}
                     </span>
                   </div>
-                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{tx.quantity}</p>
-                  <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{tx.quantity}</p>
+                  <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                     {format(tx.price)}
                   </p>
-                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-dim)" }}>
+                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-tertiary)" }}>
                     {format(tx.fees)}
                   </p>
-                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                     {new Date(tx.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
                   </p>
                   <div className="flex items-center justify-end gap-1">
                     <button onClick={() => openEdit(tx)}
                       className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-zinc-700 transition-colors"
-                      style={{ color: "var(--foreground-dim)" }}>
+                      style={{ color: "var(--text-tertiary)" }}>
                       <Pencil className="h-3 w-3" />
                     </button>
                     <button onClick={() => removeTransaction(tx.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors"
-                      style={{ color: "var(--foreground-dim)" }}>
+                      style={{ color: "var(--text-tertiary)" }}>
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>

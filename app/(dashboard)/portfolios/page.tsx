@@ -143,25 +143,25 @@ function BenchmarkChart({
       {perf && (
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--background-hover)" }}>
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-muted)" }}>
             <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: perf.pct >= 0 ? "#22c55e" : "#ef4444" }} />
-            <span className="text-xs font-medium" style={{ color: "var(--foreground)" }}>{name}</span>
+            <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
             <span className="text-xs font-bold tabular-nums" style={{ color: perf.pct >= 0 ? "#22c55e" : "#ef4444" }}>
               {perf.pct >= 0 ? "+" : ""}{perf.pct.toFixed(2)}%
             </span>
           </div>
           <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--background-hover)" }}>
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-muted)" }}>
             <span className="h-0.5 w-4 border-t-2 border-dashed inline-block" style={{ borderColor: "#eab308" }} />
-            <span className="text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>S&P 500</span>
+            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>S&P 500</span>
             <span className="text-xs font-bold tabular-nums" style={{ color: "#eab308" }}>
               {perf.spyPct >= 0 ? "+" : ""}{perf.spyPct.toFixed(2)}%
             </span>
           </div>
           <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--background-hover)" }}>
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-muted)" }}>
             <span className="h-0.5 w-4 border-t-2 border-dashed inline-block" style={{ borderColor: "#22c55e" }} />
-            <span className="text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>MSCI World</span>
+            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>MSCI World</span>
           </div>
           {Math.abs(perf.alpha) > 0.5 && (
             <div className="rounded-full px-3 py-1 text-xs font-semibold"
@@ -173,19 +173,19 @@ function BenchmarkChart({
             </div>
           )}
           <div className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px]"
-            style={{ backgroundColor: "var(--background-hover)", color: "var(--foreground-dim)" }}>
+            style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-tertiary)" }}>
             <AlertCircle className="h-3 w-3" />
             Prix simulés
           </div>
         </div>
       )}
-      <div className="relative rounded-xl border" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+      <div className="relative rounded-xl border" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl">
             <div className="flex items-center gap-2 rounded-lg border px-3 py-2"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#3b82f6" }} />
-              <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>Chargement des données Yahoo Finance…</span>
+              <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Chargement des données Yahoo Finance…</span>
             </div>
           </div>
         )}
@@ -203,7 +203,7 @@ function SortHeader({
   return (
     <button onClick={() => onSort(sortKey)}
       className="flex items-center gap-1 text-right w-full justify-end hover:text-zinc-200 transition-colors"
-      style={{ color: active ? "var(--foreground)" : "var(--foreground-dim)" }}>
+      style={{ color: active ? "var(--text-primary)" : "var(--text-tertiary)" }}>
       <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
       {active ? (dir === "asc" ? <ArrowUp className="h-2.5 w-2.5" /> : <ArrowDown className="h-2.5 w-2.5" />) : <ChevronsUpDown className="h-2.5 w-2.5 opacity-40" />}
     </button>
@@ -253,11 +253,11 @@ function HoldingsTable({
   }, [portfolio.assets, sortKey, sortDir, livePrices])
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+    <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
       {/* Desktop header */}
       <div className="hidden md:grid px-5 py-3 border-b"
         style={{ borderColor: "var(--border)", gridTemplateColumns: "1fr 60px 90px 100px 100px 80px 80px 100px 36px" }}>
-        <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)" }}>Actif</span>
+        <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Actif</span>
         {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L total","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
           <SortHeader key={k} label={l} sortKey={k} current={sortKey} dir={sortDir} onSort={handleSort} />
         ))}
@@ -266,8 +266,8 @@ function HoldingsTable({
 
       {sorted.length === 0 && (
         <div className="flex flex-col items-center py-10 gap-2">
-          <BarChart2 className="h-7 w-7" style={{ color: "var(--foreground-dim)" }} />
-          <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucun actif</p>
+          <BarChart2 className="h-7 w-7" style={{ color: "var(--text-tertiary)" }} />
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucun actif</p>
         </div>
       )}
 
@@ -292,18 +292,18 @@ function HoldingsTable({
                 {asset.ticker.slice(0, 3)}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
+                <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
                 <div className="flex items-center gap-1">
-                  <span className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>{asset.quantity} ×</span>
+                  <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{asset.quantity} ×</span>
                   <DualPriceInline price={eff.currentPrice} originalPrice={origPrice} originalCurrency={origCurrency} className="text-[11px]" showFlag />
                   {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{format(val)}</p>
+                <p className="text-xs font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
                 <ChangeBadge value={pnlPct} showIcon={false} />
               </div>
-              <button onClick={() => onDeleteAsset(asset.id)} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors flex-shrink-0" style={{ color: "var(--foreground-dim)" }}>
+              <button onClick={() => onDeleteAsset(asset.id)} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors flex-shrink-0" style={{ color: "var(--text-tertiary)" }}>
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -317,13 +317,13 @@ function HoldingsTable({
                   {asset.ticker.slice(0, 3)}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
+                  <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
                   <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
                 </div>
               </div>
-              <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>{asset.quantity}</p>
+              <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{asset.quantity}</p>
               {/* Avg buy price in user's currency */}
-              <p className="text-right text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+              <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                 {format(asset.avgBuyPrice)}
               </p>
               {/* Current price: native currency PRIMARY + user currency small */}
@@ -332,7 +332,7 @@ function HoldingsTable({
                 {livePrice && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
               </div>
               {/* Total value in user's currency */}
-              <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+              <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                 {format(val)}
               </p>
               <div className="flex justify-end"><ChangeBadge value={dayChangePct} showIcon={false} /></div>
@@ -342,11 +342,11 @@ function HoldingsTable({
                 <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(weight, 100)}%`, backgroundColor: color }} />
                 </div>
-                <span className="text-[11px] tabular-nums w-8 text-right" style={{ color: "var(--foreground-muted)" }}>
+                <span className="text-[11px] tabular-nums w-8 text-right" style={{ color: "var(--text-secondary)" }}>
                   {weight.toFixed(0)}%
                 </span>
               </div>
-              <button onClick={() => onDeleteAsset(asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-500/20 transition-colors" style={{ color: "var(--foreground-dim)" }}>
+              <button onClick={() => onDeleteAsset(asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-500/20 transition-colors" style={{ color: "var(--text-tertiary)" }}>
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -499,7 +499,7 @@ export default function PortfoliosPage() {
       <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuilles · ${format(totalValue)}`} />
 
       {/* ─── Tab bar ─── */}
-      <div className="border-b overflow-x-auto" style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}>
+      <div className="border-b overflow-x-auto" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-base)" }}>
         <div className="flex min-w-max px-4 sm:px-6">
           {/* Global tab */}
           <button
@@ -609,10 +609,10 @@ export default function PortfoliosPage() {
               {/* 3 stat cards */}
               <div className="grid gap-4 sm:grid-cols-3">
                 {/* Performance */}
-                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                   <div className="flex items-center gap-2">
                     <TrendingUp className="h-4 w-4" style={{ color: "#22c55e" }} />
-                    <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Performance</p>
+                    <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Performance</p>
                   </div>
                   {[
                     { label: "Rendement total", value: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + " %", color: totalPnlPct >= 0 ? "#22c55e" : "#ef4444", tooltip: "" },
@@ -620,7 +620,7 @@ export default function PortfoliosPage() {
                     { label: "Alpha généré", value: "+~" + Math.max(0, totalPnlPct - 8).toFixed(2) + " %", color: "#3b82f6", tooltip: METRIC_TOOLTIPS.alpha },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--foreground-muted)" }}>
+                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
                         {r.label}
                         {r.tooltip && <Tooltip content={r.tooltip} icon />}
                       </span>
@@ -630,10 +630,10 @@ export default function PortfoliosPage() {
                 </div>
 
                 {/* Risk */}
-                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                   <div className="flex items-center gap-2">
                     <Activity className="h-4 w-4" style={{ color: "#a78bfa" }} />
-                    <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Risque</p>
+                    <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Risque</p>
                   </div>
                   {[
                     { label: "Bêta (vs SPY)",    value: "~0.92",  tooltip: METRIC_TOOLTIPS.beta   },
@@ -641,20 +641,20 @@ export default function PortfoliosPage() {
                     { label: "Ratio de Sharpe",  value: "~1.18",  tooltip: METRIC_TOOLTIPS.sharpe  },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--foreground-muted)" }}>
+                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
                         {r.label}
                         {r.tooltip && <Tooltip content={r.tooltip} icon />}
                       </span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{r.value}</span>
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{r.value}</span>
                     </div>
                   ))}
                 </div>
 
                 {/* Income */}
-                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                   <div className="flex items-center gap-2">
                     <BarChart2 className="h-4 w-4" style={{ color: "#f59e0b" }} />
-                    <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Revenus</p>
+                    <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Revenus</p>
                   </div>
                   {[
                     { label: "Dividendes annuels",  value: format(annualDivs), color: "#22c55e", tooltip: "" },
@@ -662,11 +662,11 @@ export default function PortfoliosPage() {
                     { label: "Yield on cost",        value: ((annualDivs / totalCost) * 100).toFixed(2) + " %", color: "", tooltip: METRIC_TOOLTIPS.yieldOnCost },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--foreground-muted)" }}>
+                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
                         {r.label}
                         {(r as {tooltip?: string}).tooltip && <Tooltip content={(r as {tooltip: string}).tooltip} icon />}
                       </span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: (r as {color?: string}).color ?? "var(--foreground)" }}>{r.value}</span>
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: (r as {color?: string}).color ?? "var(--text-primary)" }}>{r.value}</span>
                     </div>
                   ))}
                 </div>
@@ -676,14 +676,14 @@ export default function PortfoliosPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Performance vs Benchmarks</p>
-                    <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>Normalisé à 100 · comparaison relative</p>
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Performance vs Benchmarks</p>
+                    <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Normalisé à 100 · comparaison relative</p>
                   </div>
                   <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
                     {PERIODS.map(p => (
                       <button key={p} onClick={() => setPeriod(p)}
                         className="px-2.5 py-1 text-xs font-medium transition-colors"
-                        style={{ backgroundColor: period === p ? "var(--accent)" : "transparent", color: period === p ? "white" : "var(--foreground-dim)" }}>
+                        style={{ backgroundColor: period === p ? "var(--accent)" : "transparent", color: period === p ? "white" : "var(--text-tertiary)" }}>
                         {p}
                       </button>
                     ))}
@@ -700,8 +700,8 @@ export default function PortfoliosPage() {
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-40 rounded-xl border"
-                    style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", borderStyle: "dashed" }}>
-                    <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+                    style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", borderStyle: "dashed" }}>
+                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                       Ajoutez des actifs pour voir votre performance vs benchmarks
                     </p>
                   </div>
@@ -712,8 +712,8 @@ export default function PortfoliosPage() {
               <div className="grid gap-6 lg:grid-cols-2">
                 {/* Allocation */}
                 <div className="space-y-3">
-                  <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Répartition par classe</p>
-                  <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Répartition par classe</p>
+                  <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                     {Object.entries(byClass).sort(([,a],[,b]) => b - a).map(([cls, val]) => {
                       const pct   = totalValue > 0 ? (val / totalValue) * 100 : 0
                       const color = ASSET_CLASS_COLORS[cls as AssetClass] ?? "#6b7280"
@@ -722,11 +722,11 @@ export default function PortfoliosPage() {
                           <div className="flex items-center justify-between mb-1.5">
                             <div className="flex items-center gap-2">
                               <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                              <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>{ASSET_CLASS_LABELS[cls as AssetClass] ?? cls}</span>
+                              <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{ASSET_CLASS_LABELS[cls as AssetClass] ?? cls}</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-xs tabular-nums" style={{ color: "var(--foreground-dim)" }}>{format(val)}</span>
-                              <span className="text-xs font-semibold tabular-nums w-10 text-right" style={{ color: "var(--foreground)" }}>{pct.toFixed(1)}%</span>
+                              <span className="text-xs tabular-nums" style={{ color: "var(--text-tertiary)" }}>{format(val)}</span>
+                              <span className="text-xs font-semibold tabular-nums w-10 text-right" style={{ color: "var(--text-primary)" }}>{pct.toFixed(1)}%</span>
                             </div>
                           </div>
                           <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
@@ -746,10 +746,10 @@ export default function PortfoliosPage() {
 
                 {/* Top movers */}
                 <div className="space-y-3">
-                  <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Top movers du jour</p>
-                  <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top movers du jour</p>
+                  <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                     <div className="px-4 py-2 border-b" style={{ borderColor: "var(--border)" }}>
-                      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)" }}>Meilleures performances</p>
+                      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Meilleures performances</p>
                     </div>
                     {topGainers.map((a, i) => {
                       const pct = liveEnriched[a.ticker]?.changePct ?? 0
@@ -761,8 +761,8 @@ export default function PortfoliosPage() {
                             {a.ticker.slice(0, 3)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{a.name}</p>
-                            <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>{a.ticker}</p>
+                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.name}</p>
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{a.ticker}</p>
                           </div>
                           <div className="text-right">
                             <ChangeBadge value={pct} showIcon={false} />
@@ -774,7 +774,7 @@ export default function PortfoliosPage() {
                       )
                     })}
                     <div className="px-4 py-2 border-t border-b" style={{ borderColor: "var(--border)" }}>
-                      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--foreground-dim)" }}>Moins bonnes performances</p>
+                      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Moins bonnes performances</p>
                     </div>
                     {topLosers.map((a, i) => {
                       const pct = liveEnriched[a.ticker]?.changePct ?? 0
@@ -786,8 +786,8 @@ export default function PortfoliosPage() {
                             {a.ticker.slice(0, 3)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{a.name}</p>
-                            <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>{a.ticker}</p>
+                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.name}</p>
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{a.ticker}</p>
                           </div>
                           <div className="text-right">
                             <ChangeBadge value={pct} showIcon={false} />
@@ -801,10 +801,10 @@ export default function PortfoliosPage() {
 
               {/* Portfolios summary table */}
               <div className="space-y-3">
-                <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Résumé des portefeuilles</p>
-                <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Résumé des portefeuilles</p>
+                <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                   <div className="grid px-5 py-3 border-b text-[11px] font-medium uppercase tracking-wider"
-                    style={{ borderColor: "var(--border)", color: "var(--foreground-dim)", gridTemplateColumns: "1fr 60px 120px 100px 100px 80px 100px" }}>
+                    style={{ borderColor: "var(--border)", color: "var(--text-tertiary)", gridTemplateColumns: "1fr 60px 120px 100px 100px 80px 100px" }}>
                     <span>Portefeuille</span>
                     <span className="text-center">Actifs</span>
                     <span className="text-right">Valeur</span>
@@ -827,20 +827,20 @@ export default function PortfoliosPage() {
                           style={{ gridTemplateColumns: "1fr 60px 120px 100px 100px 80px 100px" }}
                           onClick={() => setExpandedRows(s => { const n = new Set(s); exp ? n.delete(p.id) : n.add(p.id); return n })}>
                           <div className="flex items-center gap-3">
-                            {exp ? <ChevronUp className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--foreground-dim)" }} />
-                                 : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--foreground-dim)" }} />}
+                            {exp ? <ChevronUp className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-tertiary)" }} />
+                                 : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-tertiary)" }} />}
                             <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                            <span className="text-sm font-medium" style={{ color: "var(--foreground)" }}>{p.name}</span>
+                            <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{p.name}</span>
                           </div>
-                          <p className="text-center text-xs" style={{ color: "var(--foreground-muted)" }}>{p.assets.length}</p>
-                          <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{format(val)}</p>
+                          <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>{p.assets.length}</p>
+                          <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
                           <div className="flex justify-end"><ChangeBadge value={dayPct} showIcon={false} /></div>
                           <p className="text-right text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>{pnl >= 0 ? "+" : ""}{format(pnl)}</p>
                           <div className="flex justify-end"><ChangeBadge value={pct} showIcon={false} /></div>
                           <div className="flex justify-end gap-1">
                             <button onClick={e => { e.stopPropagation(); setActiveTab(p.id) }}
                               className="rounded-md px-2 py-1 text-[11px] font-medium hover:bg-zinc-700 transition-colors"
-                              style={{ color: "var(--foreground-dim)" }}>Voir</button>
+                              style={{ color: "var(--text-tertiary)" }}>Voir</button>
                           </div>
                         </div>
                         {exp && (
@@ -882,11 +882,11 @@ export default function PortfoliosPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-bold" style={{ color: "var(--foreground)" }}>{activePortfolio.name}</h2>
+                      <h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{activePortfolio.name}</h2>
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: activePortfolio.color }} />
                     </div>
                     {activePortfolio.description && (
-                      <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{activePortfolio.description}</p>
+                      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{activePortfolio.description}</p>
                     )}
                   </div>
                 </div>
@@ -899,7 +899,7 @@ export default function PortfoliosPage() {
                     return (
                       <>
                         <div className="text-right">
-                          <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{format(val)}</p>
+                          <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
                           <div className="flex items-center gap-2 justify-end">
                             <span className="text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>
                               {pnl >= 0 ? "+" : ""}{format(pnl)}
@@ -927,12 +927,12 @@ export default function PortfoliosPage() {
               {/* Chart with period selector */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Performance vs S&P 500</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Performance vs S&P 500</p>
                   <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
                     {PERIODS.map(p => (
                       <button key={p} onClick={() => setPeriod(p)}
                         className="px-2.5 py-1 text-xs font-medium transition-colors"
-                        style={{ backgroundColor: period === p ? "var(--accent)" : "transparent", color: period === p ? "white" : "var(--foreground-dim)" }}>
+                        style={{ backgroundColor: period === p ? "var(--accent)" : "transparent", color: period === p ? "white" : "var(--text-tertiary)" }}>
                         {p}
                       </button>
                     ))}
@@ -950,10 +950,10 @@ export default function PortfoliosPage() {
               {/* Holdings table (sortable) */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                     Positions — {activePortfolio.assets.length} actif{activePortfolio.assets.length !== 1 ? "s" : ""}
                   </p>
-                  <p className="text-xs" style={{ color: "var(--foreground-dim)" }}>
+                  <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
                     Cliquer sur une colonne pour trier
                   </p>
                 </div>
@@ -966,8 +966,8 @@ export default function PortfoliosPage() {
               </div>
 
               {/* Add asset search bar */}
-              <div className="rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", borderStyle: "dashed" }}>
-                <p className="text-xs font-medium mb-2" style={{ color: "var(--foreground-muted)" }}>Ajouter un actif</p>
+              <div className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", borderStyle: "dashed" }}>
+                <p className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Ajouter un actif</p>
                 <AssetSearch
                   onSelect={r => handleAddAsset(activePortfolio.id, r)}
                   placeholder="Rechercher et ajouter… (AAPL, BTC, CW8, NVDA…)"
@@ -1005,29 +1005,29 @@ export default function PortfoliosPage() {
             onClick={() => setShowNewPortfolio(false)}>
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
               className="w-full max-w-md rounded-2xl border p-6"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
               onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Nouveau portefeuille</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Nouveau portefeuille</h3>
                 <button onClick={() => setShowNewPortfolio(false)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
                   <X className="h-4 w-4 text-zinc-500" />
                 </button>
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Nom *</label>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Nom *</label>
                   <input type="text" placeholder="Ex: Actions Long Terme" value={newName} onChange={e => setNewName(e.target.value)}
                     className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Description</label>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Description</label>
                   <input type="text" placeholder="Stratégie, objectif…" value={newDesc} onChange={e => setNewDesc(e.target.value)}
                     className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Couleur</label>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Couleur</label>
                   <div className="flex gap-2">
                     {["#3b82f6","#22c55e","#a78bfa","#f59e0b","#ef4444","#ec4899","#14b8a6"].map(c => (
                       <button key={c} onClick={() => setNewColor(c)}

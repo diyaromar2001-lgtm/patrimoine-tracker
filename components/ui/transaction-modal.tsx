@@ -111,16 +111,16 @@ function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onC
     return (
       <div className="flex items-center gap-3">
         <div className="flex flex-1 items-center gap-3 rounded-xl border px-4 py-3"
-          style={{ backgroundColor: "var(--background)", borderColor: "#22c55e40" }}>
+          style={{ backgroundColor: "var(--bg-base)", borderColor: "#22c55e40" }}>
           <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[11px] font-bold"
             style={{ backgroundColor: "#22c55e22", color: "#22c55e" }}>
             {ticker.slice(0, 3)}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{ticker}</p>
-            <p className="text-xs truncate" style={{ color: "var(--foreground-muted)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{ticker}</p>
+            <p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
               {assetName}
-              {nativeCurrency && <span className="ml-1.5" style={{ color: "var(--foreground-dim)" }}>{flag} {nativeCurrency}</span>}
+              {nativeCurrency && <span className="ml-1.5" style={{ color: "var(--text-tertiary)" }}>{flag} {nativeCurrency}</span>}
             </p>
           </div>
           {priceFetching && <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" style={{ color: "#3b82f6" }} />}
@@ -128,7 +128,7 @@ function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onC
         <button onClick={onClear}
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border transition-colors hover:bg-zinc-800"
           style={{ borderColor: "var(--border)" }}>
-          <X className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
+          <X className="h-4 w-4" style={{ color: "var(--text-secondary)" }} />
         </button>
       </div>
     )
@@ -139,8 +139,8 @@ function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onC
     <div className="relative">
       <div className="relative">
         {loading
-          ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin" style={{ color: "var(--foreground-dim)" }} />
-          : <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "var(--foreground-dim)" }} />
+          ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin" style={{ color: "var(--text-tertiary)" }} />
+          : <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "var(--text-tertiary)" }} />
         }
         <input type="text" placeholder="Chercher… AAPL, BTC, CW8, GOOG…"
           value={query}
@@ -148,7 +148,7 @@ function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onC
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onFocus={() => results.length > 0 && setOpen(true)}
           className="w-full rounded-xl border pl-9 pr-3 py-3 text-sm outline-none"
-          style={{ backgroundColor: "var(--background)", borderColor: open ? "var(--accent)" : "var(--border)", color: "var(--foreground)" }}
+          style={{ backgroundColor: "var(--bg-base)", borderColor: open ? "var(--accent)" : "var(--border)", color: "var(--text-primary)" }}
           autoComplete="off" autoFocus
         />
       </div>
@@ -157,7 +157,7 @@ function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onC
           <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.1 }}
             className="absolute left-0 right-0 top-full z-[60] mt-1 overflow-hidden rounded-xl border shadow-2xl"
-            style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
             {results.map((r, i) => {
               const color = ASSET_CLASS_COLORS[r.type as AssetClass] ?? "#6b7280"
               return (
@@ -169,8 +169,8 @@ function AssetSelector({ ticker, assetName, nativeCurrency, onPick, onPrice, onC
                     {r.ticker.slice(0, 3)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: "var(--foreground)" }}>{r.name}</p>
-                    <p className="text-xs" style={{ color: "var(--foreground-dim)" }}>
+                    <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{r.name}</p>
+                    <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
                       <span className="font-semibold" style={{ color }}>{r.ticker}</span>
                       {r.exchange ? ` · ${r.exchange}` : ""}
                     </p>
@@ -268,12 +268,12 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
       <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
         className="w-full max-w-lg rounded-2xl border overflow-hidden mb-12"
-        style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
+        style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header + type pills */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
-          <h3 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
             {mode === "add" ? "Nouvelle transaction" : "Modifier la transaction"}
           </h3>
           <div className="flex gap-1.5">
@@ -282,7 +282,7 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
                 className="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all"
                 style={{
                   backgroundColor: form.type === k ? TX_COLORS[k] + "25" : "transparent",
-                  color:           form.type === k ? TX_COLORS[k] : "var(--foreground-dim)",
+                  color:           form.type === k ? TX_COLORS[k] : "var(--text-tertiary)",
                   border:          form.type === k ? `1px solid ${TX_COLORS[k]}60` : "1px solid transparent",
                 }}>
                 {v}
@@ -297,15 +297,15 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
         <div className="px-6 py-5 space-y-4">
           {/* Portfolio */}
           <div>
-            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Portefeuille *</label>
+            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Portefeuille *</label>
             <div className="flex flex-wrap gap-2">
               {portfolios.map(p => (
                 <button key={p.id} onClick={() => set("portfolioId", p.id)}
                   className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all"
                   style={{
-                    backgroundColor: form.portfolioId === p.id ? p.color + "15" : "var(--background)",
+                    backgroundColor: form.portfolioId === p.id ? p.color + "15" : "var(--bg-base)",
                     borderColor:     form.portfolioId === p.id ? p.color : "var(--border)",
-                    color:           form.portfolioId === p.id ? "white" : "var(--foreground-muted)",
+                    color:           form.portfolioId === p.id ? "white" : "var(--text-secondary)",
                   }}>
                   <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                   {p.name}
@@ -317,7 +317,7 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
 
           {/* Asset selector */}
           <div>
-            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Actif *</label>
+            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Actif *</label>
             <AssetSelector
               ticker={form.ticker}
               assetName={form.assetName}
@@ -332,19 +332,19 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
           {/* Qty + Price + Fees */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Quantité *</label>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Quantité *</label>
               <input type="number" placeholder="10" value={form.quantity}
                 onChange={e => set("quantity", e.target.value)}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium flex items-center gap-1.5" style={{ color: "var(--foreground-muted)" }}>
+              <label className="mb-1.5 block text-xs font-medium flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
                 Prix unit.
                 {/* Show native currency badge */}
                 {form.ticker && (
                   <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-                    style={{ backgroundColor: "var(--background-hover)", color: "var(--foreground-dim)" }}>
+                    style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-tertiary)" }}>
                     {flag} {nativeCurr}
                   </span>
                 )}
@@ -357,42 +357,42 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
                 onChange={e => set("price", e.target.value)}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
                 style={{
-                  backgroundColor: "var(--background)",
+                  backgroundColor: "var(--bg-base)",
                   borderColor: form.price ? "#22c55e40" : "var(--border)",
-                  color: "var(--foreground)",
+                  color: "var(--text-primary)",
                 }} />
               {/* Show price in user's currency if different */}
               {form.price && !priceFetching && !sameAsCurr && (
-                <p className="mt-1 text-[11px]" style={{ color: "var(--foreground-dim)" }}>
+                <p className="mt-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                   ≈ {format(convert(parseFloat(form.price), nativeCurr as AppCurrency))}
                 </p>
               )}
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                 Frais ({currency})
               </label>
               <input type="number" placeholder="1.00" value={form.fees}
                 onChange={e => set("fees", e.target.value)}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
             </div>
           </div>
 
           {/* Date + Class */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Date *</label>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Date *</label>
               <input type="date" value={form.date}
                 onChange={e => set("date", e.target.value)}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)", colorScheme: "dark" }} />
+                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Classe</label>
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Classe</label>
               <select value={form.assetClass} onChange={e => set("assetClass", e.target.value as AssetClass)}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}>
+                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
                 {(Object.entries(ASSET_CLASS_LABELS) as [AssetClass, string][]).map(([k, v]) =>
                   <option key={k} value={k}>{v}</option>
                 )}
@@ -402,11 +402,11 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
 
           {/* Notes */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Notes</label>
+            <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Notes</label>
             <input type="text" placeholder="Optionnel…" value={form.notes}
               onChange={e => set("notes", e.target.value)}
               className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-              style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+              style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
           </div>
 
           {/* ── Total preview ─────────────────────────────────────────────────── */}
@@ -414,10 +414,10 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
             <div className="rounded-xl border px-4 py-3"
               style={{ backgroundColor: typeColor + "08", borderColor: typeColor + "30" }}>
               <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
                   {qty} × {flag} {formatCurrency(unitPrice, nativeCurr as AppCurrency)}
                   {fees > 0 && (
-                    <span style={{ color: "var(--foreground-dim)" }}>
+                    <span style={{ color: "var(--text-tertiary)" }}>
                       {" "}+ {format(feesConverted)} frais
                     </span>
                   )}
@@ -429,7 +429,7 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
                   </p>
                   {/* Converted total — secondary, only if different */}
                   {!sameAsCurr && (
-                    <p className="text-[11px] tabular-nums" style={{ color: "var(--foreground-dim)" }}>
+                    <p className="text-[11px] tabular-nums" style={{ color: "var(--text-tertiary)" }}>
                       ≈ {sign} {format(totalConverted)}
                     </p>
                   )}
@@ -468,7 +468,7 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
           </button>
           <button onClick={onClose}
             className="rounded-xl border px-5 py-3 text-sm font-medium hover:bg-zinc-800 transition-colors"
-            style={{ color: "var(--foreground-muted)", borderColor: "var(--border)" }}>
+            style={{ color: "var(--text-secondary)", borderColor: "var(--border)" }}>
             Annuler
           </button>
         </div>

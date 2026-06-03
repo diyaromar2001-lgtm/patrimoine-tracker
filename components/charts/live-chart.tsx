@@ -57,14 +57,14 @@ export function LiveChart({ ticker, name, height = 300, defaultCompare = "none" 
         const chart = createChart(containerRef.current!, {
           width:  containerRef.current!.clientWidth,
           height,
-          layout: { background: { color: "transparent" }, textColor: "#a1a1aa", fontSize: 11, fontFamily: "Inter, ui-sans-serif" },
-          grid:   { vertLines: { color: "#27272a" }, horzLines: { color: "#27272a" } },
+          layout: { background: { color: "transparent" }, textColor: "#84849a", fontSize: 11, fontFamily: "Inter, ui-sans-serif" },
+          grid:   { vertLines: { color: "#1e1e28", style: 1 }, horzLines: { color: "#1e1e28", style: 1 } },
           crosshair: {
-            vertLine: { color: "#3b82f660", width: 1, labelBackgroundColor: "#18181b" },
-            horzLine: { color: "#3b82f660", width: 1, labelBackgroundColor: "#18181b" },
+            vertLine: { color: "#6366f160", width: 1, labelBackgroundColor: "#111117" },
+            horzLine: { color: "#6366f160", width: 1, labelBackgroundColor: "#111117" },
           },
-          rightPriceScale: { borderColor: "#27272a", scaleMargins: { top: 0.08, bottom: 0.08 } },
-          timeScale: { borderColor: "#27272a", timeVisible: true, fixLeftEdge: true, fixRightEdge: true },
+          rightPriceScale: { borderColor: "#1e1e28", textColor: "#84849a", scaleMargins: { top: 0.08, bottom: 0.08 } },
+          timeScale: { borderColor: "#1e1e28", timeVisible: true, fixLeftEdge: true, fixRightEdge: true },
           handleScroll: true,
           handleScale:  true,
         })
@@ -107,15 +107,15 @@ export function LiveChart({ ticker, name, height = 300, defaultCompare = "none" 
   const isPos = (stats?.pct ?? 0) >= 0
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+    <div className="chart-container">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2 justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
         <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{name ?? ticker}</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{name ?? ticker}</p>
           {stats && !loading && (
             <p className="text-xs tabular-nums" style={{ color: isPos ? "var(--gain)" : "var(--loss)" }}>
               {isPos ? "▲" : "▼"} {Math.abs(stats.pct).toFixed(2)}%
-              {compare !== "none" && <span className="ml-1.5 text-[11px]" style={{ color: "var(--foreground-dim)" }}>normalisé à 100</span>}
+              {compare !== "none" && <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>normalisé à 100</span>}
             </p>
           )}
         </div>
@@ -127,8 +127,8 @@ export function LiveChart({ ticker, name, height = 300, defaultCompare = "none" 
               <button key={m} onClick={() => setCompare(m)}
                 className="px-2 py-1 text-[11px] font-medium transition-colors"
                 style={{
-                  backgroundColor: compare === m ? "var(--background-hover)" : "transparent",
-                  color: compare === m ? "white" : "var(--foreground-dim)",
+                  backgroundColor: compare === m ? "var(--bg-muted)" : "transparent",
+                  color: compare === m ? "white" : "var(--text-tertiary)",
                 }}>
                 {m === "none" ? "Seul" : m === "SPY" ? "vs S&P500" : "+ MSCI World"}
               </button>
@@ -142,7 +142,7 @@ export function LiveChart({ ticker, name, height = 300, defaultCompare = "none" 
                 className="px-2.5 py-1 text-xs font-medium transition-colors"
                 style={{
                   backgroundColor: period === p ? "var(--accent)" : "transparent",
-                  color: period === p ? "white" : "var(--foreground-dim)",
+                  color: period === p ? "white" : "var(--text-tertiary)",
                 }}>
                 {p}
               </button>
@@ -176,16 +176,16 @@ export function LiveChart({ ticker, name, height = 300, defaultCompare = "none" 
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center z-10 rounded-xl">
             <div className="flex items-center gap-2 rounded-lg border px-3 py-2"
-              style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#3b82f6" }} />
-              <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>Chargement des données…</span>
+              <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Chargement des données…</span>
             </div>
           </div>
         )}
         {error && !loading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <BarChart2 className="h-8 w-8" style={{ color: "var(--foreground-dim)" }} />
-            <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>Données indisponibles pour {ticker}</p>
+            <BarChart2 className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Données indisponibles pour {ticker}</p>
             <button onClick={load} className="text-xs underline" style={{ color: "var(--accent)" }}>Réessayer</button>
           </div>
         )}

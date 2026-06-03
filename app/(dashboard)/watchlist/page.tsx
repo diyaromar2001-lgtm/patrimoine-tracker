@@ -82,7 +82,7 @@ export default function WatchlistPage() {
             onClick={refresh}
             disabled={pricesLoading}
             className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-800/50"
-            style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
           >
             <RefreshCw className={"h-3.5 w-3.5" + (pricesLoading ? " animate-spin" : "")} />
             Actualiser
@@ -114,7 +114,7 @@ export default function WatchlistPage() {
                       onClick={() => { setSelectedTicker(item.ticker); setSelectedName(item.name) }}
                       className="w-full flex items-center gap-3 rounded-xl border px-4 py-3 transition-all text-left"
                       style={{
-                        backgroundColor: isSelected ? "var(--background-hover)" : "var(--background-card)",
+                        backgroundColor: isSelected ? "var(--bg-muted)" : "var(--bg-elevated)",
                         borderColor:     isSelected ? "var(--accent)" : "var(--border)",
                         boxShadow:       isSelected ? "0 0 0 1px var(--accent)" : "none",
                       }}
@@ -127,7 +127,7 @@ export default function WatchlistPage() {
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
                           {item.name}
                         </p>
                         <AssetClassBadge label={ASSET_CLASS_LABELS[item.assetClass]} color={color} />
@@ -136,7 +136,7 @@ export default function WatchlistPage() {
                       <div className="text-right">
                         {price > 0
                           ? <DualPrice price={price} originalPrice={origPrice} originalCurrency={origCurrency} size="sm" showFlag />
-                          : <span className="text-xs" style={{ color: "var(--foreground-dim)" }}>--</span>
+                          : <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>--</span>
                         }
                         <ChangeBadge value={pct} showIcon={false} />
                       </div>
@@ -151,7 +151,7 @@ export default function WatchlistPage() {
                       <button
                         onMouseDown={e => { e.stopPropagation(); handleRemove(item.id) }}
                         className="flex-shrink-0 h-6 w-6 rounded-md flex items-center justify-center hover:bg-red-500/20 transition-colors"
-                        style={{ color: "var(--foreground-dim)" }}
+                        style={{ color: "var(--text-tertiary)" }}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -162,8 +162,8 @@ export default function WatchlistPage() {
 
               {filtered.length === 0 && (
                 <div className="flex flex-col items-center py-10 gap-2">
-                  <Eye className="h-8 w-8" style={{ color: "var(--foreground-dim)" }} />
-                  <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+                  <Eye className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
+                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                     Recherchez un actif pour l&apos;ajouter
                   </p>
                 </div>
@@ -183,10 +183,10 @@ export default function WatchlistPage() {
             ) : (
               <div
                 className="flex flex-col items-center justify-center h-64 rounded-xl border"
-                style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
               >
-                <Eye className="h-8 w-8 mb-2" style={{ color: "var(--foreground-dim)" }} />
-                <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+                <Eye className="h-8 w-8 mb-2" style={{ color: "var(--text-tertiary)" }} />
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                   Selectionnez un actif
                 </p>
               </div>

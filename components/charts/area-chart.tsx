@@ -27,24 +27,25 @@ export function AreaChart({ data, height = 240 }: AreaChartProps) {
         height,
         layout: {
           background: { color: "transparent" },
-          textColor: "#a1a1aa",
-          fontSize: 11,
+          textColor:  "#84849a",
+          fontSize:   11,
           fontFamily: "Inter, ui-sans-serif, system-ui",
         },
         grid: {
-          vertLines: { color: "#27272a" },
-          horzLines: { color: "#27272a" },
+          vertLines: { color: "#1e1e28", style: 1 },  // dotted, very subtle
+          horzLines: { color: "#1e1e28", style: 1 },
         },
         crosshair: {
-          vertLine: { color: "#3b82f6", width: 1 },
-          horzLine: { color: "#3b82f6", width: 1 },
+          vertLine: { color: "#6366f160", width: 1, labelBackgroundColor: "#111117" },
+          horzLine: { color: "#6366f160", width: 1, labelBackgroundColor: "#111117" },
         },
         rightPriceScale: {
-          borderColor: "#27272a",
-          scaleMargins: { top: 0.1, bottom: 0.1 },
+          borderColor: "#1e1e28",
+          textColor:   "#84849a",
+          scaleMargins: { top: 0.08, bottom: 0.08 },
         },
         timeScale: {
-          borderColor: "#27272a",
+          borderColor: "#1e1e28",
           timeVisible: false,
           fixLeftEdge: true,
           fixRightEdge: true,
@@ -55,15 +56,15 @@ export function AreaChart({ data, height = 240 }: AreaChartProps) {
 
       // v5 API: chart.addSeries(SeriesType, options)
       const series = chart.addSeries(AreaSeries, {
-        lineColor: "#3b82f6",
-        topColor: "#3b82f633",
-        bottomColor: "#3b82f600",
-        lineWidth: 2,
-        crosshairMarkerVisible: true,
-        crosshairMarkerRadius: 4,
-        crosshairMarkerBackgroundColor: "#3b82f6",
-        priceLineVisible: false,
-        lastValueVisible: false,
+        lineColor:   "#6366f1",
+        topColor:    "#6366f128",
+        bottomColor: "#6366f100",
+        lineWidth:   2,
+        crosshairMarkerVisible:         true,
+        crosshairMarkerRadius:          4,
+        crosshairMarkerBackgroundColor: "#6366f1",
+        priceLineVisible:  false,
+        lastValueVisible:  false,
       })
 
       const chartData = data.map((s) => ({

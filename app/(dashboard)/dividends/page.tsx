@@ -200,39 +200,39 @@ export default function DividendsPage() {
             { label: "Prochain versement", value: nextDiv ? "+" + format(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + "j" : "", icon: Clock, color: "#f59e0b" },
             { label: "Reçus (année en cours)", value: format(paidTotal), sub: paidCount + " versement" + (paidCount > 1 ? "s" : ""), icon: CheckCircle2, color: "#a78bfa" },
           ].map(({ label, value, sub, icon: Icon, color }) => (
-            <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <div className="flex items-center gap-2 mb-2">
                 <div className="h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color + "18" }}>
                   <Icon className="h-3.5 w-3.5" style={{ color }} />
                 </div>
-                <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{label}</p>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{label}</p>
               </div>
               <p className="text-xl font-bold tabular-nums" style={{ color }}>{value}</p>
-              {sub && <p className="text-[11px] mt-0.5" style={{ color: "var(--foreground-dim)" }}>{sub}</p>}
+              {sub && <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>{sub}</p>}
             </div>
           ))}
         </div>
 
         {/* Live yield banner — per-position data */}
         {loading ? (
-          <div className="flex items-center gap-2 rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <div className="flex items-center gap-2 rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#3b82f6" }} />
-            <span className="text-xs" style={{ color: "var(--foreground-muted)" }}>Vérification des dividendes de vos positions…</span>
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Vérification des dividendes de vos positions…</span>
           </div>
         ) : Object.keys(assetsByTicker).length === 0 ? (
-          <div className="rounded-xl border p-4 text-center" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)", borderStyle: "dashed" }}>
-            <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+          <div className="rounded-xl border p-4 text-center" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", borderStyle: "dashed" }}>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
               Ajoutez des actions dans votre portefeuille pour voir les dividendes
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <div className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold flex items-center gap-2" style={{ color: "var(--foreground-muted)" }}>
+              <p className="text-xs font-semibold flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
                 <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse inline-block" />
                 Données Yahoo Finance — {Object.keys(assetsByTicker).length} position{Object.keys(assetsByTicker).length > 1 ? "s" : ""} analysée{Object.keys(assetsByTicker).length > 1 ? "s" : ""}
               </p>
-              <button onClick={fetchDividends} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] hover:bg-zinc-800 transition-colors" style={{ color: "var(--foreground-muted)" }}>
+              <button onClick={fetchDividends} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] hover:bg-zinc-800 transition-colors" style={{ color: "var(--text-secondary)" }}>
                 <RefreshCw className="h-3 w-3" /> Actualiser
               </button>
             </div>
@@ -242,9 +242,9 @@ export default function DividendsPage() {
                 const pos  = assetsByTicker[ticker]
                 if (!info) {
                   return (
-                    <div key={ticker} className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}>
-                      <span className="text-xs font-bold" style={{ color: "var(--foreground-dim)" }}>{ticker}</span>
-                      <span className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>Pas de dividende</span>
+                    <div key={ticker} className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-base)" }}>
+                      <span className="text-xs font-bold" style={{ color: "var(--text-tertiary)" }}>{ticker}</span>
+                      <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Pas de dividende</span>
                     </div>
                   )
                 }
@@ -252,14 +252,14 @@ export default function DividendsPage() {
                 return (
                   <div key={ticker} className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: "#22c55e40", backgroundColor: "#22c55e08" }}>
                     <span className="text-xs font-bold" style={{ color: "#22c55e" }}>{ticker}</span>
-                    <span className="text-xs font-medium tabular-nums" style={{ color: "var(--foreground)" }}>
+                    <span className="text-xs font-medium tabular-nums" style={{ color: "var(--text-primary)" }}>
                       {format(totalPerPay)}/{FREQ_LABEL[info.frequency] ?? info.frequency}
                     </span>
                     <span className="text-xs rounded-md px-1.5 py-0.5" style={{ backgroundColor: "#22c55e18", color: "#22c55e" }}>
                       {(info.dividendYield * 100).toFixed(2)}%
                     </span>
                     {info.exDividendDate && (
-                      <span className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>
+                      <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         Ex: {new Date(info.exDividendDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
                       </span>
                     )}
@@ -281,7 +281,7 @@ export default function DividendsPage() {
               {(["list","calendar"] as const).map(v => (
                 <button key={v} onClick={() => setViewMode(v)}
                   className="px-3 py-1.5 text-xs font-medium transition-colors"
-                  style={{ backgroundColor: viewMode === v ? "var(--accent)" : "var(--background-card)", color: viewMode === v ? "white" : "var(--foreground-muted)" }}>
+                  style={{ backgroundColor: viewMode === v ? "var(--accent)" : "var(--bg-elevated)", color: viewMode === v ? "white" : "var(--text-secondary)" }}>
                   {v === "list" ? "Liste" : "Calendrier"}
                 </button>
               ))}
@@ -290,7 +290,7 @@ export default function DividendsPage() {
               {(["all","upcoming","paid"] as const).map(f => (
                 <button key={f} onClick={() => setFilter(f)}
                   className="px-3 py-1.5 text-xs font-medium transition-colors"
-                  style={{ backgroundColor: filter === f ? "var(--accent)" : "var(--background-card)", color: filter === f ? "white" : "var(--foreground-muted)" }}>
+                  style={{ backgroundColor: filter === f ? "var(--accent)" : "var(--bg-elevated)", color: filter === f ? "white" : "var(--text-secondary)" }}>
                   {f === "all" ? "Tous" : f === "upcoming" ? "À venir" : "Versés"}
                 </button>
               ))}
@@ -305,20 +305,20 @@ export default function DividendsPage() {
 
         {/* Calendar view */}
         {viewMode === "calendar" && (
-          <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: "var(--border)" }}>
               <button onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1) } else setCalMonth(m => m - 1) }}
                 className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
-                <ChevronLeft className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
+                <ChevronLeft className="h-4 w-4" style={{ color: "var(--text-secondary)" }} />
               </button>
-              <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{MONTHS_FR[calMonth]} {calYear}</p>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{MONTHS_FR[calMonth]} {calYear}</p>
               <button onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1) } else setCalMonth(m => m + 1) }}
                 className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
-                <ChevronRight className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
+                <ChevronRight className="h-4 w-4" style={{ color: "var(--text-secondary)" }} />
               </button>
             </div>
             <div className="grid grid-cols-7 border-b" style={{ borderColor: "var(--border)" }}>
-              {DAYS_FR.map(d => <div key={d} className="py-2 text-center text-[11px] font-medium" style={{ color: "var(--foreground-dim)" }}>{d}</div>)}
+              {DAYS_FR.map(d => <div key={d} className="py-2 text-center text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>{d}</div>)}
             </div>
             <div className="grid grid-cols-7">
               {Array.from({ length: startDow }, (_, i) => (
@@ -333,7 +333,7 @@ export default function DividendsPage() {
                   <div key={day} className="h-20 border-r border-b p-1.5"
                     style={{ borderColor: "var(--border-subtle)", backgroundColor: divs.length > 0 ? "#22c55e06" : isToday ? "#3b82f606" : "transparent" }}>
                     <span className={"text-xs font-medium flex items-center justify-center rounded-full w-5 h-5" + (isToday ? " bg-blue-500 text-white" : "")}
-                      style={{ color: isToday ? "white" : "var(--foreground-dim)" }}>
+                      style={{ color: isToday ? "white" : "var(--text-tertiary)" }}>
                       {day}
                     </span>
                     {divs.slice(0, 2).map((d, di) => (
@@ -351,17 +351,17 @@ export default function DividendsPage() {
 
         {/* List view */}
         {viewMode === "list" && (
-          <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="grid px-5 py-3 text-[11px] font-medium uppercase tracking-wider"
-              style={{ color: "var(--foreground-dim)", gridTemplateColumns: "1fr 100px 100px 90px 80px 90px" }}>
+              style={{ color: "var(--text-tertiary)", gridTemplateColumns: "1fr 100px 100px 90px 80px 90px" }}>
               <span>Actif</span><span className="text-center">Ex-Date</span><span className="text-center">Paiement</span>
               <span className="text-right">Montant</span><span className="text-center">Fréquence</span><span className="text-right">Statut</span>
             </div>
 
             {filtered.length === 0 && (
               <div className="flex flex-col items-center py-12 gap-2">
-                <CalendarDays className="h-8 w-8" style={{ color: "var(--foreground-dim)" }} />
-                <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+                <CalendarDays className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                   {Object.keys(assetsByTicker).length === 0
                     ? "Ajoutez des actifs pour voir vos dividendes"
                     : "Aucun dividende trouvé pour vos positions"}
@@ -380,23 +380,23 @@ export default function DividendsPage() {
                       {d.ticker.slice(0, 3)}
                     </div>
                     <div>
-                      <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>{d.assetName}</p>
+                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{d.assetName}</p>
                       <div className="flex items-center gap-1">
                         <AssetClassBadge label={ASSET_CLASS_LABELS[d.assetClass]} color={color} />
-                        <span className="text-[10px]" style={{ color: "var(--foreground-dim)" }}>{d.ticker}</span>
+                        <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{d.ticker}</span>
                       </div>
                     </div>
                   </div>
-                  <p className="text-center text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+                  <p className="text-center text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                     {d.exDate ? new Date(d.exDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) : "—"}
                   </p>
-                  <p className="text-center text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+                  <p className="text-center text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                     {new Date(d.payDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
                   </p>
                   <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "#22c55e" }}>
                     +{format(d.amount)}
                   </p>
-                  <p className="text-center text-xs" style={{ color: "var(--foreground-muted)" }}>
+                  <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>
                     {FREQ_LABEL[d.frequency] ?? d.frequency}
                   </p>
                   <div className="flex justify-end"><StatusBadge status={d.status} /></div>
@@ -414,10 +414,10 @@ export default function DividendsPage() {
             className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
             onClick={() => setShowAdd(false)}>
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md rounded-2xl border p-6" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}
+              className="w-full max-w-md rounded-2xl border p-6" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
               onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Ajouter un dividende manuellement</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Ajouter un dividende manuellement</h3>
                 <button onClick={() => setShowAdd(false)} className="rounded-lg p-1.5 hover:bg-zinc-800"><X className="h-4 w-4 text-zinc-500" /></button>
               </div>
               <div className="space-y-3">
@@ -429,18 +429,18 @@ export default function DividendsPage() {
                   { k: "payDate", ph: "", t: "date", label: "Date de paiement *" },
                 ].map(f => (
                   <div key={f.k}>
-                    <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>{f.label}</label>
+                    <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{f.label}</label>
                     <input type={f.t} placeholder={f.ph} value={form[f.k as keyof typeof form] as string}
                       onChange={e => setForm(p => ({ ...p, [f.k]: e.target.value }))}
                       className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                      style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)", colorScheme: "dark" }} />
+                      style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
                   </div>
                 ))}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Fréquence</label>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Fréquence</label>
                   <select value={form.frequency} onChange={e => setForm(p => ({ ...p, frequency: e.target.value as DividendEvent["frequency"] }))}
                     className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}>
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
                     <option value="monthly">Mensuel</option>
                     <option value="quarterly">Trimestriel</option>
                     <option value="semi-annual">Semi-annuel</option>

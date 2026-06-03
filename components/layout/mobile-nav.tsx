@@ -35,7 +35,7 @@ export function MobileNav() {
       <nav
         className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t lg:hidden"
         style={{
-          backgroundColor: "var(--background-card)",
+          backgroundColor: "var(--bg-elevated)",
           borderColor: "var(--border)",
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
           height: "calc(56px + env(safe-area-inset-bottom, 0px))",
@@ -49,7 +49,7 @@ export function MobileNav() {
               key={item.href}
               href={item.href}
               className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors"
-              style={{ color: isActive ? "var(--accent)" : "var(--foreground-dim)" }}
+              style={{ color: isActive ? "var(--accent)" : "var(--text-tertiary)" }}
             >
               <Icon className="h-5 w-5" />
               <span className="text-[10px] font-medium">{item.label}</span>
@@ -69,7 +69,7 @@ export function MobileNav() {
         <button
           onClick={() => setMoreOpen(o => !o)}
           className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors"
-          style={{ color: isMoreActive || moreOpen ? "var(--accent)" : "var(--foreground-dim)" }}
+          style={{ color: isMoreActive || moreOpen ? "var(--accent)" : "var(--text-tertiary)" }}
         >
           <Grid3X3 className="h-5 w-5" />
           <span className="text-[10px] font-medium">Plus</span>
@@ -98,7 +98,7 @@ export function MobileNav() {
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
               className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x lg:hidden"
               style={{
-                backgroundColor: "var(--background-card)",
+                backgroundColor: "var(--bg-elevated)",
                 borderColor: "var(--border)",
                 paddingBottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
               }}
@@ -115,10 +115,10 @@ export function MobileNav() {
                     style={{ background: "linear-gradient(135deg, #3b82f6, #6366f1)" }}>
                     <Wallet className="h-4 w-4 text-white" />
                   </div>
-                  <span className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Patrimoine</span>
+                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Patrimoine</span>
                 </div>
                 <button onClick={() => setMoreOpen(false)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
-                  <X className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
+                  <X className="h-4 w-4" style={{ color: "var(--text-secondary)" }} />
                 </button>
               </div>
 
@@ -134,11 +134,11 @@ export function MobileNav() {
                       onClick={() => setMoreOpen(false)}
                       className="flex items-center gap-3 rounded-xl px-4 py-3.5 transition-colors"
                       style={{
-                        backgroundColor: isActive ? "var(--background-hover)" : "transparent",
-                        color: isActive ? "white" : "var(--foreground-muted)",
+                        backgroundColor: isActive ? "var(--bg-muted)" : "transparent",
+                        color: isActive ? "white" : "var(--text-secondary)",
                       }}
                     >
-                      <Icon className="h-5 w-5 flex-shrink-0" style={{ color: isActive ? "var(--accent)" : "var(--foreground-dim)" }} />
+                      <Icon className="h-5 w-5 flex-shrink-0" style={{ color: isActive ? "var(--accent)" : "var(--text-tertiary)" }} />
                       <span className="text-sm font-medium">{item.label}</span>
                     </Link>
                   )

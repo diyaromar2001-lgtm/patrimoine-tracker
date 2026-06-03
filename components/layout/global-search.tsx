@@ -73,13 +73,13 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
   if (!mounted) return (
     <button
       className="hidden sm:flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:bg-zinc-800"
-      style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}
+      style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
       onClick={() => setOpen(true)}
     >
       <Search className="h-3.5 w-3.5" />
       <span>Rechercher…</span>
       <span className="ml-2 flex items-center gap-0.5 rounded px-1 text-[10px]"
-        style={{ backgroundColor: "var(--background-hover)", color: "var(--foreground-dim)" }}>
+        style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-tertiary)" }}>
         <Command className="h-2.5 w-2.5" />K
       </span>
     </button>
@@ -91,13 +91,13 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
       <button
         onClick={() => setOpen(true)}
         className="hidden sm:flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:bg-zinc-800"
-        style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}
+        style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
         aria-label="Recherche globale (Ctrl+K)"
       >
         <Search className="h-3.5 w-3.5" />
         <span>Rechercher…</span>
         <kbd className="ml-2 flex items-center gap-0.5 rounded px-1 text-[10px]"
-          style={{ backgroundColor: "var(--background-hover)", color: "var(--foreground-dim)" }}>
+          style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-tertiary)" }}>
           <Command className="h-2.5 w-2.5" />K
         </kbd>
       </button>
@@ -124,7 +124,7 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                 transition={{ duration: 0.15, ease: "easeOut" }}
                 className="fixed left-1/2 top-24 z-[101] w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-2xl shadow-2xl"
                 style={{
-                  backgroundColor: "var(--background-card)",
+                  backgroundColor: "var(--bg-elevated)",
                   border: "1px solid var(--border)",
                   boxShadow: "0 25px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)",
                 }}
@@ -134,7 +134,7 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                   style={{ borderColor: "var(--border)" }}>
                   {loading
                     ? <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" style={{ color: "var(--accent)" }} />
-                    : <Search className="h-4 w-4 flex-shrink-0" style={{ color: "var(--foreground-muted)" }} />
+                    : <Search className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-secondary)" }} />
                   }
                   <input
                     ref={inputRef}
@@ -143,17 +143,17 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                     onKeyDown={handleKey}
                     placeholder="Chercher un actif, une page… (AAPL, BTC, dashboard)"
                     className="flex-1 bg-transparent text-sm outline-none placeholder:text-zinc-600"
-                    style={{ color: "var(--foreground)" }}
+                    style={{ color: "var(--text-primary)" }}
                     autoComplete="off"
                     spellCheck={false}
                   />
                   {query && (
                     <button onClick={clear} className="rounded p-0.5 hover:bg-zinc-800 transition-colors">
-                      <X className="h-3.5 w-3.5" style={{ color: "var(--foreground-muted)" }} />
+                      <X className="h-3.5 w-3.5" style={{ color: "var(--text-secondary)" }} />
                     </button>
                   )}
                   <button onClick={() => setOpen(false)} className="rounded-md border px-1.5 py-0.5 text-[11px] transition-colors hover:bg-zinc-800"
-                    style={{ borderColor: "var(--border)", color: "var(--foreground-dim)" }}>
+                    style={{ borderColor: "var(--border)", color: "var(--text-tertiary)" }}>
                     Échap
                   </button>
                 </div>
@@ -164,7 +164,7 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                   {results.length > 0 && (
                     <div>
                       <p className="px-4 pt-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider"
-                        style={{ color: "var(--foreground-dim)" }}>
+                        style={{ color: "var(--text-tertiary)" }}>
                         Actifs financiers
                       </p>
                       {results.map((r, i) => {
@@ -174,14 +174,14 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                           <button key={r.ticker} onMouseDown={() => pickAsset(r)}
                             onMouseEnter={() => setCursor(i)}
                             className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors"
-                            style={{ backgroundColor: isActive ? "var(--background-hover)" : "transparent" }}>
+                            style={{ backgroundColor: isActive ? "var(--bg-muted)" : "transparent" }}>
                             <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
                               style={{ backgroundColor: color + "22", color }}>
                               {r.ticker.slice(0, 3)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate" style={{ color: "var(--foreground)" }}>{r.name}</p>
-                              <p className="text-xs" style={{ color: "var(--foreground-dim)" }}>
+                              <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{r.name}</p>
+                              <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
                                 <span style={{ color }}>{r.ticker}</span>
                                 {r.exchange ? ` · ${r.exchange}` : ""}
                               </p>
@@ -199,7 +199,7 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                   {/* Quick navigation */}
                   <div>
                     <p className="px-4 pt-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider"
-                      style={{ color: "var(--foreground-dim)" }}>
+                      style={{ color: "var(--text-tertiary)" }}>
                       Navigation rapide
                     </p>
                     {QUICK_LINKS.filter(l =>
@@ -212,13 +212,13 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                           onMouseDown={() => { router.push(link.href); setOpen(false) }}
                           onMouseEnter={() => setCursor(idx)}
                           className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors"
-                          style={{ backgroundColor: isActive ? "var(--background-hover)" : "transparent" }}>
+                          style={{ backgroundColor: isActive ? "var(--bg-muted)" : "transparent" }}>
                           <span className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-base"
-                            style={{ backgroundColor: "var(--background-hover)" }}>
+                            style={{ backgroundColor: "var(--bg-muted)" }}>
                             {link.icon}
                           </span>
-                          <span className="text-sm" style={{ color: "var(--foreground)" }}>{link.label}</span>
-                          {isActive && <CornerDownLeft className="ml-auto h-3.5 w-3.5" style={{ color: "var(--foreground-dim)" }} />}
+                          <span className="text-sm" style={{ color: "var(--text-primary)" }}>{link.label}</span>
+                          {isActive && <CornerDownLeft className="ml-auto h-3.5 w-3.5" style={{ color: "var(--text-tertiary)" }} />}
                         </button>
                       )
                     })}
@@ -229,9 +229,9 @@ export function GlobalSearch({ onSelectAsset }: GlobalSearchProps) {
                 <div className="flex items-center gap-4 border-t px-4 py-2"
                   style={{ borderColor: "var(--border)" }}>
                   {[["↑↓", "naviguer"], ["↵", "sélectionner"], ["Échap", "fermer"]].map(([k, l]) => (
-                    <span key={k} className="flex items-center gap-1 text-[11px]" style={{ color: "var(--foreground-dim)" }}>
+                    <span key={k} className="flex items-center gap-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                       <kbd className="rounded border px-1 py-0.5 text-[10px]"
-                        style={{ borderColor: "var(--border)", backgroundColor: "var(--background-hover)" }}>{k}</kbd>
+                        style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-muted)" }}>{k}</kbd>
                       {l}
                     </span>
                   ))}

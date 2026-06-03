@@ -1,18 +1,21 @@
 interface SectionHeaderProps {
-  title: string
+  title:       string
   description?: string
-  action?: React.ReactNode
+  action?:     React.ReactNode
 }
 
 export function SectionHeader({ title, description, action }: SectionHeaderProps) {
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
+        >
           {title}
         </h2>
         {description && (
-          <p className="mt-0.5 text-xs" style={{ color: "var(--foreground-muted)" }}>
+          <p className="mt-0.5 text-xs" style={{ color: "var(--text-tertiary)" }}>
             {description}
           </p>
         )}

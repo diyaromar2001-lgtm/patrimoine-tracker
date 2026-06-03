@@ -56,20 +56,20 @@ export function DualPrice({
     <span className={cn("inline-flex flex-col tabular-nums", className)}>
       {showConverted ? (
         /* Native currency FIRST */
-        <span className={cn(mainSize, "font-semibold")} style={{ color: "var(--foreground)" }}>
+        <span className={cn(mainSize, "font-semibold")} style={{ color: "var(--text-primary)" }}>
           {showFlag && flag && <span className="mr-0.5">{flag}</span>}
           {formatCurrency(originalPrice!, originalCurrency as AppCurrency)}
         </span>
       ) : (
         /* Same currency — single display */
-        <span className={cn(mainSize, "font-semibold")} style={{ color: "var(--foreground)" }}>
+        <span className={cn(mainSize, "font-semibold")} style={{ color: "var(--text-primary)" }}>
           {format(price)}
         </span>
       )}
 
       {/* User's currency in small — only when different */}
       {showConverted && (
-        <span className={cn(subSize, "font-normal")} style={{ color: "var(--foreground-dim)" }}>
+        <span className={cn(subSize, "font-normal")} style={{ color: "var(--text-tertiary)" }}>
           ≈ {format(price)}
         </span>
       )}
@@ -99,7 +99,7 @@ export function DualPriceInline({
 
   if (!showConverted) {
     return (
-      <span className={cn("tabular-nums font-semibold", className)} style={{ color: "var(--foreground)" }}>
+      <span className={cn("tabular-nums font-semibold", className)} style={{ color: "var(--text-primary)" }}>
         {format(price)}
       </span>
     )
@@ -108,12 +108,12 @@ export function DualPriceInline({
   return (
     <span className={cn("tabular-nums", className)}>
       {/* Native */}
-      <span className="font-semibold" style={{ color: "var(--foreground)" }}>
+      <span className="font-semibold" style={{ color: "var(--text-primary)" }}>
         {showFlag && flag && <span className="mr-0.5">{flag}</span>}
         {formatCurrency(originalPrice!, originalCurrency as AppCurrency)}
       </span>
       {/* Converted */}
-      <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--foreground-dim)" }}>
+      <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--text-tertiary)" }}>
         ≈ {format(price)}
       </span>
     </span>

@@ -99,14 +99,14 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
         {/* Back */}
         <Link href="/watchlist"
           className="inline-flex items-center gap-1.5 text-xs transition-colors hover:text-white"
-          style={{ color: "var(--foreground-muted)" }}>
+          style={{ color: "var(--text-secondary)" }}>
           <ArrowLeft className="h-3.5 w-3.5" /> Retour
         </Link>
 
         {loading && (
           <div className="flex items-center gap-2 py-12 justify-center">
             <Loader2 className="h-5 w-5 animate-spin" style={{ color: "#3b82f6" }} />
-            <span className="text-sm" style={{ color: "var(--foreground-muted)" }}>Chargement…</span>
+            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Chargement…</span>
           </div>
         )}
 
@@ -121,8 +121,8 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
                     {decodedSymbol.slice(0, 3)}
                   </div>
                   <div>
-                    <h1 className="text-xl font-bold" style={{ color: "var(--foreground)" }}>{decodedSymbol}</h1>
-                    {quote && <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>{quote.shortName}</p>}
+                    <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{decodedSymbol}</h1>
+                    {quote && <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{quote.shortName}</p>}
                   </div>
                 </div>
               </div>
@@ -159,9 +159,9 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
                   { label: "Rendement div.", value: quote.dividendYield ? (quote.dividendYield * 100).toFixed(2) + "%" : "—" },
                 ].map(s => (
                   <div key={s.label} className="rounded-xl border p-4"
-                    style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
-                    <p className="text-xs mb-1" style={{ color: "var(--foreground-muted)" }}>{s.label}</p>
-                    <p className="text-sm font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{s.value}</p>
+                    style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                    <p className="text-xs mb-1" style={{ color: "var(--text-secondary)" }}>{s.label}</p>
+                    <p className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{s.value}</p>
                   </div>
                 ))}
               </div>
@@ -169,7 +169,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
 
             {/* Your position */}
             {heldAsset && (
-              <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--background-card)", borderColor: "#22c55e40" }}>
+              <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "#22c55e40" }}>
                 <p className="text-xs font-semibold mb-3 flex items-center gap-2" style={{ color: "#22c55e" }}>
                   <span className="h-2 w-2 rounded-full bg-green-500" />
                   Votre position
@@ -186,8 +186,8 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
                     })() },
                   ].map(s => (
                     <div key={s.label}>
-                      <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{s.label}</p>
-                      <p className="text-sm font-semibold tabular-nums mt-0.5" style={{ color: "var(--foreground)" }}>{s.value}</p>
+                      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{s.label}</p>
+                      <p className="text-sm font-semibold tabular-nums mt-0.5" style={{ color: "var(--text-primary)" }}>{s.value}</p>
                     </div>
                   ))}
                 </div>
@@ -204,7 +204,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
               </Link>
               <Link href="/watchlist"
                 className="flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-800"
-                style={{ borderColor: "var(--border)", color: inWatchlist ? "#f59e0b" : "var(--foreground-muted)" }}>
+                style={{ borderColor: "var(--border)", color: inWatchlist ? "#f59e0b" : "var(--text-secondary)" }}>
                 <Star className="h-4 w-4" fill={inWatchlist ? "#f59e0b" : "none"} />
                 {inWatchlist ? "Dans la watchlist" : "Ajouter à la watchlist"}
               </Link>

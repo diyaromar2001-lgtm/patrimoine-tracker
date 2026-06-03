@@ -54,10 +54,10 @@ export default function SettingsPage() {
         <div className="mx-auto max-w-3xl space-y-6">
 
           {/* Profile */}
-          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
               <User className="h-4 w-4" style={{ color: "#3b82f6" }} />
-              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Profil</h2>
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Profil</h2>
             </div>
             <div className="p-5 space-y-4">
               {/* Avatar */}
@@ -67,33 +67,33 @@ export default function SettingsPage() {
                   {profile.avatar}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>{profile.name}</p>
-                  <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{profile.email}</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{profile.name}</p>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{profile.email}</p>
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Nom</label>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Nom</label>
                   <input type="text" value={profile.name} onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
                     className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Email</label>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Email</label>
                   <input type="email" value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
                     className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors"
-                    style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }} />
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
                 </div>
               </div>
             </div>
           </section>
 
           {/* Preferences */}
-          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
               <div className="flex items-center gap-3">
                 <Globe className="h-4 w-4" style={{ color: "#a78bfa" }} />
-                <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Devise d'affichage</h2>
+                <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Devise d'affichage</h2>
               </div>
               <AnimatePresence>
                 {savedField === "currency" && (
@@ -105,7 +105,7 @@ export default function SettingsPage() {
               </AnimatePresence>
             </div>
             <div className="p-5 space-y-4">
-              <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
                 Tous les montants s'afficheront dans cette devise. Les prix des actifs affichent aussi leur devise d'origine (ex: USD pour les actions US).
               </p>
 
@@ -118,7 +118,7 @@ export default function SettingsPage() {
                       onClick={() => handleCurrencyChange(opt.value)}
                       className="flex flex-col gap-2 rounded-xl border p-4 text-left transition-all hover:border-blue-500/50"
                       style={{
-                        backgroundColor: isActive ? "#3b82f615" : "var(--background)",
+                        backgroundColor: isActive ? "#3b82f615" : "var(--bg-base)",
                         borderColor:     isActive ? "#3b82f6" : "var(--border)",
                         boxShadow:       isActive ? "0 0 0 1px #3b82f640" : "none",
                       }}>
@@ -127,10 +127,10 @@ export default function SettingsPage() {
                         {isActive && <span className="h-2 w-2 rounded-full bg-blue-500" />}
                       </div>
                       <div>
-                        <p className="text-sm font-semibold" style={{ color: isActive ? "white" : "var(--foreground)" }}>
+                        <p className="text-sm font-semibold" style={{ color: isActive ? "white" : "var(--text-primary)" }}>
                           {opt.value}
                         </p>
-                        <p className="text-xs mt-0.5" style={{ color: "var(--foreground-muted)" }}>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
                           {opt.label}
                         </p>
                       </div>
@@ -141,10 +141,10 @@ export default function SettingsPage() {
 
               {/* Language */}
               <div className="pt-2 border-t" style={{ borderColor: "var(--border)" }}>
-                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Langue</label>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Langue</label>
                 <select value={prefs.language} onChange={e => setPrefs(p => ({ ...p, language: e.target.value }))}
                   className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                  style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}>
+                  style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
                   {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
@@ -152,10 +152,10 @@ export default function SettingsPage() {
           </section>
 
           {/* Notifications */}
-          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
               <Bell className="h-4 w-4" style={{ color: "#f59e0b" }} />
-              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Notifications</h2>
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Notifications</h2>
             </div>
             <div className="p-5 space-y-0">
               {[
@@ -167,8 +167,8 @@ export default function SettingsPage() {
                 <div key={item.key} className="flex items-center justify-between py-3.5"
                   style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
                   <div>
-                    <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>{item.label}</p>
-                    <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{item.desc}</p>
+                    <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{item.label}</p>
+                    <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{item.desc}</p>
                   </div>
                   <button
                     onClick={() => setNotifications(n => ({ ...n, [item.key]: !n[item.key as keyof typeof n] }))}
@@ -184,19 +184,19 @@ export default function SettingsPage() {
           </section>
 
           {/* Appearance */}
-          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
               <Palette className="h-4 w-4" style={{ color: "#22c55e" }} />
-              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Apparence</h2>
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Apparence</h2>
             </div>
             <div className="p-5">
-              <p className="text-xs mb-3" style={{ color: "var(--foreground-muted)" }}>Thème</p>
+              <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>Thème</p>
               <div className="flex gap-3">
                 {[{ label: "Sombre", active: true, bg: "#09090b", border: "#27272a" }, { label: "Clair", active: false, bg: "#ffffff", border: "#e4e4e7" }, { label: "Système", active: false, bg: "linear-gradient(135deg,#09090b 50%,#ffffff 50%)", border: "#27272a" }].map(t => (
                   <button key={t.label} className="flex flex-col items-center gap-2 rounded-xl border-2 p-3 transition-colors"
                     style={{ borderColor: t.active ? "#3b82f6" : "var(--border)", opacity: t.active ? 1 : 0.5 }}>
                     <div className="h-10 w-16 rounded-lg border" style={{ background: t.bg, borderColor: t.border }} />
-                    <span className="text-xs font-medium" style={{ color: t.active ? "#3b82f6" : "var(--foreground-muted)" }}>{t.label}</span>
+                    <span className="text-xs font-medium" style={{ color: t.active ? "#3b82f6" : "var(--text-secondary)" }}>{t.label}</span>
                     {t.active && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
                   </button>
                 ))}
@@ -205,7 +205,7 @@ export default function SettingsPage() {
           </section>
 
           {/* Danger zone */}
-          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "#ef444440" }}>
+          <section className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "#ef444440" }}>
             <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "#ef444430" }}>
               <Trash2 className="h-4 w-4" style={{ color: "#ef4444" }} />
               <h2 className="text-sm font-semibold" style={{ color: "#ef4444" }}>Zone dangereuse</h2>
@@ -213,8 +213,8 @@ export default function SettingsPage() {
             <div className="p-5 space-y-3">
               <div className="flex items-center justify-between rounded-lg border p-4" style={{ borderColor: "#ef444430", backgroundColor: "#ef444408" }}>
                 <div>
-                  <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Réinitialiser les données</p>
-                  <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>Supprime toutes les transactions et positions</p>
+                  <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Réinitialiser les données</p>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Supprime toutes les transactions et positions</p>
                 </div>
                 <button className="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90" style={{ backgroundColor: "#ef4444" }}>
                   Réinitialiser
@@ -222,8 +222,8 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between rounded-lg border p-4" style={{ borderColor: "#ef444430", backgroundColor: "#ef444408" }}>
                 <div>
-                  <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Supprimer le compte</p>
-                  <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>Action irréversible — toutes vos données seront perdues</p>
+                  <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Supprimer le compte</p>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Action irréversible — toutes vos données seront perdues</p>
                 </div>
                 <button className="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-red-500/10" style={{ borderColor: "#ef4444", color: "#ef4444" }}>
                   Supprimer

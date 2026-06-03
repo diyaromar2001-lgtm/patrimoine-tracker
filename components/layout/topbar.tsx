@@ -1,40 +1,50 @@
 "use client"
 
 import { Bell, Wallet } from "lucide-react"
-import { GlobalSearch }     from "./global-search"
-import { MarketStatus }     from "./market-status"
-import { CurrencySwitcher } from "./currency-switcher"
+import { GlobalSearch }      from "./global-search"
+import { MarketStatus }      from "./market-status"
+import { CurrencySwitcher }  from "./currency-switcher"
 
 interface TopbarProps {
-  title: string
+  title:    string
   subtitle?: string
 }
 
 export function Topbar({ title, subtitle }: TopbarProps) {
   return (
     <header
-      className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b px-4 sm:px-6"
+      className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b"
       style={{
-        backgroundColor: "var(--background)",
-        borderColor: "var(--border)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
+        backgroundColor: "rgba(9, 9, 11, 0.85)",
+        borderColor:     "var(--border)",
+        backdropFilter:  "blur(16px) saturate(1.8)",
+        WebkitBackdropFilter: "blur(16px) saturate(1.8)",
+        padding: "0 20px",
       }}
     >
-      {/* Left: mobile logo + title */}
+      {/* Left: mobile logo + page title */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
+        {/* Brand mark — mobile only */}
         <div
           className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg lg:hidden"
-          style={{ background: "linear-gradient(135deg, #3b82f6, #6366f1)" }}
+          style={{
+            background:  "linear-gradient(135deg, #6366f1, #818cf8)",
+            boxShadow:   "0 0 10px #6366f130",
+          }}
         >
           <Wallet className="h-3.5 w-3.5 text-white" />
         </div>
+
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold truncate" style={{ color: "var(--foreground)" }}>
+          <h1
+            className="text-sm font-semibold truncate"
+            style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
+          >
             {title}
           </h1>
           {subtitle && (
-            <p className="text-xs truncate" style={{ color: "var(--foreground-muted)" }}>
+            <p className="hidden sm:block text-[11px] truncate mt-0.5"
+              style={{ color: "var(--text-tertiary)" }}>
               {subtitle}
             </p>
           )}
@@ -42,19 +52,26 @@ export function Topbar({ title, subtitle }: TopbarProps) {
       </div>
 
       {/* Right: search + currency + market + bell */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-1.5 flex-shrink-0">
         <GlobalSearch />
         <CurrencySwitcher />
         <MarketStatus />
 
+        {/* Notification bell */}
         <button
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-zinc-800"
+          className="relative flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150"
+          style={{ color: "var(--text-tertiary)" }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--bg-muted)", e.currentTarget.style.color = "var(--text-primary)")}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent", e.currentTarget.style.color = "var(--text-tertiary)")}
           aria-label="Notifications"
         >
-          <Bell className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
+          <Bell className="h-[15px] w-[15px]" />
           <span
             className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2"
-            style={{ backgroundColor: "#3b82f6", borderColor: "var(--background)" }}
+            style={{
+              backgroundColor: "var(--accent)",
+              borderColor:     "rgba(9, 9, 11, 0.85)",
+            }}
           />
         </button>
       </div>

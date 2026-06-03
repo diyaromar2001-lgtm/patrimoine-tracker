@@ -50,8 +50,8 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
       {/* Input */}
       <div className="relative">
         {loading
-          ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" style={{ color: "var(--foreground-dim)" }} />
-          : <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--foreground-dim)" }} />
+          ? <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" style={{ color: "var(--text-tertiary)" }} />
+          : <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
         }
         <input
           ref={inputRef}
@@ -66,9 +66,9 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
           spellCheck={false}
           className="w-full rounded-lg border pl-9 pr-3 py-2.5 text-sm outline-none transition-all"
           style={{
-            backgroundColor: "var(--background-card)",
+            backgroundColor: "var(--bg-elevated)",
             borderColor: open ? "var(--accent)" : "var(--border)",
-            color: "var(--foreground)",
+            color: "var(--text-primary)",
             boxShadow: open ? "0 0 0 3px #3b82f620" : "none",
           }}
         />
@@ -85,7 +85,7 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
             transition={{ duration: 0.12 }}
             className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border shadow-2xl"
             style={{
-              backgroundColor: "var(--background-card)",
+              backgroundColor: "var(--bg-elevated)",
               borderColor: "var(--border)",
               boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
             }}
@@ -100,7 +100,7 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
                   onMouseEnter={() => setCursor(i)}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
                   style={{
-                    backgroundColor: isActive ? "var(--background-hover)" : "transparent",
+                    backgroundColor: isActive ? "var(--bg-muted)" : "transparent",
                     borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none",
                   }}
                 >
@@ -114,10 +114,10 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
 
                   {/* Name + ticker */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "var(--foreground)" }}>{r.name}</p>
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{r.name}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs font-mono" style={{ color: col }}>{r.ticker}</span>
-                      {r.exchange && <span className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>{r.exchange}</span>}
+                      {r.exchange && <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{r.exchange}</span>}
                     </div>
                   </div>
 
@@ -134,8 +134,8 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
 
             {/* Footer hint */}
             <div className="flex items-center gap-1 px-4 py-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-              <TrendingUp className="h-3 w-3" style={{ color: "var(--foreground-dim)" }} />
-              <span className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>
+              <TrendingUp className="h-3 w-3" style={{ color: "var(--text-tertiary)" }} />
+              <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                 ↑↓ naviguer · Entrée sélectionner · Échap fermer
               </span>
             </div>

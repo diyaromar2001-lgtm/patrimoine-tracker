@@ -31,7 +31,7 @@ export function InsightsWidget({ assets, className }: InsightsWidgetProps) {
 
   return (
     <div className={className}>
-      <p className="text-xs font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--foreground-muted)" }}>
+      <p className="text-xs font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
         <Lightbulb className="h-3.5 w-3.5" style={{ color: "#a78bfa" }} />
         Insights automatiques
       </p>
@@ -51,7 +51,7 @@ export function InsightsWidget({ assets, className }: InsightsWidgetProps) {
               <Icon className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: color.icon }} />
               <div className="min-w-0">
                 <p className="text-xs font-semibold" style={{ color: color.text }}>{ins.title}</p>
-                <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "var(--foreground-muted)" }}>
+                <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                   {ins.message}
                 </p>
               </div>

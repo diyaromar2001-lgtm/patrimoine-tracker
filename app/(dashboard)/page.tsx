@@ -128,7 +128,7 @@ export default function DashboardPage() {
         <Topbar title="Dashboard" subtitle="Chargement…" />
         <div className="flex-1 p-4 sm:p-6 space-y-4">
           {[1,2,3].map(i => (
-            <div key={i} className="h-20 rounded-xl animate-pulse" style={{ backgroundColor: "var(--background-card)" }} />
+            <div key={i} className="h-20 rounded-xl animate-pulse" style={{ backgroundColor: "var(--bg-elevated)" }} />
           ))}
         </div>
       </div>
@@ -146,10 +146,10 @@ export default function DashboardPage() {
             <Wallet className="h-10 w-10" style={{ color: "#3b82f6" }} />
           </div>
           <div>
-            <h2 className="text-xl font-bold mb-2" style={{ color: "var(--foreground)" }}>
+            <h2 className="text-xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
               Commencez à suivre votre patrimoine
             </h2>
-            <p className="text-sm max-w-sm" style={{ color: "var(--foreground-muted)" }}>
+            <p className="text-sm max-w-sm" style={{ color: "var(--text-secondary)" }}>
               Ajoutez vos premiers actifs pour voir votre valeur nette, P&amp;L et graphiques en temps réel.
             </p>
           </div>
@@ -162,7 +162,7 @@ export default function DashboardPage() {
             </Link>
             <Link href="/transactions"
               className="flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium transition-colors hover:bg-zinc-800"
-              style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}>
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
               Saisir une transaction
             </Link>
           </div>
@@ -179,27 +179,65 @@ export default function DashboardPage() {
 
         {/* ─── Hero ─── */}
         <section>
-          <div className="relative overflow-hidden rounded-2xl border p-6"
-            style={{ background: "linear-gradient(135deg,#0f1729 0%,#111113 60%,#0d180d 100%)", borderColor: "var(--border)" }}>
-            <div className="pointer-events-none absolute -top-24 -left-16 h-64 w-64 rounded-full opacity-20 blur-3xl" style={{ backgroundColor: "#3b82f6" }} />
-            <div className="pointer-events-none absolute -bottom-10 right-16 h-40 w-40 rounded-full opacity-10 blur-2xl" style={{ backgroundColor: "#22c55e" }} />
-            <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="relative overflow-hidden rounded-[18px] p-6 sm:p-8"
+            style={{
+              background: "linear-gradient(135deg, #0c0c14 0%, #0d0d12 50%, #0a0e0a 100%)",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.03)",
+            }}>
+            {/* Mesh glows */}
+            <div className="pointer-events-none absolute -top-20 -left-10 h-72 w-72 rounded-full opacity-30 blur-3xl"
+              style={{ background: "radial-gradient(circle, #6366f1 0%, transparent 70%)" }} />
+            <div className="pointer-events-none absolute -bottom-8 right-10 h-48 w-48 rounded-full opacity-15 blur-3xl"
+              style={{ background: "radial-gradient(circle, #22c55e 0%, transparent 70%)" }} />
+            {/* Top shimmer */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px"
+              style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)" }} />
+
+            <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-widest" style={{ color: "var(--foreground-dim)" }}>Patrimoine net total</p>
-                <div className="mt-2 flex items-baseline gap-3">
-                  <span className="text-2xl sm:text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--foreground)" }}>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+                  style={{ color: "var(--text-tertiary)" }}>
+                  Patrimoine net total
+                </p>
+                <div className="mt-3 flex items-baseline gap-3 flex-wrap">
+                  <span
+                    className="font-bold tabular-nums"
+                    style={{
+                      color: "var(--text-primary)",
+                      fontSize: "clamp(28px, 5vw, 44px)",
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1,
+                    }}
+                  >
                     {format(totalValue)}
                   </span>
                   <ChangeBadge value={todayPnlPct} size="md" />
                 </div>
-                <p className="mt-1 text-sm" style={{ color: "var(--foreground-muted)" }}>
-                  {todayPnl >= 0 ? "+" : ""}{format(todayPnl)} aujourd&apos;hui · {portfolios.length} portefeuille{portfolios.length > 1 ? "s" : ""}
-                </p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                  <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                    <span style={{ color: todayPnl >= 0 ? "var(--gain)" : "var(--loss)", fontWeight: 600 }}>
+                      {todayPnl >= 0 ? "+" : ""}{format(todayPnl)}
+                    </span>{" "}
+                    aujourd&apos;hui
+                  </span>
+                  <span className="h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-tertiary)" }} />
+                  <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                    {portfolios.length} portefeuille{portfolios.length > 1 ? "s" : ""}
+                  </span>
+                </div>
               </div>
+
               <Link href="/portfolios"
-                className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
-                style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)", boxShadow: "0 0 24px #3b82f640" }}>
-                Voir les portefeuilles <ArrowUpRight className="h-4 w-4" />
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200"
+                style={{
+                  background:  "linear-gradient(135deg, #6366f1, #818cf8)",
+                  boxShadow:   "0 0 0 1px rgba(99,102,241,0.3), 0 4px 16px rgba(99,102,241,0.25)",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = "translateY(0)"}
+              >
+                Voir les portefeuilles <ArrowUpRight className="h-3.5 w-3.5" />
               </Link>
             </div>
           </div>
@@ -208,9 +246,9 @@ export default function DashboardPage() {
         {/* ─── KPIs ─── */}
         <section>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-            <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="#3b82f6" index={0} />
+            <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="var(--accent)" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
-            <StatCard label="P&L total" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis le début" icon={TrendingUp} iconColor="#22c55e" index={2} />
+            <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
             <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={3} />
           </div>
         </section>
@@ -227,14 +265,14 @@ export default function DashboardPage() {
                     className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
                     style={{
                       backgroundColor: period === p ? "var(--accent)" : "transparent",
-                      color: period === p ? "white" : "var(--foreground-dim)",
+                      color: period === p ? "white" : "var(--text-tertiary)",
                     }}>
                     {p}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="rounded-xl border p-3" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border p-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               {/* Only show chart for the user's first ticker — never fake-show SPY as "Mon Portefeuille" */}
               {allTickers[0] ? (
                 <LiveChart
@@ -245,8 +283,8 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 gap-2">
-                  <BarChart2 className="h-8 w-8" style={{ color: "var(--foreground-dim)" }} />
-                  <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>
+                  <BarChart2 className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
                     Ajoutez des actifs pour voir l&apos;évolution de votre portefeuille
                   </p>
                 </div>
@@ -257,13 +295,13 @@ export default function DashboardPage() {
           {/* Allocation donut */}
           <section className="lg:col-span-2 space-y-3">
             <SectionHeader title="Répartition" description="Par classe d'actifs" />
-            <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <div className="mb-5 flex justify-center">
                 <div className="relative h-28 w-28">
                   <DonutChart entries={allocationEntries} />
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-sm font-bold" style={{ color: "var(--foreground)" }}>{allocationEntries.length}</span>
-                    <span className="text-[10px]" style={{ color: "var(--foreground-dim)" }}>classes</span>
+                    <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{allocationEntries.length}</span>
+                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>classes</span>
                   </div>
                 </div>
               </div>
@@ -271,8 +309,8 @@ export default function DashboardPage() {
                 {allocationEntries.map(({ cls, pct }) => (
                   <div key={cls} className="flex items-center gap-3">
                     <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ASSET_CLASS_COLORS[cls] }} />
-                    <span className="flex-1 text-xs" style={{ color: "var(--foreground-muted)" }}>{ASSET_CLASS_LABELS[cls]}</span>
-                    <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{pct.toFixed(1)}%</span>
+                    <span className="flex-1 text-xs" style={{ color: "var(--text-secondary)" }}>{ASSET_CLASS_LABELS[cls]}</span>
+                    <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{pct.toFixed(1)}%</span>
                   </div>
                 ))}
               </div>
@@ -285,12 +323,12 @@ export default function DashboardPage() {
           {/* Top 5 */}
           <section className="space-y-3">
             <SectionHeader title="Top positions" description="5 plus grandes positions"
-              action={<Link href="/portfolios" className="text-xs hover:text-white transition-colors" style={{ color: "var(--foreground-muted)" }}>Tout voir →</Link>}
+              action={<Link href="/portfolios" className="text-xs hover:text-white transition-colors" style={{ color: "var(--text-secondary)" }}>Tout voir →</Link>}
             />
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               {top5.length === 0 ? (
                 <div className="flex items-center justify-center py-10">
-                  <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucune position</p>
+                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune position</p>
                 </div>
               ) : top5.map((asset, i) => {
                 const pnlPct  = assetPnlPct(asset)
@@ -303,8 +341,8 @@ export default function DashboardPage() {
                       {asset.ticker.slice(0, 2)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold truncate" style={{ color: "var(--foreground)" }}>{asset.name}</p>
-                      <p className="text-[11px] flex items-center gap-1" style={{ color: "var(--foreground-dim)" }}>
+                      <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
+                      <p className="text-[11px] flex items-center gap-1" style={{ color: "var(--text-tertiary)" }}>
                         <span>{asset.quantity} ×</span>
                         <DualPriceInline
                           price={asset.currentPrice}
@@ -314,7 +352,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                      <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                         {format(asset.currentPrice * asset.quantity)}
                       </p>
                       <ChangeBadge value={pnlPct} showIcon={false} />
@@ -328,13 +366,13 @@ export default function DashboardPage() {
           {/* Recent transactions */}
           <section className="space-y-3">
             <SectionHeader title="Dernières transactions" description="Activité récente"
-              action={<Link href="/transactions" className="text-xs hover:text-white transition-colors" style={{ color: "var(--foreground-muted)" }}>Tout voir →</Link>}
+              action={<Link href="/transactions" className="text-xs hover:text-white transition-colors" style={{ color: "var(--text-secondary)" }}>Tout voir →</Link>}
             />
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               {recentTx.length === 0 ? (
                 <div className="flex flex-col items-center py-10 gap-2">
-                  <Activity className="h-7 w-7" style={{ color: "var(--foreground-dim)" }} />
-                  <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>Aucune transaction</p>
+                  <Activity className="h-7 w-7" style={{ color: "var(--text-tertiary)" }} />
+                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune transaction</p>
                 </div>
               ) : recentTx.map((tx, i) => {
                 const isBuy   = tx.type === "buy"
@@ -349,8 +387,8 @@ export default function DashboardPage() {
                       {tx.ticker.slice(0, 2)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>{tx.assetName}</p>
-                      <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>
+                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{tx.assetName}</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         {label} · {new Date(tx.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })}
                       </p>
                     </div>
@@ -368,7 +406,7 @@ export default function DashboardPage() {
         {earnings.length > 0 && (
           <section className="space-y-3">
             <SectionHeader title="Prochains résultats" description="Dates de publication pour vos positions" />
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               {earnings.slice(0, 6).map((e, i) => {
                 const daysLeft = Math.ceil((new Date(e.earningsDate).getTime() - Date.now()) / 86400000)
                 const isPast   = daysLeft < 0
@@ -380,20 +418,20 @@ export default function DashboardPage() {
                       {e.ticker.slice(0, 4)}
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>{e.ticker}</p>
-                      <p className="text-[11px]" style={{ color: "var(--foreground-muted)" }}>
+                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{e.ticker}</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
                         {new Date(e.earningsDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
                       </p>
                     </div>
                     {e.epsAvg != null && (
-                      <p className="text-xs tabular-nums" style={{ color: "var(--foreground-muted)" }}>
+                      <p className="text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                         EPS {e.epsAvg > 0 ? "+" : ""}{e.epsAvg.toFixed(2)}$
                       </p>
                     )}
                     <span className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
                       style={{
-                        backgroundColor: isPast ? "var(--background-hover)" : "#f59e0b18",
-                        color: isPast ? "var(--foreground-dim)" : "#f59e0b",
+                        backgroundColor: isPast ? "var(--bg-muted)" : "#f59e0b18",
+                        color: isPast ? "var(--text-tertiary)" : "#f59e0b",
                       }}>
                       {isPast ? `il y a ${Math.abs(daysLeft)}j` : daysLeft === 0 ? "Aujourd'hui" : `dans ${daysLeft}j`}
                     </span>

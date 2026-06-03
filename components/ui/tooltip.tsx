@@ -27,7 +27,7 @@ export function Tooltip({ content, children, icon = false, className }: TooltipP
       onBlur={() => setOpen(false)}
     >
       {icon ? (
-        <Info className="h-3 w-3 cursor-help" style={{ color: "var(--foreground-dim)" }} />
+        <Info className="h-3 w-3 cursor-help" style={{ color: "var(--text-tertiary)" }} />
       ) : (
         children
       )}
@@ -43,7 +43,7 @@ export function Tooltip({ content, children, icon = false, className }: TooltipP
             style={{
               backgroundColor: "#1a1a1f",
               borderColor:      "var(--border)",
-              color:            "var(--foreground-muted)",
+              color:            "var(--text-secondary)",
               lineHeight:       1.5,
               boxShadow:        "0 8px 32px rgba(0,0,0,0.6)",
             }}

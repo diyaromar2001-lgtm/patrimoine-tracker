@@ -124,20 +124,20 @@ export default function DCACalculatorPage() {
           {/* ─── Controls ─── */}
           <div className="lg:col-span-2 space-y-4">
             <SectionHeader title="Paramètres" description="Ajustez votre simulation" />
-            <div className="rounded-xl border p-5 space-y-5" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border p-5 space-y-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               {sliders.map(s => (
                 <div key={s.label}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>{s.label}</label>
-                    <span className="text-sm font-bold tabular-nums" style={{ color: "var(--foreground)" }}>{s.fmt(s.value)}</span>
+                    <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{s.label}</label>
+                    <span className="text-sm font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{s.fmt(s.value)}</span>
                   </div>
                   <input type="range" min={s.min} max={s.max} step={s.step} value={s.value}
                     onChange={e => s.set(parseFloat(e.target.value))}
                     className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
                     style={{ accentColor: "#3b82f6" }} />
                   <div className="flex justify-between mt-1">
-                    <span className="text-[10px]" style={{ color: "var(--foreground-dim)" }}>{s.fmt(s.min)}</span>
-                    <span className="text-[10px]" style={{ color: "var(--foreground-dim)" }}>{s.fmt(s.max)}</span>
+                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{s.fmt(s.min)}</span>
+                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{s.fmt(s.max)}</span>
                   </div>
                 </div>
               ))}
@@ -146,21 +146,21 @@ export default function DCACalculatorPage() {
               <div className="border-t pt-4" style={{ borderColor: "var(--border)" }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Ajustement inflation</p>
-                    <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>Affiche les rendements en valeur réelle</p>
+                    <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Ajustement inflation</p>
+                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Affiche les rendements en valeur réelle</p>
                   </div>
                   <button onClick={() => setShowInflation(v => !v)} className="transition-colors">
                     {showInflation
                       ? <ToggleRight className="h-6 w-6" style={{ color: "var(--accent)" }} />
-                      : <ToggleLeft  className="h-6 w-6" style={{ color: "var(--foreground-dim)" }} />
+                      : <ToggleLeft  className="h-6 w-6" style={{ color: "var(--text-tertiary)" }} />
                     }
                   </button>
                 </div>
                 {showInflation && (
                   <div className="mt-3">
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>Inflation annuelle</label>
-                      <span className="text-sm font-bold" style={{ color: "var(--foreground)" }}>{inflation}%</span>
+                      <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Inflation annuelle</label>
+                      <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{inflation}%</span>
                     </div>
                     <input type="range" min={0} max={10} step={0.5} value={inflation}
                       onChange={e => setInflation(parseFloat(e.target.value))}
@@ -178,13 +178,13 @@ export default function DCACalculatorPage() {
 
             {/* KPIs */}
             <div className="grid grid-cols-2 gap-3">
-              <motion.div layout className="col-span-2 rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+              <motion.div layout className="col-span-2 rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                 <div className="flex items-center gap-2 mb-1">
                   <TrendingUp className="h-3.5 w-3.5" style={{ color: "#22c55e" }} />
-                  <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>Valeur finale DCA</p>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Valeur finale DCA</p>
                 </div>
                 <p className="text-3xl font-bold tabular-nums" style={{ color: "#22c55e" }}>{formatCurrency(res.finalDca)}</p>
-                <p className="text-xs mt-1" style={{ color: "var(--foreground-dim)" }}>
+                <p className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
                   CAGR {res.cagr.toFixed(2)}% · frais totaux {formatCurrency(res.totalFees)} {showInflation ? "· valeur réelle" : "· valeur nominale"}
                 </p>
               </motion.div>
@@ -195,10 +195,10 @@ export default function DCACalculatorPage() {
                 { label: "Performance", value: (res.profitPct >= 0 ? "+" : "") + res.profitPct.toFixed(1) + "%", icon: Percent, color: res.profitPct >= 0 ? "#22c55e" : "#ef4444" },
                 { label: "Lump Sum équivalent", value: formatCurrency(res.finalLump), icon: Calculator, color: "#f59e0b" },
               ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+                <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                   <div className="flex items-center gap-2 mb-1">
                     <Icon className="h-3.5 w-3.5" style={{ color }} />
-                    <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>{label}</p>
+                    <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{label}</p>
                   </div>
                   <p className="text-lg font-bold tabular-nums" style={{ color }}>{value}</p>
                 </div>
@@ -206,9 +206,9 @@ export default function DCACalculatorPage() {
             </div>
 
             {/* DCA vs Lump Sum chart */}
-            <div className="rounded-xl border p-4" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>DCA vs Lump Sum</p>
+                <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>DCA vs Lump Sum</p>
                 <div className="flex items-center gap-4">
                   <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "#22c55e" }}>
                     <span className="h-2 w-4 rounded-full inline-block" style={{ backgroundColor: "#22c55e" }} /> DCA
@@ -222,9 +222,9 @@ export default function DCACalculatorPage() {
             </div>
 
             {/* Projection table */}
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--background-card)", borderColor: "var(--border)" }}>
+            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <div className="px-5 py-3 border-b" style={{ borderColor: "var(--border)" }}>
-                <p className="text-xs font-semibold" style={{ color: "var(--foreground)" }}>Projection annuelle</p>
+                <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Projection annuelle</p>
               </div>
               {[1, 2, 5, 10, 15, 20, 30].filter(y => y <= years).map(y => {
                 const snap = res.dcaPts.find(p => p.date.startsWith((startYear + y).toString() + "-01"))
@@ -233,16 +233,16 @@ export default function DCACalculatorPage() {
                   <div key={y} className="flex items-center justify-between px-5 py-2.5 transition-colors hover:bg-zinc-800/20"
                     style={{ borderTop: "1px solid var(--border-subtle)" }}>
                     <div className="flex items-center gap-2">
-                      <Calendar className="h-3.5 w-3.5" style={{ color: "var(--foreground-dim)" }} />
-                      <span className="text-xs font-medium" style={{ color: "var(--foreground-muted)" }}>An {y} ({startYear + y})</span>
+                      <Calendar className="h-3.5 w-3.5" style={{ color: "var(--text-tertiary)" }} />
+                      <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>An {y} ({startYear + y})</span>
                     </div>
                     <div className="flex items-center gap-6">
                       <div className="text-right">
-                        <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>Investi</p>
-                        <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--foreground-muted)" }}>{formatCurrency(snap?.invested ?? 0)}</p>
+                        <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Investi</p>
+                        <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-secondary)" }}>{formatCurrency(snap?.invested ?? 0)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[11px]" style={{ color: "var(--foreground-dim)" }}>Valeur DCA</p>
+                        <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Valeur DCA</p>
                         <p className="text-xs font-semibold tabular-nums" style={{ color: "#22c55e" }}>{formatCurrency(snap?.value ?? 0)}</p>
                       </div>
                     </div>

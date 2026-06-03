@@ -26,7 +26,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-dvh" style={{ backgroundColor: "var(--background)" }}>
+    <div className="min-h-dvh" style={{ backgroundColor: "var(--bg-base)" }}>
       {/* Sidebar — desktop only */}
       <div className="hidden lg:block">
         <Sidebar collapsed={collapsed} onToggle={toggle} />
