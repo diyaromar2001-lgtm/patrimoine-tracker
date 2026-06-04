@@ -10,6 +10,7 @@ import { Sparkline } from "@/components/ui/sparkline"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { LiveChart } from "@/components/charts/live-chart"
 import { useLivePrices } from "@/hooks/use-live-prices"
+import { useSwingIndicators } from "@/hooks/use-swing-indicators"
 import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import type { WatchlistItem } from "@/lib/types"
@@ -37,6 +38,30 @@ export default function WatchlistPage() {
   const { format } = useCurrency()
   const tickers    = items.map(i => i.ticker)
   const { prices, loading: pricesLoading, secondsAgo, nextRefreshIn, refresh } = useLivePrices(tickers, 30_000)
+  const { indicators } = useSwingIndicators(tickers)
+
+  // Toggles affichage indicateurs (persistance localStorage)
+  type IndicatorKey = "signal" | "rsi" | "ma" | "distMa" | "vol" | "range"
+  const ALL_IND: { key: IndicatorKey; label: string }[] = [
+    { key: "signal", label: "Signal swing" },
+    { key: "rsi",    label: "RSI(14)" },
+    { key: "ma",     label: "MA20 / MA50" },
+    { key: "distMa", label: "% vs MA20" },
+    { key: "vol",    label: "Volume / Vol." },
+    { key: "range",  label: "Range 4 sem." },
+  ]
+  const [visibleInd, setVisibleInd] = useState<Record<IndicatorKey, boolean>>({
+    signal: true, rsi: true, ma: false, distMa: true, vol: false, range: false,
+  })
+  useEffect(() => {
+    const saved = localStorage.getItem("watchlist-indicators")
+    if (saved) try { setVisibleInd(JSON.parse(saved)) } catch {}
+  }, [])
+  function toggleInd(key: IndicatorKey) {
+    const next = { ...visibleInd, [key]: !visibleInd[key] }
+    setVisibleInd(next)
+    localStorage.setItem("watchlist-indicators", JSON.stringify(next))
+  }
 
   const filtered = items.filter(item =>
     item.ticker.toLowerCase().includes(search.toLowerCase()) ||
@@ -121,6 +146,33 @@ export default function WatchlistPage() {
             {/* ── Asset list (left) ─────────────────────────────────────── */}
             <div className="lg:col-span-2 space-y-2">
               <SectionHeader title="Mes actifs" description="Cliquer pour voir le graphique" />
+
+              {/* Toggles indicateurs swing */}
+              {items.length > 0 && (
+                <div className="rounded-xl border p-2" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)" }}>
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+                      Indicateurs swing (1-4 semaines)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ALL_IND.map(({ key, label }) => {
+                      const on = visibleInd[key]
+                      return (
+                        <button key={key} onClick={() => toggleInd(key)}
+                          className="rounded-md border px-2 py-1 text-[10px] font-medium transition-all"
+                          style={{
+                            backgroundColor: on ? "#6366f118" : "var(--bg-base)",
+                            borderColor:     on ? "var(--accent)" : "var(--border)",
+                            color:           on ? "var(--accent)" : "var(--text-tertiary)",
+                          }}>
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="space-y-1.5">
                 {filtered.map((item, i) => {
                   const live     = prices[item.ticker]
@@ -220,6 +272,86 @@ export default function WatchlistPage() {
                             </span>
                           )}
                         </div>
+
+                        {/* ── Indicateurs swing ───────────────────────────── */}
+                        {(() => {
+                          const ind = indicators[item.ticker]
+                          const hasAny = Object.values(visibleInd).some(v => v)
+                          if (!ind || !hasAny) return null
+
+                          const signalColors = {
+                            BUY:  { bg: "#22c55e22", color: "#22c55e", border: "#22c55e40" },
+                            HOLD: { bg: "#6b728022", color: "#94a3b8", border: "#94a3b840" },
+                            SELL: { bg: "#ef444422", color: "#ef4444", border: "#ef444440" },
+                          } as const
+
+                          return (
+                            <div className="mt-2 pt-2 border-t flex flex-wrap gap-1.5" style={{ borderColor: "var(--border-subtle)" }}>
+                              {/* Signal */}
+                              {visibleInd.signal && ind.signal && (
+                                <div className="rounded-md px-2 py-0.5 text-[10px] font-bold border"
+                                  style={signalColors[ind.signal]}
+                                  title={ind.signalReasons.join(" · ")}>
+                                  {ind.signal} ({ind.signalScore > 0 ? "+" : ""}{ind.signalScore})
+                                </div>
+                              )}
+                              {/* RSI */}
+                              {visibleInd.rsi && ind.rsi14 != null && (
+                                <div className="rounded-md px-2 py-0.5 text-[10px] font-medium border"
+                                  style={{
+                                    backgroundColor: ind.rsi14 < 30 ? "#22c55e15" : ind.rsi14 > 70 ? "#ef444415" : "var(--bg-base)",
+                                    borderColor: "var(--border)",
+                                    color: ind.rsi14 < 30 ? "#22c55e" : ind.rsi14 > 70 ? "#ef4444" : "var(--text-secondary)",
+                                  }}>
+                                  RSI {ind.rsi14.toFixed(0)}
+                                </div>
+                              )}
+                              {/* MA20 / MA50 */}
+                              {visibleInd.ma && ind.ma20 != null && ind.ma50 != null && (
+                                <div className="rounded-md px-2 py-0.5 text-[10px] font-medium border"
+                                  style={{
+                                    backgroundColor: "var(--bg-base)",
+                                    borderColor: "var(--border)",
+                                    color: ind.ma20 > ind.ma50 ? "#22c55e" : "#ef4444",
+                                  }}
+                                  title={`MA20=${ind.ma20.toFixed(2)} · MA50=${ind.ma50.toFixed(2)}`}>
+                                  MA20 {ind.ma20 > ind.ma50 ? "↑" : "↓"} MA50
+                                </div>
+                              )}
+                              {/* % vs MA20 */}
+                              {visibleInd.distMa && ind.distMa20Pct != null && (
+                                <div className="rounded-md px-2 py-0.5 text-[10px] font-medium border"
+                                  style={{
+                                    backgroundColor: "var(--bg-base)",
+                                    borderColor: "var(--border)",
+                                    color: ind.distMa20Pct >= 0 ? "#22c55e" : "#ef4444",
+                                  }}>
+                                  vs MA20 {ind.distMa20Pct >= 0 ? "+" : ""}{ind.distMa20Pct.toFixed(1)}%
+                                </div>
+                              )}
+                              {/* Volume / Volatilité */}
+                              {visibleInd.vol && ind.volRatio != null && (
+                                <div className="rounded-md px-2 py-0.5 text-[10px] font-medium border"
+                                  style={{
+                                    backgroundColor: ind.volRatio > 1.5 ? "#f59e0b15" : "var(--bg-base)",
+                                    borderColor: "var(--border)",
+                                    color: ind.volRatio > 1.5 ? "#f59e0b" : "var(--text-secondary)",
+                                  }}
+                                  title={ind.vol20 != null ? `Volatilité 20j: ${ind.vol20.toFixed(1)}%` : ""}>
+                                  Vol ×{ind.volRatio.toFixed(1)}
+                                </div>
+                              )}
+                              {/* Range 4w */}
+                              {visibleInd.range && ind.high4w != null && ind.low4w != null && (
+                                <div className="rounded-md px-2 py-0.5 text-[10px] font-medium border"
+                                  style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                                  title="Plus haut / plus bas sur 4 semaines">
+                                  {ind.low4w.toFixed(2)} ─ {ind.high4w.toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </button>
 
                       {/* Note editor */}
