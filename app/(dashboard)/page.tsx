@@ -27,7 +27,7 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, globalCash, loading, realizedPnLEvents } = useAppData()
+  const { portfolios, transactions, revenus, globalCash, loading, realizedPnLEvents } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
@@ -80,6 +80,27 @@ export default function DashboardPage() {
 
   // Patrimoine = positions + cash (PAS + revenus → déjà dans le cash)
   const netWorthValue = totalValue + totalCashConverted
+
+  // Revenus annexes encaissés (parrainage, cashback, etc.)
+  const totalRevenus = useMemo(
+    () => revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0),
+    [revenus, convert]
+  )
+
+  // Dividendes encaissés
+  const totalDividends = useMemo(
+    () => transactions
+      .filter(t => t.type === "dividend")
+      .reduce((s, t) => {
+        const userRate = (fxRates as Record<string,number>)[currency] ?? 1
+        return s + ((t.netAmountChf ?? convert(t.quantity * t.price, t.currency as AppCurrency)) * userRate)
+      }, 0),
+    [transactions, fxRates, currency, convert]
+  )
+
+  // P&L global = P&L marché + P&L réalisé + dividendes + revenus annexes
+  const globalPnl    = totalPnl + totalRevenus + totalDividends
+  const globalPnlPct = totalCost > 0 ? (globalPnl / totalCost) * 100 : 0
 
   const todayPnl = useMemo(
     () => allAssets.reduce((s, a) => {
@@ -206,7 +227,7 @@ export default function DashboardPage() {
     </div>
   )
 
-  const isUp = totalPnlPct >= 0
+  const isUp = globalPnlPct >= 0
   const isToday = todayPnl >= 0
 
   return (
@@ -234,13 +255,14 @@ export default function DashboardPage() {
                 <span className="text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--text-primary)" }}>
                   {format(netWorthValue)}
                 </span>
-                <ChangeBadge value={totalPnlPct} size="md" />
+                <ChangeBadge value={globalPnlPct} size="md" />
               </div>
               <div className="flex flex-wrap items-center gap-4 text-sm">
-                <span style={{ color: "var(--text-secondary)" }}>
+                <span style={{ color: "var(--text-secondary)" }}
+                  title={`Marché ${totalPnl >= 0 ? "+" : ""}${format(totalPnl)} · Dividendes +${format(totalDividends)} · Revenus +${format(totalRevenus)}`}>
                   <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>P&L total</span>
                   <span className="font-semibold tabular-nums" style={{ color: isUp ? "var(--gain)" : "var(--loss)" }}>
-                    {totalPnl >= 0 ? "+" : ""}{format(totalPnl)}
+                    {globalPnl >= 0 ? "+" : ""}{format(globalPnl)}
                   </span>
                 </span>
                 <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
