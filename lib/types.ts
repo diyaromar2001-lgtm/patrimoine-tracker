@@ -156,11 +156,30 @@ export interface PortfolioSnapshot {
 }
 
 // ─── Computed helpers ─────────────────────────────────────────────────────────
+//
+// ⚠️  ATTENTION — CES FONCTIONS N'ONT PAS DE CONVERSION FX
+//
+//  Elles supposent que tous les prix sont déjà dans la même devise.
+//  Pour un portefeuille multi-devises (USD + EUR + CHF), ces fonctions
+//  produisent des chiffres incorrects.
+//
+//  → Pour le P&L et la valeur en devise de base (CHF) :
+//      utiliser lib/finance.ts (positionValue, portfolioLatentPnL, etc.)
+//      ou lib/pnl.ts (calculatePortfolioPnL)
+//
+//  Ces fonctions restent utiles uniquement pour :
+//    - la comparaison ordinale (tri) quand tous les actifs sont dans la même devise
+//    - les tests unitaires isolés
+//    - les calculs de coût CHF quand costBasisChf est déjà disponible
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
+/** @deprecated Utiliser livePrices[ticker].price * qty (déjà converti en devise user) */
 export function assetValue(a: Asset) {
   return a.quantity * a.currentPrice
 }
 
+/** @deprecated Utiliser asset.costBasisChf (taux historique) pour le coût réel en CHF */
 export function assetCost(a: Asset) {
   return a.quantity * a.avgBuyPrice
 }
@@ -174,28 +193,34 @@ export function assetAvgCostChf(a: Asset) {
   return assetCostBasisChf(a) / a.quantity
 }
 
+/** @deprecated Utiliser lib/finance.ts positionValue() + costBasisChf */
 export function assetPnl(a: Asset) {
   return assetValue(a) - assetCost(a)
 }
 
+/** @deprecated Utiliser lib/pnl.ts calculatePortfolioPnL() pour le % correct avec FX */
 export function assetPnlPct(a: Asset) {
   const cost = assetCost(a)
   if (cost === 0) return 0
   return (assetPnl(a) / cost) * 100
 }
 
+/** @deprecated Utiliser lib/finance.ts portfolioValue() avec fxRates */
 export function portfolioTotalValue(p: Portfolio) {
   return p.assets.reduce((s, a) => s + assetValue(a), 0)
 }
 
+/** @deprecated Utiliser Σ asset.costBasisChf pour le coût réel historique en CHF */
 export function portfolioTotalCost(p: Portfolio) {
   return p.assets.reduce((s, a) => s + assetCost(a), 0)
 }
 
+/** @deprecated Utiliser lib/pnl.ts calculatePortfolioPnL() */
 export function portfolioPnl(p: Portfolio) {
   return portfolioTotalValue(p) - portfolioTotalCost(p)
 }
 
+/** @deprecated Utiliser lib/pnl.ts calculatePortfolioPnL().pnlPct */
 export function portfolioPnlPct(p: Portfolio) {
   const cost = portfolioTotalCost(p)
   if (cost === 0) return 0

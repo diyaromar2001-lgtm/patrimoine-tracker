@@ -123,7 +123,14 @@ export default function DashboardPage() {
     ), 0)
   }, 0), [portfolios, convert])
 
-  const netWorthValue = totalValue + totalCashConverted
+  // Revenus annexes encaissés → comptent dans le patrimoine, PAS dans le P&L marché
+  const totalRevenus = useMemo(
+    () => revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0),
+    [revenus, convert]
+  )
+
+  // Patrimoine net = positions + cash + revenus annexes encaissés
+  const netWorthValue = totalValue + totalCashConverted + totalRevenus
 
   // Today P&L: sum of each asset's day change
   const todayPnl = useMemo(

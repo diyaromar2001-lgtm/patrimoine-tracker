@@ -46,15 +46,30 @@ export default function TransactionsPage() {
     )
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
-  const totalBuy  = transactions.filter(t => t.type === "buy").reduce((s, t) => s + t.quantity * t.price, 0)
-  const totalSell = transactions.filter(t => t.type === "sell").reduce((s, t) => s + t.quantity * t.price, 0)
-  const totalDiv  = transactions.filter(t => t.type === "dividend").reduce((s, t) => s + t.quantity * t.price, 0)
-  const totalFees = transactions.reduce((s, t) => s + t.fees, 0)
-  const latentPnl = portfolios.flatMap(p => p.assets).reduce((sum, asset) => {
-    const valueUser = convert(asset.currentPrice * asset.quantity, asset.currency as AppCurrency)
-    const costUser = (asset.costBasisChf ?? 0) * ((fxRates as Record<string, number>)[currency] ?? 1)
-    return sum + valueUser - costUser
-  }, 0)
+  // ── KPIs : utiliser netAmountChf (taux historique) sinon fallback convert() ──
+  // Jamais additionner t.price directement — c'est en devise native (USD/EUR/CHF mélangés)
+  const userRate  = (fxRates as Record<string, number>)[currency] ?? 1
+  const toUser    = (chf: number) => chf * userRate
+
+  const totalBuy  = transactions.filter(t => t.type === "buy")
+    .reduce((s, t) => s + toUser(t.netAmountChf ?? (t.quantity * t.price * ((fxRates as Record<string,number>)[t.currency] ?? 1) / ((fxRates as Record<string,number>)["CHF"] ?? 1))), 0)
+  const totalSell = transactions.filter(t => t.type === "sell")
+    .reduce((s, t) => s + toUser(t.netAmountChf ?? (t.quantity * t.price * ((fxRates as Record<string,number>)[t.currency] ?? 1) / ((fxRates as Record<string,number>)["CHF"] ?? 1))), 0)
+  const totalDiv  = transactions.filter(t => t.type === "dividend")
+    .reduce((s, t) => s + toUser(t.netAmountChf ?? convert(t.quantity * t.price, t.currency as AppCurrency)), 0)
+  const totalFees = transactions
+    .reduce((s, t) => s + toUser(t.feesChf ?? convert(t.fees, t.currency as AppCurrency)), 0)
+
+  // ── PnL latent : asset.currentPrice est déjà en devise user (depuis livePrices) ──
+  // NE PAS appeler convert() dessus — ce serait une double-conversion
+  const latentPnl = portfolios.flatMap(p => p.assets)
+    .filter(a => a.assetClass !== "cash")
+    .reduce((sum, asset) => {
+      // currentPrice vient de livePrices.price → déjà converti en devise user
+      const valueUser = asset.currentPrice * asset.quantity
+      const costUser  = toUser(asset.costBasisChf ?? 0)
+      return sum + valueUser - costUser
+    }, 0)
   const realizedPnl = useMemo(() =>
     realizedPnLEvents.reduce(
       (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),

@@ -286,10 +286,11 @@ function HoldingsTable({
         case "qty":         va = a.quantity;      vb = b.quantity;      break
         case "avgPrice":    va = a.avgBuyPrice;   vb = b.avgBuyPrice;   break
         case "currentPrice":va = liveA;           vb = liveB;           break
-        case "value":       va = assetValue(eA);  vb = assetValue(eB);  break
+        // liveA/liveB = prix live en devise user (déjà converti par livePrices hook)
+        case "value":       va = liveA * a.quantity; vb = liveB * b.quantity; break
         case "dayPnl":      va = livePrices[a.ticker]?.changePct ?? 0; vb = livePrices[b.ticker]?.changePct ?? 0; break
         case "totalPnlPct": va = pnlPctFor(a); vb = pnlPctFor(b); break
-        case "weight":      va = assetValue(eA);  vb = assetValue(eB);  break
+        case "weight":      va = liveA * a.quantity; vb = liveB * b.quantity; break
       }
       return sortDir === "asc" ? va - vb : vb - va
     })
