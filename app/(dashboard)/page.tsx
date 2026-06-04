@@ -105,6 +105,7 @@ export default function DashboardPage() {
         ticker:               a.ticker,
         quantity:             a.quantity,
         avgBuyPrice:          a.avgBuyPrice,
+        costBasisChf:         a.costBasisChf,
         nativeCurrency:       livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
         currentPriceNative:   livePrices[a.ticker]?.originalPrice,
         currentPriceConverted: livePrices[a.ticker]?.price ?? a.currentPrice,
@@ -522,11 +523,10 @@ export default function DashboardPage() {
                   <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune position</p>
                 </div>
               ) : top5.map((asset, i) => {
-                // P&L% always native-to-native
-                const nativeOrig = livePrices[asset.ticker]?.originalPrice ?? asset.currentPrice
-                const pnlPct = asset.avgBuyPrice > 0
-                  ? ((nativeOrig - asset.avgBuyPrice) / asset.avgBuyPrice) * 100
-                  : 0
+                const userRate = (fxRates as Record<string, number>)[currency] ?? 1
+                const valueChf = (asset.currentPrice * asset.quantity) / userRate
+                const costChf = asset.costBasisChf ?? valueChf
+                const pnlPct = costChf > 0 ? ((valueChf - costChf) / costChf) * 100 : 0
                 const color = ASSET_CLASS_COLORS[asset.assetClass]
                 return (
                   <div key={asset.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"

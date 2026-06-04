@@ -19,11 +19,13 @@ import {
   maxDrawdown,
   calculateRealizedPnLEvents,
   calculateRealizedPnL,
+  calculateTransactionChfAmounts,
   convertCurrency,
   formatPct,
   generateInsights,
   DEFAULT_FX_RATES,
 } from "./finance"
+import { calculatePortfolioPnL } from "./pnl"
 
 // ─── Conversion de devises ────────────────────────────────────────────────────
 
@@ -152,6 +154,63 @@ describe("calculateAllocationByClass", () => {
     const alloc = calculateAllocationByClass(SAMPLE_ASSETS)
     const total = alloc.reduce((s, a) => s + a.pct, 0)
     expect(total).toBeCloseTo(100, 5)
+  })
+})
+
+describe("calculatePortfolioPnL avec cost basis CHF statique", () => {
+  it("ne reconvertit pas le capital investi avec le taux live", () => {
+    const result = calculatePortfolioPnL([
+      {
+        ticker: "NVDA",
+        quantity: 1,
+        avgBuyPrice: 100,
+        costBasisChf: 80,
+        nativeCurrency: "USD",
+        currentPriceNative: 120,
+      },
+    ], { CHF: 1, USD: 2 })
+
+    expect(result.costCHF).toBe(80)
+    expect(result.valueCHF).toBe(60)
+    expect(result.pnlCHF).toBe(-20)
+    expect(result.pnlPct).toBeCloseTo(-25)
+  })
+})
+
+describe("calculateTransactionChfAmounts", () => {
+  const rates = { CHF: 1, USD: 2 }
+
+  it("fige le cout CHF d'un achat avec frais", () => {
+    const amounts = calculateTransactionChfAmounts({
+      type: "buy",
+      quantity: 1,
+      price: 200,
+      fees: 2,
+      currency: "USD",
+      fxRates: rates,
+    })
+
+    expect(amounts.fxRateToChf).toBe(0.5)
+    expect(amounts.grossAmountChf).toBe(100)
+    expect(amounts.feesChf).toBe(1)
+    expect(amounts.netAmountChf).toBe(101)
+  })
+
+  it("calcule le PnL realise d'une vente en CHF", () => {
+    const amounts = calculateTransactionChfAmounts({
+      type: "sell",
+      quantity: 1,
+      price: 220,
+      fees: 2,
+      currency: "USD",
+      fxRates: rates,
+      assetQuantity: 2,
+      assetCostBasisChf: 202,
+    })
+
+    expect(amounts.soldCostBasisChf).toBe(101)
+    expect(amounts.netAmountChf).toBe(109)
+    expect(amounts.realizedPnlChf).toBe(8)
   })
 })
 

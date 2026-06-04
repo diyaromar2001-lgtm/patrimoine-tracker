@@ -8,7 +8,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/client"
 import * as Q from "@/lib/supabase/queries"
 import type { Portfolio, Transaction, Asset, RevenuAnnexe, CashBalance } from "@/lib/types"
 import { EMPTY_CASH_BALANCE } from "@/lib/types"
-import { calculateRealizedPnLEvents, type RealizedPnLEvent } from "@/lib/finance"
+import { calculateRealizedPnLEvents, calculateTransactionChfAmounts, chfPerCurrencyUnit, type RealizedPnLEvent } from "@/lib/finance"
+import { useCurrency } from "@/hooks/use-currency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ const AppDataContext = createContext<AppData>(DEFAULT)
 // ─── Provider — single fetch, shared across all pages ────────────────────────
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
+  const { fxRates } = useCurrency()
   const [portfolios,   setPortfolios]   = useState<Portfolio[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [revenus,      setRevenus]      = useState<RevenuAnnexe[]>([])
@@ -117,7 +119,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       ...asset,
       currentPrice: asset.avgBuyPrice,
       costBasisChf: asset.costBasisChf ?? asset.quantity * asset.avgBuyPrice,
-      costBasisSource: asset.costBasisSource ?? "computed",
+      costBasisSource: asset.costBasisSource ?? ("computed" as const),
       costBasisUpdatedAt: asset.costBasisUpdatedAt ?? new Date().toISOString(),
     }
     setPortfolios(prev => prev.map(p =>
@@ -147,7 +149,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             ...p,
             assets: p.assets.map(a =>
               a.id === assetId
-                ? { ...a, costBasisChf, costBasisSource: "manual", costBasisUpdatedAt: updatedAt }
+                ? { ...a, costBasisChf, costBasisSource: "manual" as const, costBasisUpdatedAt: updatedAt }
                 : a
             ),
           }
@@ -163,11 +165,44 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // ── Transaction mutations ────────────────────────────────────────────────────
 
   async function addTransaction(tx: Omit<Transaction, "id">): Promise<{ ok: boolean; error?: string }> {
+    const rateToChf = (curr: string | undefined) => {
+      return chfPerCurrencyUnit(curr, fxRates)
+    }
+
+    const existingAsset = portfolios
+      .find(p => p.id === tx.portfolioId)
+      ?.assets.find(a => a.ticker === tx.ticker)
+
+    const assetCostBasisChf = existingAsset?.costBasisChf
+      ?? (existingAsset ? existingAsset.quantity * existingAsset.avgBuyPrice * rateToChf(existingAsset.currency) : 0)
+    const amounts = calculateTransactionChfAmounts({
+      type: tx.type,
+      quantity: tx.quantity,
+      price: tx.price,
+      fees: tx.fees,
+      currency: tx.currency,
+      fxRates,
+      assetQuantity: existingAsset?.quantity,
+      assetCostBasisChf,
+    })
+    const grossAmountChf = tx.grossAmountChf ?? amounts.grossAmountChf
+    const feesChf = tx.feesChf ?? amounts.feesChf
+    const netAmountChf = tx.netAmountChf ?? amounts.netAmountChf
+    const soldCostBasisChf = amounts.soldCostBasisChf
+    const realizedPnlChf = tx.type === "sell" ? (tx.realizedPnlChf ?? amounts.realizedPnlChf) : (tx.realizedPnlChf ?? 0)
+
+    const preparedTx: Omit<Transaction, "id"> = {
+      ...tx,
+      fxRateToChf: tx.fxRateToChf ?? amounts.fxRateToChf,
+      grossAmountChf,
+      feesChf,
+      netAmountChf,
+      realizedPnlChf,
+    }
+
     // ── Validations métier ───────────────────────────────────────────────────
     if (tx.type === "sell") {
-      const asset = portfolios
-        .find(p => p.id === tx.portfolioId)
-        ?.assets.find(a => a.ticker === tx.ticker)
+      const asset = existingAsset
       if (!asset) return { ok: false, error: "Position introuvable pour cette vente." }
       if (tx.quantity <= 0) return { ok: false, error: "La quantité vendue doit être positive." }
       if (tx.quantity > asset.quantity) {
@@ -197,22 +232,30 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const tempId = `local-${Date.now()}`
 
     // ── 1. Optimistic update: add transaction ────────────────────────────────
-    setTransactions(prev => [{ ...tx, id: tempId }, ...prev])
+    setTransactions(prev => [{ ...preparedTx, id: tempId }, ...prev])
 
     // ── 2. Optimistic update: sync portfolio assets ──────────────────────────
-    if (tx.type === "buy") {
+    if (preparedTx.type === "buy") {
       setPortfolios(prev => prev.map(p => {
-        if (p.id !== tx.portfolioId) return p
-        const existing = p.assets.find(a => a.ticker === tx.ticker)
+        if (p.id !== preparedTx.portfolioId) return p
+        const existing = p.assets.find(a => a.ticker === preparedTx.ticker)
         if (existing) {
           // Update qty + weighted avg price
-          const newQty = existing.quantity + tx.quantity
-          const newAvg = (existing.quantity * existing.avgBuyPrice + tx.quantity * tx.price + tx.fees) / newQty
+          const newQty = existing.quantity + preparedTx.quantity
+          const newAvg = (existing.quantity * existing.avgBuyPrice + preparedTx.quantity * preparedTx.price + preparedTx.fees) / newQty
+          const nextCostBasisChf = (existing.costBasisChf ?? existing.quantity * existing.avgBuyPrice * rateToChf(existing.currency)) + netAmountChf
           return {
             ...p,
             assets: p.assets.map(a =>
-              a.ticker === tx.ticker
-                ? { ...a, quantity: newQty, avgBuyPrice: newAvg }
+              a.ticker === preparedTx.ticker
+                ? {
+                    ...a,
+                    quantity: newQty,
+                    avgBuyPrice: newAvg,
+                    costBasisChf: nextCostBasisChf,
+                    costBasisSource: "computed" as const,
+                    costBasisUpdatedAt: new Date().toISOString(),
+                  }
                 : a
             ),
           }
@@ -220,28 +263,37 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           // New position
           const newAsset: Asset = {
             id: `local-${Date.now()}`,
-            portfolioId:  tx.portfolioId,
-            ticker:       tx.ticker,
-            name:         tx.assetName,
-            assetClass:   tx.assetClass,
-            quantity:     tx.quantity,
-            avgBuyPrice:  tx.quantity > 0 ? tx.price + (tx.fees / tx.quantity) : tx.price,
-            currentPrice: tx.price,
-            currency:     tx.currency ?? "CHF",
-            cryptoCustody: tx.cryptoCustody,
-            stakingEnabled: tx.stakingEnabled,
+            portfolioId:  preparedTx.portfolioId,
+            ticker:       preparedTx.ticker,
+            name:         preparedTx.assetName,
+            assetClass:   preparedTx.assetClass,
+            quantity:     preparedTx.quantity,
+            avgBuyPrice:  preparedTx.quantity > 0 ? preparedTx.price + (preparedTx.fees / preparedTx.quantity) : preparedTx.price,
+            currentPrice: preparedTx.price,
+            currency:     preparedTx.currency ?? "CHF",
+            costBasisChf: netAmountChf,
+            costBasisSource: "computed" as const,
+            costBasisUpdatedAt: new Date().toISOString(),
+            cryptoCustody: preparedTx.cryptoCustody,
+            stakingEnabled: preparedTx.stakingEnabled,
           }
           return { ...p, assets: [...p.assets, newAsset] }
         }
       }))
-    } else if (tx.type === "sell") {
+    } else if (preparedTx.type === "sell") {
       setPortfolios(prev => prev.map(p => {
-        if (p.id !== tx.portfolioId) return p
+        if (p.id !== preparedTx.portfolioId) return p
         return {
           ...p,
           assets: p.assets
-            .map(a => a.ticker === tx.ticker
-              ? { ...a, quantity: a.quantity - tx.quantity }
+            .map(a => a.ticker === preparedTx.ticker
+              ? {
+                  ...a,
+                  quantity: a.quantity - preparedTx.quantity,
+                  costBasisChf: Math.max(0, (a.costBasisChf ?? assetCostBasisChf) - soldCostBasisChf),
+                  costBasisSource: "computed" as const,
+                  costBasisUpdatedAt: new Date().toISOString(),
+                }
               : a
             )
             .filter(a => a.quantity > 0),
@@ -253,37 +305,39 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
     try {
       // ── 3. Save transaction to Supabase ──────────────────────────────────
-      const result = await Q.createTransaction(tx)
+      const result = await Q.createTransaction(preparedTx)
       if (!result) {
         // Revert optimistic updates
         setTransactions(prev => prev.filter(t => t.id !== tempId))
         await refresh()
         const msg = "Supabase: insert retourné null. Vérifiez les politiques RLS."
-        console.error("[AppData] addTransaction:", msg, tx)
+        console.error("[AppData] addTransaction:", msg, preparedTx)
         return { ok: false, error: msg }
       }
 
       setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
 
       // ── 4. Sync asset in Supabase ─────────────────────────────────────────
-      if (tx.type === "buy") {
+      if (preparedTx.type === "buy") {
         await Q.upsertAssetFromBuy({
-          portfolioId: tx.portfolioId,
-          ticker:      tx.ticker,
-          assetName:   tx.assetName,
-          assetClass:  tx.assetClass,
-          quantity:    tx.quantity,
-          price:       tx.price,
-          fees:        tx.fees,
-          currency:    tx.currency ?? "CHF",
-          cryptoCustody: tx.cryptoCustody,
-          stakingEnabled: tx.stakingEnabled,
+          portfolioId: preparedTx.portfolioId,
+          ticker:      preparedTx.ticker,
+          assetName:   preparedTx.assetName,
+          assetClass:  preparedTx.assetClass,
+          quantity:    preparedTx.quantity,
+          price:       preparedTx.price,
+          fees:        preparedTx.fees,
+          currency:    preparedTx.currency ?? "CHF",
+          costBasisChf: netAmountChf,
+          cryptoCustody: preparedTx.cryptoCustody,
+          stakingEnabled: preparedTx.stakingEnabled,
         })
-      } else if (tx.type === "sell") {
+      } else if (preparedTx.type === "sell") {
         await Q.reduceAssetFromSell({
-          portfolioId: tx.portfolioId,
-          ticker:      tx.ticker,
-          quantity:    tx.quantity,
+          portfolioId: preparedTx.portfolioId,
+          ticker:      preparedTx.ticker,
+          quantity:    preparedTx.quantity,
+          soldCostBasisChf,
         })
       }
 

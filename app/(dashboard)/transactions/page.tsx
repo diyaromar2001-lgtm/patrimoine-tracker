@@ -29,7 +29,7 @@ const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
   const { transactions, portfolios, realizedPnLEvents, addTransaction, editTransaction, removeTransaction, depositCash } = useAppData()
-  const { format, convert } = useCurrency()
+  const { format, convert, fxRates, currency } = useCurrency()
 
   const [search,     setSearch]     = useState("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "all">("all")
@@ -51,8 +51,9 @@ export default function TransactionsPage() {
   const totalDiv  = transactions.filter(t => t.type === "dividend").reduce((s, t) => s + t.quantity * t.price, 0)
   const totalFees = transactions.reduce((s, t) => s + t.fees, 0)
   const latentPnl = portfolios.flatMap(p => p.assets).reduce((sum, asset) => {
-    const pnl = (asset.currentPrice - asset.avgBuyPrice) * asset.quantity
-    return sum + convert(pnl, asset.currency as AppCurrency)
+    const valueUser = convert(asset.currentPrice * asset.quantity, asset.currency as AppCurrency)
+    const costUser = (asset.costBasisChf ?? 0) * ((fxRates as Record<string, number>)[currency] ?? 1)
+    return sum + valueUser - costUser
   }, 0)
   const realizedPnl = useMemo(() =>
     realizedPnLEvents.reduce(

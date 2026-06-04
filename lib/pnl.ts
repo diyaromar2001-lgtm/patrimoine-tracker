@@ -19,6 +19,8 @@ export interface AssetForPnL {
   quantity:         number
   /** Prix d'achat moyen dans la devise NATIVE de l'actif */
   avgBuyPrice:      number
+  /** Capital investi historique en CHF. Ne jamais recalculer avec le FX live. */
+  costBasisChf?:    number
   /** Devise native de l'actif (USD pour NVDA, CHF pour Zurich, etc.) */
   nativeCurrency:   string
   /** Prix actuel dans la devise NATIVE (depuis Yahoo Finance) */
@@ -75,7 +77,8 @@ export function calculatePortfolioPnL(
 
     // ── Cost basis en CHF ────────────────────────────────────────────────────
     // avgBuyPrice est en devise native → convertir en CHF
-    const costCHF = toCHF(a.avgBuyPrice * a.quantity, nativeCurr, rates)
+    const legacyCostCHF = toCHF(a.avgBuyPrice * a.quantity, nativeCurr, rates)
+    const costCHF = a.costBasisChf != null && a.costBasisChf > 0 ? a.costBasisChf : legacyCostCHF
 
     // ── Valeur actuelle en CHF ───────────────────────────────────────────────
     // Priorité: prix natif (originalPrice) → déjà converti (price)

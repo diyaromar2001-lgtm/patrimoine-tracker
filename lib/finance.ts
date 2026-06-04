@@ -62,6 +62,9 @@ export interface RealizedPnLInput {
   price:       number
   fees?:       number
   currency?:   string
+  grossAmountChf?: number
+  feesChf?: number
+  realizedPnlChf?: number
   date:        string
 }
 
@@ -76,6 +79,26 @@ export interface RealizedPnLEvent {
   currency:  string
 }
 
+export interface TransactionChfAmountsInput {
+  type: string
+  quantity: number
+  price: number
+  fees?: number
+  currency?: string
+  fxRates: FXRates
+  assetQuantity?: number
+  assetCostBasisChf?: number
+}
+
+export interface TransactionChfAmounts {
+  fxRateToChf: number
+  grossAmountChf: number
+  feesChf: number
+  netAmountChf: number
+  soldCostBasisChf: number
+  realizedPnlChf: number
+}
+
 // ─── Conversion de devises ────────────────────────────────────────────────────
 
 export function convertCurrency(
@@ -88,6 +111,39 @@ export function convertCurrency(
   const fromRate = rates[from] ?? 1
   const toRate   = rates[to]   ?? 1
   return (amount / fromRate) * toRate
+}
+
+export function chfPerCurrencyUnit(currency: string | undefined, rates: FXRates): number {
+  const code = currency ?? "CHF"
+  if (code === "CHF") return 1
+  const liveRate = rates[code]
+  return liveRate && liveRate > 0 ? 1 / liveRate : 1
+}
+
+export function calculateTransactionChfAmounts(input: TransactionChfAmountsInput): TransactionChfAmounts {
+  const fxRateToChf = chfPerCurrencyUnit(input.currency, input.fxRates)
+  const fees = input.fees ?? 0
+  const grossAmountChf = input.quantity * input.price * fxRateToChf
+  const feesChf = fees * fxRateToChf
+  const netAmountChf = input.type === "buy"
+    ? grossAmountChf + feesChf
+    : input.type === "sell"
+      ? grossAmountChf - feesChf
+      : grossAmountChf
+
+  const soldCostBasisChf = input.type === "sell" && input.assetQuantity && input.assetQuantity > 0
+    ? ((input.assetCostBasisChf ?? 0) / input.assetQuantity) * input.quantity
+    : 0
+  const realizedPnlChf = input.type === "sell" ? netAmountChf - soldCostBasisChf : 0
+
+  return {
+    fxRateToChf,
+    grossAmountChf,
+    feesChf,
+    netAmountChf,
+    soldCostBasisChf,
+    realizedPnlChf,
+  }
 }
 
 // ─── Prix et valeur ───────────────────────────────────────────────────────────
@@ -300,16 +356,17 @@ export function calculateRealizedPnLEvents(transactions: RealizedPnLInput[]): Re
       const costBasis = soldQty * pos.avg
       const proceeds  = tx.quantity * tx.price
       const fees      = tx.fees ?? 0
+      const hasRealizedChf = tx.realizedPnlChf != null && tx.realizedPnlChf !== 0
 
       events.push({
         ticker: tx.ticker,
         date: tx.date,
         quantity: tx.quantity,
-        proceeds,
+        proceeds: hasRealizedChf ? (tx.grossAmountChf ?? proceeds) : proceeds,
         costBasis,
-        fees,
-        pnl: proceeds - costBasis - fees,
-        currency: tx.currency ?? "CHF",
+        fees: hasRealizedChf ? (tx.feesChf ?? fees) : fees,
+        pnl: hasRealizedChf ? tx.realizedPnlChf! : proceeds - costBasis - fees,
+        currency: hasRealizedChf ? "CHF" : tx.currency ?? "CHF",
       })
 
       pos.qty = Math.max(0, pos.qty - tx.quantity)

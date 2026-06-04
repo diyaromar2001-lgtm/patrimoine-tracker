@@ -6,8 +6,6 @@ import { LiveChart } from "@/components/charts/live-chart"
 import { ChangeBadge } from "@/components/ui/badge"
 import { useCurrency } from "@/hooks/use-currency"
 import { useAppData } from "@/hooks/use-app-data"
-import { assetValue, assetPnlPct, ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
-import type { AssetClass } from "@/lib/types"
 import { Loader2, TrendingUp, TrendingDown, Star, Plus, ArrowLeft, AlertCircle } from "lucide-react"
 import Link from "next/link"
 
@@ -45,7 +43,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
   const [quote, setQuote]     = useState<QuoteData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
-  const { format } = useCurrency()
+  const { format, fxRates, currency } = useCurrency()
 
   // Find if this asset is in any of the user's real portfolios
   const heldAsset   = portfolios.flatMap(p => p.assets).find(a => a.ticker === decodedSymbol)
@@ -181,7 +179,10 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
                     { label: "Valeur actuelle",value: format((quote?.regularMarketPrice ?? heldAsset.currentPrice) * heldAsset.quantity) },
                     { label: "P&L total",      value: (() => {
                       const current = quote?.regularMarketPrice ?? heldAsset.currentPrice
-                      const pnl = (current - heldAsset.avgBuyPrice) * heldAsset.quantity
+                      const userRate = (fxRates as Record<string, number>)[currency] ?? 1
+                      const valueChf = (current * heldAsset.quantity) / userRate
+                      const costChf = heldAsset.costBasisChf ?? valueChf
+                      const pnl = (valueChf - costChf) * userRate
                       return (pnl >= 0 ? "+" : "") + format(pnl)
                     })() },
                   ].map(s => (
