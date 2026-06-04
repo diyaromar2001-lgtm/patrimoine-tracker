@@ -6,19 +6,19 @@ import { X, Check, Search, Loader2 } from "lucide-react"
 import { useAssetSearch, type SearchResult } from "@/hooks/use-asset-search"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatCurrency } from "@/lib/utils"
-import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
-import type { AssetClass, TransactionType, Portfolio } from "@/lib/types"
+import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS, REVENU_TYPE_META } from "@/lib/types"
+import type { AssetClass, TransactionType, Portfolio, RevenuType } from "@/lib/types"
 import type { AppCurrency } from "@/lib/utils"
 
 const TX_LABELS: Record<TransactionType, string> = {
-  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert",
+  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert", revenu: "Revenu",
 }
-// Couleurs neutres : un achat n'est pas une perte
 const TX_COLORS: Record<TransactionType, string> = {
-  buy:      "#3b82f6",   // bleu — neutre
-  sell:     "#a78bfa",   // violet — réalisé
-  dividend: "#22c55e",   // vert — revenu
-  transfer: "#64748b",   // gris
+  buy:      "#3b82f6",
+  sell:     "#a78bfa",
+  dividend: "#22c55e",
+  transfer: "#64748b",
+  revenu:   "#a855f7",   // violet — revenus annexes
 }
 
 const CURRENCY_FLAGS: Record<string, string> = {
@@ -28,6 +28,9 @@ const CURRENCY_FLAGS: Record<string, string> = {
 export interface TransactionFormData {
   id?:              string
   portfolioId:      string
+  // Revenu annexe fields
+  revenuType?:  RevenuType
+  platform?:    string
   ticker:           string
   assetName:        string
   assetClass:       AssetClass
@@ -258,7 +261,12 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
   const typeColor    = TX_COLORS[form.type]
   const sign         = form.type === "buy" ? "−" : "+"
 
-  const valid = form.portfolioId && form.ticker && form.assetName && form.quantity && form.price && form.date
+  const isRevenu = form.type === "revenu"
+  // For "revenu": needs portfolio, revenuType, ticker=label, price (amount), date
+  // For others: needs portfolio, ticker, assetName, quantity, price, date
+  const valid = isRevenu
+    ? form.portfolioId && form.revenuType && form.ticker && form.price && form.date
+    : form.portfolioId && form.ticker && form.assetName && form.quantity && form.price && form.date
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -315,22 +323,37 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
             </div>
           </div>
 
-          {/* Asset selector */}
-          <div>
-            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Actif *</label>
-            <AssetSelector
-              ticker={form.ticker}
-              assetName={form.assetName}
-              nativeCurrency={form.nativeCurrency}
-              onPick={handlePick}
-              onPrice={handlePrice}
-              onClear={clearAsset}
-              priceFetching={priceFetching}
-            />
-          </div>
+          {/* Asset selector — hidden for revenu */}
+          {!isRevenu ? (
+            <div>
+              <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Actif *</label>
+              <AssetSelector
+                ticker={form.ticker}
+                assetName={form.assetName}
+                nativeCurrency={form.nativeCurrency}
+                onPick={handlePick}
+                onPrice={handlePrice}
+                onClear={clearAsset}
+                priceFetching={priceFetching}
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                Description / Label *
+              </label>
+              <input type="text" placeholder="Binance referral, Airdrop USDC…"
+                value={form.ticker}
+                onChange={e => { set("ticker", e.target.value); set("assetName", e.target.value) }}
+                className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+            </div>
+          )}
 
           {/* Qty + Price + Fees */}
           <div className="grid grid-cols-3 gap-3">
+            {!isRevenu && (
             <div>
               <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Quantité *</label>
               <input type="number" placeholder="10" value={form.quantity}
@@ -338,9 +361,10 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
                 style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
             </div>
+            )}
             <div>
               <label className="mb-1.5 block text-xs font-medium flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
-                Prix unit.
+                {isRevenu ? "Montant reçu *" : "Prix unit."}
                 {/* Show native currency badge */}
                 {form.ticker && (
                   <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
@@ -379,7 +403,45 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
             </div>
           </div>
 
-          {/* Date + Class */}
+          {/* ── Extra fields for REVENU type ── */}
+          {form.type === "revenu" && (
+            <div className="space-y-3">
+              {/* Sub-type */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  Type de revenu *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(REVENU_TYPE_META) as [RevenuType, typeof REVENU_TYPE_META[RevenuType]][]).map(([key, meta]) => (
+                    <button key={key}
+                      onClick={() => set("revenuType", key)}
+                      className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm text-left transition-all"
+                      style={{
+                        backgroundColor: form.revenuType === key ? meta.color + "18" : "var(--bg-base)",
+                        borderColor:     form.revenuType === key ? meta.color + "60" : "var(--border)",
+                        color:           form.revenuType === key ? meta.color : "var(--text-secondary)",
+                      }}>
+                      <span>{meta.icon}</span>
+                      <span className="text-xs font-medium">{meta.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Platform */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  Plateforme
+                </label>
+                <input type="text" placeholder="Binance, IBKR, Swissquote…"
+                  value={form.platform ?? ""}
+                  onChange={e => set("platform", e.target.value)}
+                  className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
+              </div>
+            </div>
+          )}
+
+          {/* Date + Class (hidden for revenu) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Date *</label>
@@ -388,16 +450,18 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
                 style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Classe</label>
-              <select value={form.assetClass} onChange={e => set("assetClass", e.target.value as AssetClass)}
-                className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
-                {(Object.entries(ASSET_CLASS_LABELS) as [AssetClass, string][]).map(([k, v]) =>
-                  <option key={k} value={k}>{v}</option>
-                )}
-              </select>
-            </div>
+            {form.type !== "revenu" && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Classe</label>
+                <select value={form.assetClass} onChange={e => set("assetClass", e.target.value as AssetClass)}
+                  className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  {(Object.entries(ASSET_CLASS_LABELS) as [AssetClass, string][]).map(([k, v]) =>
+                    <option key={k} value={k}>{v}</option>
+                  )}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Notes */}

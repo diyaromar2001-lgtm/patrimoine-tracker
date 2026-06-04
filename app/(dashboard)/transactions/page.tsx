@@ -12,20 +12,17 @@ import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import {
   Plus, Search, X, Check, ArrowUpRight, ArrowDownLeft,
-  Gift, ArrowLeftRight, Pencil,
+  Gift, ArrowLeftRight, Pencil, Zap,
 } from "lucide-react"
 
 const TX_COLORS: Record<TransactionType, string> = {
-  buy: "#3b82f6",   // Bleu neutre — un achat n'est pas une perte
-  sell: "#a78bfa",  // Violet — vente réalisée
-  dividend: "#22c55e",  // Vert — revenu
-  transfer: "#64748b",  // Gris — transfert
+  buy: "#3b82f6", sell: "#a78bfa", dividend: "#22c55e", transfer: "#64748b", revenu: "#a855f7",
 }
 const TX_LABELS: Record<TransactionType, string> = {
-  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert",
+  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert", revenu: "Revenu",
 }
 const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
-  buy: ArrowDownLeft, sell: ArrowUpRight, dividend: Gift, transfer: ArrowLeftRight,
+  buy: ArrowDownLeft, sell: ArrowUpRight, dividend: Gift, transfer: ArrowLeftRight, revenu: Zap,
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -153,7 +150,7 @@ export default function TransactionsPage() {
               style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
           </div>
           <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-            {(["all","buy","sell","dividend","transfer"] as const).map(f => (
+            {(["all","buy","sell","dividend","revenu","transfer"] as const).map(f => (
               <button key={f} onClick={() => setTypeFilter(f)}
                 className="px-3 py-1.5 text-xs font-medium transition-colors"
                 style={{

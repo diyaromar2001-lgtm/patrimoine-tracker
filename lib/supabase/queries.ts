@@ -258,3 +258,59 @@ export async function reduceAssetFromSell(tx: {
     await sb.from("assets").update({ quantity: Number(newQty.toFixed(8)) }).eq("id", existing.id)
   }
 }
+
+// ─── Revenus Annexes ──────────────────────────────────────────────────────────
+
+import type { RevenuAnnexe } from "@/lib/types"
+
+export async function fetchRevenus(): Promise<RevenuAnnexe[] | null> {
+  const sb = createClient()
+  if (!sb) return null
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return null
+  const { data, error } = await sb
+    .from("revenus_annexes")
+    .select("*")
+    .order("date", { ascending: false })
+  if (error || !data) return null
+  return data.map(r => ({
+    id:          r.id,
+    portfolioId: r.portfolio_id ?? undefined,
+    userId:      r.user_id,
+    type:        r.type,
+    label:       r.label,
+    amount:      Number(r.amount),
+    currency:    r.currency,
+    platform:    r.platform ?? undefined,
+    date:        new Date(r.date).toISOString().slice(0, 10),
+    notes:       r.notes ?? undefined,
+    createdAt:   r.created_at,
+  }))
+}
+
+export async function createRevenu(rev: Omit<RevenuAnnexe, "id" | "createdAt" | "userId">) {
+  const sb = createClient()
+  if (!sb) return null
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return null
+  const { data, error } = await sb.from("revenus_annexes").insert({
+    user_id:      user.id,
+    portfolio_id: rev.portfolioId ?? null,
+    type:         rev.type,
+    label:        rev.label,
+    amount:       rev.amount,
+    currency:     rev.currency,
+    platform:     rev.platform ?? null,
+    date:         rev.date,
+    notes:        rev.notes ?? null,
+  }).select().single()
+  if (error) { console.error("[createRevenu]", error.message); return null }
+  return data
+}
+
+export async function deleteRevenu(id: string) {
+  const sb = createClient()
+  if (!sb) return false
+  const { error } = await sb.from("revenus_annexes").delete().eq("id", id)
+  return !error
+}

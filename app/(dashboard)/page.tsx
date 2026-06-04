@@ -21,7 +21,7 @@ import {
 } from "@/lib/types"
 import {
   Wallet, TrendingUp, BarChart2, Activity,
-  Calendar, ArrowUpRight, Layers, Plus,
+  Calendar, ArrowUpRight, Layers, Plus, Zap,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -33,7 +33,7 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, loading } = useAppData()
+  const { portfolios, transactions, revenus, loading } = useAppData()
   const { format, convert } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
@@ -266,11 +266,27 @@ export default function DashboardPage() {
 
         {/* ─── KPIs ─── */}
         <section>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
             <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="var(--accent)" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
             <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
             <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={3} />
+            {/* 5th card: Revenus Annexes */}
+            {(() => {
+              const revTotal = revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
+              const thisMonthRevs = revenus.filter(r => new Date(r.date).getMonth() === new Date().getMonth())
+              const monthTotal    = thisMonthRevs.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
+              return (
+                <StatCard
+                  label="Revenus annexes"
+                  value={format(revTotal)}
+                  changeLabel={`ce mois: +${format(monthTotal)}`}
+                  icon={Zap}
+                  iconColor="#a855f7"
+                  index={4}
+                />
+              )
+            })()}
           </div>
         </section>
 

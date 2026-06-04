@@ -1,8 +1,43 @@
 // ─── Core domain types ───────────────────────────────────────────────────────
 
 export type AssetClass = "stock" | "etf" | "crypto" | "real_estate" | "bond" | "cash"
-export type TransactionType = "buy" | "sell" | "dividend" | "transfer"
+export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu"
 export type Currency = "CHF" | "EUR" | "USD" | "GBP"
+
+// ─── Revenus Annexes ─────────────────────────────────────────────────────────
+
+export type RevenuType =
+  | "parrainage"
+  | "bonus_bienvenue"
+  | "airdrop"
+  | "interets"
+  | "cashback"
+  | "staking"
+  | "autre"
+
+export interface RevenuAnnexe {
+  id:          string
+  portfolioId?: string
+  userId:      string
+  type:        RevenuType
+  label:       string
+  amount:      number      // in native currency
+  currency:    string      // "CHF" | "USD" | "EUR"
+  platform?:   string
+  date:        string      // ISO
+  notes?:      string
+  createdAt:   string
+}
+
+export const REVENU_TYPE_META: Record<RevenuType, { label: string; icon: string; color: string }> = {
+  parrainage:      { label: "Parrainage",       icon: "💰", color: "#a855f7" },
+  bonus_bienvenue: { label: "Bonus bienvenue",  icon: "🎁", color: "#c084fc" },
+  airdrop:         { label: "Airdrop",          icon: "🪂", color: "#9333ea" },
+  interets:        { label: "Intérêts",         icon: "💵", color: "#7c3aed" },
+  cashback:        { label: "Cashback",         icon: "🔄", color: "#6d28d9" },
+  staking:         { label: "Staking",          icon: "⚡", color: "#8b5cf6" },
+  autre:           { label: "Autre",            icon: "📦", color: "#a78bfa" },
+}
 
 export interface Portfolio {
   id: string

@@ -6,15 +6,16 @@ import {
 } from "react"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import * as Q from "@/lib/supabase/queries"
-import type { Portfolio, Transaction, Asset } from "@/lib/types"
+import type { Portfolio, Transaction, Asset, RevenuAnnexe } from "@/lib/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AppData {
   // State
-  portfolios:   Portfolio[]
-  transactions: Transaction[]
-  loading:      boolean
+  portfolios:    Portfolio[]
+  transactions:  Transaction[]
+  revenus:       RevenuAnnexe[]
+  loading:       boolean
   // Portfolio mutations
   addPortfolio:    (p: Omit<Portfolio, "id" | "assets">) => Promise<string | null>
   removePortfolio: (id: string) => Promise<void>
@@ -24,12 +25,15 @@ interface AppData {
   addTransaction:    (tx: Omit<Transaction, "id">) => Promise<{ ok: boolean; error?: string }>
   editTransaction:   (id: string, updates: Partial<Omit<Transaction, "id">>) => Promise<void>
   removeTransaction: (id: string) => Promise<void>
+  // Revenus Annexes mutations
+  addRevenu:    (rev: Omit<RevenuAnnexe, "id" | "createdAt" | "userId">) => Promise<void>
+  removeRevenu: (id: string) => Promise<void>
   // Refresh
   refresh: () => Promise<void>
 }
 
 const DEFAULT: AppData = {
-  portfolios: [], transactions: [], loading: true,
+  portfolios: [], transactions: [], revenus: [], loading: true,
   addPortfolio:    async () => null,
   removePortfolio: async () => {},
   addAsset:        async () => {},
@@ -37,6 +41,8 @@ const DEFAULT: AppData = {
   addTransaction:    async () => ({ ok: true }),
   editTransaction:   async () => {},
   removeTransaction: async () => {},
+  addRevenu:    async () => {},
+  removeRevenu: async () => {},
   refresh: async () => {},
 }
 
@@ -47,18 +53,21 @@ const AppDataContext = createContext<AppData>(DEFAULT)
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const [portfolios,   setPortfolios]   = useState<Portfolio[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [revenus,      setRevenus]      = useState<RevenuAnnexe[]>([])
   const [loading,      setLoading]      = useState(isSupabaseConfigured)
 
   const refresh = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return }
     setLoading(true)
     try {
-      const [p, t] = await Promise.all([
+      const [p, t, r] = await Promise.all([
         Q.fetchPortfolios(),
         Q.fetchTransactions(),
+        Q.fetchRevenus(),
       ])
       if (p) setPortfolios(p)
       if (t) setTransactions(t)
+      if (r) setRevenus(r)
     } catch (e) {
       console.error("[AppData] refresh failed:", e)
     }
@@ -227,11 +236,45 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ── Revenus Annexes ──────────────────────────────────────────────────────────
+
+  async function addRevenu(rev: Omit<RevenuAnnexe, "id" | "createdAt" | "userId">) {
+    const tempId = `local-${Date.now()}`
+    const local: RevenuAnnexe = {
+      ...rev,
+      id: tempId,
+      userId: "local",
+      createdAt: new Date().toISOString(),
+    }
+    setRevenus(prev => [local, ...prev])
+    if (!isSupabaseConfigured) return
+    try {
+      const result = await Q.createRevenu(rev)
+      if (result) {
+        setRevenus(prev => prev.map(r => r.id === tempId ? { ...r, id: result.id } : r))
+      } else {
+        setRevenus(prev => prev.filter(r => r.id !== tempId))
+      }
+    } catch (e) {
+      console.error("[AppData] addRevenu failed:", e)
+      setRevenus(prev => prev.filter(r => r.id !== tempId))
+    }
+  }
+
+  async function removeRevenu(id: string) {
+    setRevenus(prev => prev.filter(r => r.id !== id))
+    if (isSupabaseConfigured) {
+      try { await Q.deleteRevenu(id) }
+      catch (e) { console.error("[AppData] removeRevenu failed:", e); await refresh() }
+    }
+  }
+
   return (
     <AppDataContext.Provider value={{
-      portfolios, transactions, loading,
+      portfolios, transactions, revenus, loading,
       addPortfolio, removePortfolio, addAsset, removeAsset,
       addTransaction, editTransaction, removeTransaction,
+      addRevenu, removeRevenu,
       refresh,
     }}>
       {children}
