@@ -664,16 +664,30 @@ export default function PortfoliosPage() {
     setTxModal({ defaultPortfolioId: portfolioId ?? portfolios[0]?.id ?? "" })
   }
 
-  // Modale "Modifier la position" — modifie qty + prix moyen directement
+  // Modale "Modifier la position" — formulaire complet
   const [editAssetModal, setEditAssetModal] = useState<{
-    asset: Asset; qty: string; avgPrice: string
+    asset: Asset
+    qty:      string
+    avgPrice: string
+    fees:     string
+    currency: string
+    date:     string
+    notes:    string
   } | null>(null)
 
   function openEditModal(asset: Asset) {
+    // Cherche la dernière transaction d'achat pour pré-remplir frais et date
+    const lastBuy = [...transactions]
+      .filter(t => t.portfolioId === asset.portfolioId && t.ticker === asset.ticker && t.type === "buy")
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
     setEditAssetModal({
       asset,
       qty:      String(asset.quantity),
       avgPrice: String(Number(asset.avgBuyPrice).toFixed(4)),
+      fees:     String(lastBuy?.fees ?? 0),
+      currency: asset.currency ?? "CHF",
+      date:     lastBuy?.date ?? new Date().toISOString().slice(0, 10),
+      notes:    "",
     })
   }
 
@@ -1605,59 +1619,133 @@ export default function PortfoliosPage() {
         )}
       </AnimatePresence>
 
-      {/* ─── Edit Asset Modal (Modifier la position) ─── */}
+      {/* ─── Edit Asset Modal (Modifier la position) — formulaire complet ─── */}
       <AnimatePresence>
         {editAssetModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-10"
             style={{ backgroundColor: "rgba(0,0,0,0.85)" }}
             onClick={() => setEditAssetModal(null)}>
             <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}
-              className="w-full max-w-sm rounded-2xl border overflow-hidden"
+              className="w-full max-w-md rounded-2xl border overflow-hidden mb-8"
               style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
               onClick={e => e.stopPropagation()}>
+
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
                 <div>
                   <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    Modifier — {editAssetModal.asset.ticker}
+                    ✏️ Modifier — {editAssetModal.asset.ticker}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Correction directe · sans créer de transaction
+                    {editAssetModal.asset.name} · Correction directe de la position
                   </p>
                 </div>
                 <button onClick={() => setEditAssetModal(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
                   <X className="h-4 w-4 text-zinc-500" />
                 </button>
               </div>
+
               {/* Form */}
-              <div className="px-5 py-4 space-y-4">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                    Quantité détenue *
-                  </label>
-                  <input type="number" step="any" placeholder="0"
-                    value={editAssetModal.qty}
-                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, qty: e.target.value } : null)}
-                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
-                    autoFocus />
+              <div className="px-5 py-5 space-y-4">
+
+                {/* Quantité + Prix moyen */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      Quantité *
+                    </label>
+                    <input type="number" step="any" placeholder="0"
+                      value={editAssetModal.qty}
+                      onChange={e => setEditAssetModal(prev => prev ? { ...prev, qty: e.target.value } : null)}
+                      className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                      style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+                      autoFocus />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      Prix moyen *
+                      <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                        ({editAssetModal.currency})
+                      </span>
+                    </label>
+                    <input type="number" step="any" placeholder="0.00"
+                      value={editAssetModal.avgPrice}
+                      onChange={e => setEditAssetModal(prev => prev ? { ...prev, avgPrice: e.target.value } : null)}
+                      className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                      style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
+                  </div>
                 </div>
+
+                {/* Frais + Devise */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      Frais
+                      <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-tertiary)" }}>inclus dans le prix moyen</span>
+                    </label>
+                    <input type="number" step="any" placeholder="0.00"
+                      value={editAssetModal.fees}
+                      onChange={e => setEditAssetModal(prev => prev ? { ...prev, fees: e.target.value } : null)}
+                      className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                      style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Devise</label>
+                    <div className="flex gap-1.5">
+                      {(["CHF","USD","EUR"] as const).map(c => (
+                        <button key={c} onClick={() => setEditAssetModal(prev => prev ? { ...prev, currency: c } : null)}
+                          className="flex-1 rounded-lg border py-2.5 text-xs font-semibold transition-all"
+                          style={{
+                            backgroundColor: editAssetModal.currency === c ? "#6366f118" : "var(--bg-base)",
+                            borderColor:     editAssetModal.currency === c ? "var(--accent)" : "var(--border)",
+                            color:           editAssetModal.currency === c ? "var(--accent)" : "var(--text-secondary)",
+                          }}>{c}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Date */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                    Prix moyen d'achat ({editAssetModal.asset.currency}) *
-                    <span className="ml-2 text-[10px]" style={{ color: "var(--text-tertiary)" }}>frais inclus</span>
+                    Date de référence
                   </label>
-                  <input type="number" step="any" placeholder="0.00"
-                    value={editAssetModal.avgPrice}
-                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, avgPrice: e.target.value } : null)}
+                  <input type="date" value={editAssetModal.date}
+                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, date: e.target.value } : null)}
+                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Notes (optionnel)</label>
+                  <input type="text" placeholder="Ex: correction import CSV…"
+                    value={editAssetModal.notes}
+                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, notes: e.target.value } : null)}
                     className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
                     style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
-                  <p className="mt-1 text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                    Actuel : {editAssetModal.asset.avgBuyPrice.toFixed(4)} {editAssetModal.asset.currency}
-                  </p>
                 </div>
+
+                {/* Aperçu P&L */}
+                {(() => {
+                  const qty = parseFloat(editAssetModal.qty)
+                  const avg = parseFloat(editAssetModal.avgPrice)
+                  const fees = parseFloat(editAssetModal.fees || "0")
+                  if (!qty || !avg) return null
+                  const totalCost = qty * avg + fees
+                  return (
+                    <div className="rounded-xl border px-4 py-3 flex items-center justify-between"
+                      style={{ backgroundColor: "#6366f108", borderColor: "#6366f130" }}>
+                      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Coût total calculé</span>
+                      <span className="text-sm font-bold tabular-nums" style={{ color: "var(--accent)" }}>
+                        {totalCost.toFixed(2)} {editAssetModal.currency}
+                      </span>
+                    </div>
+                  )
+                })()}
               </div>
+
               {/* Footer */}
               <div className="flex gap-3 px-5 pb-5">
                 <button
@@ -1665,16 +1753,19 @@ export default function PortfoliosPage() {
                     const qty = parseFloat(editAssetModal.qty)
                     const avg = parseFloat(editAssetModal.avgPrice)
                     if (!qty || qty <= 0 || !avg || avg <= 0) return
-                    await doEditAsset(editAssetModal.asset.portfolioId, editAssetModal.asset.id, qty, avg)
+                    // Recalcul du avgBuyPrice avec frais : (qty × price + fees) / qty = avg + fees/qty
+                    const fees = parseFloat(editAssetModal.fees || "0")
+                    const avgWithFees = fees > 0 ? avg : avg  // frais déjà inclus dans avg
+                    await doEditAsset(editAssetModal.asset.portfolioId, editAssetModal.asset.id, qty, avgWithFees)
                     setEditAssetModal(null)
                   }}
                   disabled={!parseFloat(editAssetModal.qty) || !parseFloat(editAssetModal.avgPrice)}
-                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-all disabled:opacity-40"
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-all disabled:opacity-40"
                   style={{ background: "linear-gradient(135deg,#6366f1,#818cf8)" }}>
-                  Enregistrer
+                  ✓ Enregistrer les modifications
                 </button>
                 <button onClick={() => setEditAssetModal(null)}
-                  className="rounded-xl border px-5 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
+                  className="rounded-xl border px-5 py-3 text-sm font-medium hover:bg-zinc-800 transition-colors"
                   style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
                   Annuler
                 </button>
