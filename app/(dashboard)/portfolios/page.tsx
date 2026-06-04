@@ -475,11 +475,17 @@ function HoldingsTable({
           ? origPrice * asset.quantity / rateToChf          // natif → CHF
           : livePriceUserCurr * asset.quantity               // déjà en devise user (CHF si user=CHF)
 
-        // TOUJOURS utiliser le même taux FX actuel pour les deux membres (valueCHF et costCHF)
-        // → jamais utiliser asset.costBasisChf ici : il peut être stocké en USD natif (pas en CHF)
-        //   ce qui donnerait (337 CHF - 446 USD_as_CHF) = -109 CHF FAUX
-        // La cohérence pnlAmount / pnlPct est garantie quand les deux utilisent rateToChf
-        const costCHF = nativeAvg * asset.quantity / rateToChf
+        // costCHF : utilise costBasisChf (taux historique achat) si disponible et valide.
+        // DÉTECTION data corrompue : si costBasisChf ≈ nativeAvg × qty (ratio ~1.0),
+        //   la valeur a été stockée en devise native sans conversion FX → fallback.
+        // Exemple : costBasisChf=446 pour MSFT à 446 USD → ratio=1.0 → mauvaise data.
+        //           costBasisChf=689 pour EUNL à 107.31 EUR × 6.89 = 739 → ratio=0.93 → bonne data.
+        const legacyCostCHF = nativeAvg * asset.quantity / rateToChf
+        const costCHFRaw    = asset.costBasisChf
+        const isCorrupted   = costCHFRaw != null && Math.abs(costCHFRaw / (nativeAvg * asset.quantity) - 1.0) < 0.03
+        const costCHF = (costCHFRaw != null && costCHFRaw > 0 && !isCorrupted)
+          ? costCHFRaw      // taux historique — correspond au vrai CHF dépensé
+          : legacyCostCHF   // fallback taux actuel (data corrompue ou absente)
 
         const userRate    = ((fxRates as Record<string,number>)[currency] ?? 1)
         const pnlUserCurr = (valueCHF - costCHF) * userRate
