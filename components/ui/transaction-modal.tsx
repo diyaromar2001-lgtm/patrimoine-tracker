@@ -7,7 +7,7 @@ import { useAssetSearch, type SearchResult } from "@/hooks/use-asset-search"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatCurrency } from "@/lib/utils"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS, REVENU_TYPE_META } from "@/lib/types"
-import type { AssetClass, TransactionType, Portfolio, RevenuType } from "@/lib/types"
+import type { AssetClass, TransactionType, Portfolio, RevenuType, CryptoCustodyType } from "@/lib/types"
 import type { AppCurrency } from "@/lib/utils"
 
 const TX_LABELS: Record<TransactionType, string> = {
@@ -23,6 +23,12 @@ const TX_COLORS: Record<TransactionType, string> = {
 
 const CURRENCY_FLAGS: Record<string, string> = {
   USD: "🇺🇸", EUR: "🇪🇺", CHF: "🇨🇭", GBP: "🇬🇧",
+}
+
+const CRYPTO_CUSTODY_LABELS: Record<CryptoCustodyType, string> = {
+  cold_wallet: "Cold Wallet",
+  hot_wallet: "Hot Wallet",
+  exchange: "Exchange",
 }
 
 export interface TransactionFormData {
@@ -41,6 +47,8 @@ export interface TransactionFormData {
   fees:             string
   date:             string
   notes:            string
+  cryptoCustody?:   CryptoCustodyType | ""
+  stakingEnabled?:  boolean
 }
 
 export const EMPTY_TX_FORM: TransactionFormData = {
@@ -209,7 +217,7 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
   const [saveErr, setSaveErr]             = useState("")
   const { currency, format, convert }     = useCurrency()
 
-  const set = (k: keyof TransactionFormData, v: string) =>
+  const set = (k: keyof TransactionFormData, v: TransactionFormData[keyof TransactionFormData]) =>
     setForm(p => ({ ...p, [k]: v }))
 
   function handlePick(r: SearchResult) {
@@ -219,6 +227,8 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
       ticker:         r.ticker,
       assetName:      r.name,
       assetClass:     r.type as AssetClass,
+      cryptoCustody:  r.type === "crypto" ? p.cryptoCustody : "",
+      stakingEnabled: r.type === "crypto" ? p.stakingEnabled : false,
       price:          "",
       nativeCurrency: "USD",  // default until price resolves
     }))
@@ -336,6 +346,24 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
                 onClear={clearAsset}
                 priceFetching={priceFetching}
               />
+              {!form.ticker && (
+                <button
+                  type="button"
+                  onClick={() => setForm(p => ({
+                    ...p,
+                    ticker: "CASH",
+                    assetName: "Liquidités / Cash",
+                    assetClass: "cash",
+                    price: "1",
+                    nativeCurrency: currency,
+                    fees: "0",
+                  }))}
+                  className="mt-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-zinc-800"
+                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                >
+                  Ajouter des liquidités / cash
+                </button>
+              )}
             </div>
           ) : (
             <div>
@@ -463,6 +491,39 @@ export function TransactionModal({ mode, initial, portfolios, onSave, onClose }:
               </div>
             )}
           </div>
+
+          {form.type !== "revenu" && form.assetClass === "crypto" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  Détention crypto
+                </label>
+                <select
+                  value={form.cryptoCustody ?? ""}
+                  onChange={e => set("cryptoCustody", e.target.value as CryptoCustodyType | "")}
+                  className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+                >
+                  <option value="">Non renseigné</option>
+                  {(Object.entries(CRYPTO_CUSTODY_LABELS) as [CryptoCustodyType, string][]).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-3 rounded-xl border px-3 py-3"
+                style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.stakingEnabled)}
+                  onChange={e => set("stakingEnabled", e.target.checked)}
+                  className="h-4 w-4 accent-blue-500"
+                />
+                <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  Revenus Staking/Lending
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Notes */}
           <div>

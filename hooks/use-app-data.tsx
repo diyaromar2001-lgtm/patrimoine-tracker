@@ -153,6 +153,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             avgBuyPrice:  tx.price,
             currentPrice: tx.price,
             currency:     tx.currency ?? "CHF",
+            cryptoCustody: tx.cryptoCustody,
+            stakingEnabled: tx.stakingEnabled,
           }
           return { ...p, assets: [...p.assets, newAsset] }
         }
@@ -198,6 +200,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           quantity:    tx.quantity,
           price:       tx.price,
           currency:    tx.currency ?? "CHF",
+          cryptoCustody: tx.cryptoCustody,
+          stakingEnabled: tx.stakingEnabled,
         })
       } else if (tx.type === "sell") {
         await Q.reduceAssetFromSell({

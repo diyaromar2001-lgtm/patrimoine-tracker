@@ -17,10 +17,11 @@ import type { AppCurrency } from "@/lib/utils"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
-import { calculateAllocationByField, maxDrawdown, type AllocationEntry } from "@/lib/finance"
+import { calculateAllocationByField, calculateRealizedPnLEvents, maxDrawdown, type AllocationEntry } from "@/lib/finance"
 import {
   Wallet, TrendingUp, BarChart2, Activity,
   ArrowUpRight, Plus, Zap, ShieldAlert, Building2, Globe2, type LucideIcon,
+  BadgeCheck,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -73,7 +74,7 @@ export default function DashboardPage() {
 
   // All assets from all portfolios
   const allAssets  = useMemo(() => portfolios.flatMap(p => p.assets), [portfolios])
-  const allTickers = useMemo(() => allAssets.map(a => a.ticker), [allAssets])
+  const allTickers = useMemo(() => allAssets.filter(a => a.assetClass !== "cash").map(a => a.ticker), [allAssets])
   const hasAssets  = allAssets.length > 0
 
   // Live prices
@@ -84,7 +85,7 @@ export default function DashboardPage() {
     "1S": "1W", "1M": "1M", "3M": "3M", "6M": "6M", "1A": "1Y", "Max": "MAX"
   }
   const portfolioAssets = useMemo<PortfolioAsset[]>(() =>
-    allAssets.map(a => ({
+    allAssets.filter(a => a.assetClass !== "cash").map(a => ({
       ticker:         a.ticker,
       quantity:       a.quantity,
       nativeCurrency: livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
@@ -107,10 +108,13 @@ export default function DashboardPage() {
   // Total value using live prices where available
   const totalValue = useMemo(
     () => allAssets.reduce((s, a) => {
+      if (a.assetClass === "cash") {
+        return s + convert(a.quantity * (a.currentPrice || a.avgBuyPrice || 1), a.currency as AppCurrency)
+      }
       const lp = livePrices[a.ticker]?.price
       return s + (lp ?? a.currentPrice) * a.quantity
     }, 0),
-    [allAssets, livePrices]
+    [allAssets, livePrices, convert]
   )
 
   const totalPnl    = totalValue - totalCost
@@ -131,7 +135,9 @@ export default function DashboardPage() {
   const allocationEntries = useMemo(() => {
     const byClass: Record<string, number> = {}
     allAssets.forEach(a => {
-      const price = livePrices[a.ticker]?.price ?? a.currentPrice
+      const price = a.assetClass === "cash"
+        ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency)
+        : livePrices[a.ticker]?.price ?? a.currentPrice
       byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + price * a.quantity
     })
     return Object.entries(byClass)
@@ -148,7 +154,9 @@ export default function DashboardPage() {
       ticker:       a.ticker,
       quantity:     a.quantity,
       avgBuyPrice:  a.avgBuyPrice,
-      currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice,
+      currentPrice: a.assetClass === "cash"
+        ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency)
+        : livePrices[a.ticker]?.price ?? a.currentPrice,
       assetClass:   a.assetClass,
       sector:       a.sector,
       country:      normalizeGeography(a.country),
@@ -171,10 +179,18 @@ export default function DashboardPage() {
     [portfolioHistory]
   )
 
+  const realizedPnl = useMemo(() =>
+    calculateRealizedPnLEvents(transactions).reduce(
+      (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),
+      0
+    ),
+    [transactions, convert]
+  )
+
   // Top 5 holdings
   const top5 = useMemo(() =>
     [...allAssets]
-      .map(a => ({ ...a, currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice }))
+      .map(a => ({ ...a, currentPrice: a.assetClass === "cash" ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency) : livePrices[a.ticker]?.price ?? a.currentPrice }))
       .sort((a, b) => (b.currentPrice * b.quantity) - (a.currentPrice * a.quantity))
       .slice(0, 5),
     [allAssets, livePrices]
@@ -327,11 +343,12 @@ export default function DashboardPage() {
 
         {/* ─── KPIs ─── */}
         <section>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-7">
             <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="var(--accent)" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
             <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
-            <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={3} />
+            <StatCard label="Plus-value réalisée" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
+            <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={4} />
             {/* 5th card: Revenus Annexes */}
             {(() => {
               const revTotal = revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
@@ -344,7 +361,7 @@ export default function DashboardPage() {
                   changeLabel={`ce mois: +${format(monthTotal)}`}
                   icon={Zap}
                   iconColor="#a855f7"
-                  index={4}
+                  index={5}
                 />
               )
             })()}
@@ -354,7 +371,7 @@ export default function DashboardPage() {
               changeLabel="historique"
               icon={ShieldAlert}
               iconColor="#ef4444"
-              index={5}
+              index={6}
             />
           </div>
         </section>

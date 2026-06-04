@@ -38,6 +38,8 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
         currency:     a.currency,
         sector:       a.sector ?? undefined,
         country:      a.country ?? undefined,
+        cryptoCustody: a.crypto_custody ?? undefined,
+        stakingEnabled: Boolean(a.staking_enabled),
       })),
   }))
 }
@@ -83,6 +85,8 @@ export async function createAsset(asset: Omit<Asset, "currentPrice">) {
     currency:      asset.currency,
     sector:        asset.sector,
     country:       asset.country,
+    crypto_custody: asset.cryptoCustody,
+    staking_enabled: asset.stakingEnabled,
   }).select().single()
 
   return error ? null : data
@@ -189,6 +193,8 @@ export async function upsertAssetFromBuy(tx: {
   quantity:    number
   price:       number
   currency:    string
+  cryptoCustody?: string
+  stakingEnabled?: boolean
 }) {
   const sb = createClient()
   if (!sb) return
@@ -208,8 +214,14 @@ export async function upsertAssetFromBuy(tx: {
     const newQty  = oldQty + tx.quantity
     const newAvg  = (oldQty * oldAvg + tx.quantity * tx.price) / newQty
 
+    const update: Record<string, unknown> = { quantity: newQty, avg_buy_price: Number(newAvg.toFixed(4)) }
+    if (tx.assetClass === "crypto") {
+      if (tx.cryptoCustody) update.crypto_custody = tx.cryptoCustody
+      if (tx.stakingEnabled !== undefined) update.staking_enabled = tx.stakingEnabled
+    }
+
     const { error } = await sb.from("assets")
-      .update({ quantity: newQty, avg_buy_price: Number(newAvg.toFixed(4)) })
+      .update(update)
       .eq("id", existing.id)
 
     if (error) console.error("[upsertAsset] update error:", error.message, error.details)
@@ -223,6 +235,8 @@ export async function upsertAssetFromBuy(tx: {
       quantity:      tx.quantity,
       avg_buy_price: tx.price,
       currency:      tx.currency ?? "CHF",
+      crypto_custody: tx.assetClass === "crypto" ? tx.cryptoCustody : undefined,
+      staking_enabled: tx.assetClass === "crypto" ? Boolean(tx.stakingEnabled) : undefined,
     })
 
     if (error) console.error("[upsertAsset] insert error:", error.message, error.details)

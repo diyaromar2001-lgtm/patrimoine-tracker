@@ -17,6 +17,8 @@ import {
   simpleReturn,
   cagr,
   maxDrawdown,
+  calculateRealizedPnLEvents,
+  calculateRealizedPnL,
   convertCurrency,
   formatPct,
   generateInsights,
@@ -259,6 +261,25 @@ describe("maxDrawdown", () => {
       { date: "2026-01-01", value: 100 },
       { date: "2026-01-08", value: 120 },
     ])).toBe(0)
+  })
+})
+
+describe("calculateRealizedPnL", () => {
+  const txs = [
+    { portfolioId: "p1", ticker: "AAPL", type: "buy", quantity: 10, price: 100, fees: 0, currency: "USD", date: "2026-01-01" },
+    { portfolioId: "p1", ticker: "AAPL", type: "buy", quantity: 10, price: 120, fees: 0, currency: "USD", date: "2026-01-10" },
+    { portfolioId: "p1", ticker: "AAPL", type: "sell", quantity: 5, price: 150, fees: 2, currency: "USD", date: "2026-02-01" },
+  ]
+
+  it("calcule le P&L realise avec prix moyen et frais", () => {
+    const events = calculateRealizedPnLEvents(txs)
+    expect(events).toHaveLength(1)
+    expect(events[0].costBasis).toBe(550)
+    expect(events[0].pnl).toBe(198)
+  })
+
+  it("somme les evenements realises", () => {
+    expect(calculateRealizedPnL(txs)).toBe(198)
   })
 })
 

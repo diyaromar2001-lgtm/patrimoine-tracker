@@ -54,6 +54,28 @@ export interface PerformanceMetrics {
   latentPnLPct:   number   // %
 }
 
+export interface RealizedPnLInput {
+  portfolioId: string
+  ticker:      string
+  type:        string
+  quantity:    number
+  price:       number
+  fees?:       number
+  currency?:   string
+  date:        string
+}
+
+export interface RealizedPnLEvent {
+  ticker:    string
+  date:      string
+  quantity:  number
+  proceeds:  number
+  costBasis: number
+  fees:      number
+  pnl:       number
+  currency:  string
+}
+
 // ─── Conversion de devises ────────────────────────────────────────────────────
 
 export function convertCurrency(
@@ -254,6 +276,53 @@ export function ytdReturn(snapshots: PortfolioSnapshot[]): number {
  * Format monétaire suisse : 4 408.09 CHF
  * Utilise le séparateur d'espace (fr-CH) et 2 décimales.
  */
+export function calculateRealizedPnLEvents(transactions: RealizedPnLInput[]): RealizedPnLEvent[] {
+  const positions: Record<string, { qty: number; avg: number }> = {}
+  const events: RealizedPnLEvent[] = []
+
+  const ordered = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+  for (const tx of ordered) {
+    const key = `${tx.portfolioId}:${tx.ticker}`
+    const pos = positions[key] ?? { qty: 0, avg: 0 }
+
+    if (tx.type === "buy") {
+      const nextQty = pos.qty + tx.quantity
+      pos.avg = nextQty > 0 ? ((pos.qty * pos.avg) + (tx.quantity * tx.price)) / nextQty : 0
+      pos.qty = nextQty
+      positions[key] = pos
+      continue
+    }
+
+    if (tx.type === "sell") {
+      const soldQty = Math.min(tx.quantity, pos.qty || tx.quantity)
+      const costBasis = soldQty * pos.avg
+      const proceeds  = tx.quantity * tx.price
+      const fees      = tx.fees ?? 0
+
+      events.push({
+        ticker: tx.ticker,
+        date: tx.date,
+        quantity: tx.quantity,
+        proceeds,
+        costBasis,
+        fees,
+        pnl: proceeds - costBasis - fees,
+        currency: tx.currency ?? "CHF",
+      })
+
+      pos.qty = Math.max(0, pos.qty - tx.quantity)
+      positions[key] = pos
+    }
+  }
+
+  return events
+}
+
+export function calculateRealizedPnL(transactions: RealizedPnLInput[]): number {
+  return calculateRealizedPnLEvents(transactions).reduce((sum, event) => sum + event.pnl, 0)
+}
+
 export function maxDrawdown(snapshots: PortfolioSnapshot[]): number {
   let peak = 0
   let maxDd = 0

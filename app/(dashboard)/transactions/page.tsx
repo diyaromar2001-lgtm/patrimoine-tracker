@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
@@ -10,6 +10,8 @@ import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
+import { calculateRealizedPnLEvents } from "@/lib/finance"
+import type { AppCurrency } from "@/lib/utils"
 import {
   Plus, Search, X, Check, ArrowUpRight, ArrowDownLeft,
   Gift, ArrowLeftRight, Pencil, Zap,
@@ -28,7 +30,7 @@ const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
   const { transactions, portfolios, addTransaction, editTransaction, removeTransaction } = useAppData()
-  const { format } = useCurrency()
+  const { format, convert } = useCurrency()
 
   const [search,     setSearch]     = useState("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "all">("all")
@@ -49,6 +51,17 @@ export default function TransactionsPage() {
   const totalSell = transactions.filter(t => t.type === "sell").reduce((s, t) => s + t.quantity * t.price, 0)
   const totalDiv  = transactions.filter(t => t.type === "dividend").reduce((s, t) => s + t.quantity * t.price, 0)
   const totalFees = transactions.reduce((s, t) => s + t.fees, 0)
+  const latentPnl = portfolios.flatMap(p => p.assets).reduce((sum, asset) => {
+    const pnl = (asset.currentPrice - asset.avgBuyPrice) * asset.quantity
+    return sum + convert(pnl, asset.currency as AppCurrency)
+  }, 0)
+  const realizedPnl = useMemo(() =>
+    calculateRealizedPnLEvents(transactions).reduce(
+      (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),
+      0
+    ),
+    [transactions, convert]
+  )
 
   function openAdd() {
     setModal({
@@ -58,6 +71,7 @@ export default function TransactionsPage() {
         ticker: "", assetName: "", assetClass: "stock",
         type: "buy", quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
         date: new Date().toISOString().slice(0, 10), notes: "",
+        cryptoCustody: "", stakingEnabled: false,
       },
     })
   }
@@ -78,6 +92,8 @@ export default function TransactionsPage() {
         fees:        String(tx.fees),
         date:        tx.date,
         notes:       tx.notes ?? "",
+        cryptoCustody: tx.cryptoCustody ?? "",
+        stakingEnabled: tx.stakingEnabled ?? false,
       },
     })
   }
@@ -95,6 +111,8 @@ export default function TransactionsPage() {
         fees:       parseFloat(form.fees) || 0,
         date:       form.date,
         notes:      form.notes || undefined,
+        cryptoCustody: form.cryptoCustody || undefined,
+        stakingEnabled: form.stakingEnabled,
       })
     } else {
       const res = await addTransaction({
@@ -109,6 +127,8 @@ export default function TransactionsPage() {
         currency:    "CHF",
         date:        form.date,
         notes:       form.notes || undefined,
+        cryptoCustody: form.cryptoCustody || undefined,
+        stakingEnabled: form.stakingEnabled,
       })
       if (!res.ok) throw new Error(res.error ?? "Erreur Supabase")
     }
@@ -124,10 +144,12 @@ export default function TransactionsPage() {
       <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
           {[
             { label: "Capital investi",   value: format(totalBuy),  color: "#3b82f6" },  // bleu neutre
             { label: "Total ventes",     value: format(totalSell), color: "#22c55e" },
+            { label: "PV latente",       value: (latentPnl >= 0 ? "+" : "") + format(latentPnl), color: latentPnl >= 0 ? "#22c55e" : "#ef4444" },
+            { label: "PV réalisée",      value: (realizedPnl >= 0 ? "+" : "") + format(realizedPnl), color: realizedPnl >= 0 ? "#22c55e" : "#ef4444" },
             { label: "Dividendes reçus", value: format(totalDiv),  color: "#f59e0b" },
             { label: "Frais total",      value: format(totalFees), color: "#6b7280" },
           ].map(s => (

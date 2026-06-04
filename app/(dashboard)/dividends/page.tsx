@@ -25,7 +25,7 @@ function firstDow(y: number, m: number) { return (new Date(y, m, 1).getDay() + 6
 // Generate future dividend events from live Yahoo Finance data + user's positions
 function buildDividendEvents(
   infos:       DividendInfo[],
-  assetsByTicker: Record<string, { quantity: number; assetClass: string; portfolioId: string }>
+  assetsByTicker: Record<string, { quantity: number; assetClass: string; portfolioId: string; avgBuyPrice: number; currentPrice: number }>
 ): DividendEvent[] {
   const events: DividendEvent[] = []
   const today = new Date()
@@ -106,10 +106,16 @@ export default function DividendsPage() {
 
   // Assets indexed by ticker — only stocks & ETFs (not crypto)
   const assetsByTicker = useMemo(() => {
-    const map: Record<string, { quantity: number; assetClass: string; portfolioId: string }> = {}
+    const map: Record<string, { quantity: number; assetClass: string; portfolioId: string; avgBuyPrice: number; currentPrice: number }> = {}
     portfolios.flatMap(p => p.assets).forEach(a => {
       if (a.assetClass !== "crypto" && a.assetClass !== "cash") {
-        map[a.ticker] = { quantity: a.quantity, assetClass: a.assetClass, portfolioId: a.portfolioId }
+        map[a.ticker] = {
+          quantity: a.quantity,
+          assetClass: a.assetClass,
+          portfolioId: a.portfolioId,
+          avgBuyPrice: a.avgBuyPrice,
+          currentPrice: a.currentPrice,
+        }
       }
     })
     return map
@@ -249,6 +255,7 @@ export default function DividendsPage() {
                   )
                 }
                 const totalPerPay = info.amountPerShare * pos.quantity
+                const yoc = pos.avgBuyPrice > 0 ? (info.dividendRate / pos.avgBuyPrice) * 100 : 0
                 return (
                   <div key={ticker} className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: "#22c55e40", backgroundColor: "#22c55e08" }}>
                     <span className="text-xs font-bold" style={{ color: "#22c55e" }}>{ticker}</span>
@@ -256,7 +263,10 @@ export default function DividendsPage() {
                       {format(totalPerPay)}/{FREQ_LABEL[info.frequency] ?? info.frequency}
                     </span>
                     <span className="text-xs rounded-md px-1.5 py-0.5" style={{ backgroundColor: "#22c55e18", color: "#22c55e" }}>
-                      {(info.dividendYield * 100).toFixed(2)}%
+                      Actuel {(info.dividendYield * 100).toFixed(2)}%
+                    </span>
+                    <span className="text-xs rounded-md px-1.5 py-0.5" style={{ backgroundColor: "#3b82f618", color: "#3b82f6" }}>
+                      YOC {yoc.toFixed(2)}%
                     </span>
                     {info.exDividendDate && (
                       <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>

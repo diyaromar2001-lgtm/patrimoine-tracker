@@ -29,6 +29,8 @@ create table if not exists assets (
   currency       text    not null default 'CHF',
   sector         text,
   country        text,
+  crypto_custody text,   -- cold_wallet | hot_wallet | exchange
+  staking_enabled boolean not null default false,
   created_at     timestamptz not null default now()
 );
 

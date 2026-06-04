@@ -33,6 +33,12 @@ type SortKey = "name" | "qty" | "avgPrice" | "currentPrice" | "value" | "dayPnl"
 type SortDir = "asc" | "desc"
 type Period  = "1W" | "1M" | "3M" | "6M" | "1Y" | "MAX"
 
+const CRYPTO_CUSTODY_LABELS: Record<string, string> = {
+  cold_wallet: "Cold Wallet",
+  hot_wallet: "Hot Wallet",
+  exchange: "Exchange",
+}
+
 // ─── Benchmark Chart (TradingView) ───────────────────────────────────────────
 interface BenchmarkPoint { time: number; value: number }
 interface BenchmarkData  { main: BenchmarkPoint[]; comparisons: Array<{ ticker: string; data: BenchmarkPoint[] }> }
@@ -376,11 +382,13 @@ function HoldingsTable({
       )}
 
       {sorted.map((asset, i) => {
-        const liveData     = livePrices[asset.ticker]
+        const liveData     = asset.assetClass === "cash" ? undefined : livePrices[asset.ticker]
         const dayChangePct = liveData?.changePct ?? 0
 
         // ─ Display currency (user preference) ──────────────────────────────
-        const livePriceUserCurr = liveData?.price ?? asset.currentPrice  // in user's currency
+        const livePriceUserCurr = asset.assetClass === "cash"
+          ? convert(asset.currentPrice || asset.avgBuyPrice || 1, asset.currency as AppCurrency)
+          : liveData?.price ?? asset.currentPrice  // in user's currency
         const origPrice         = liveData?.originalPrice                 // native (USD/EUR/CHF)
         const origCurrency      = liveData?.originalCurrency ?? asset.currency ?? "USD"
 
@@ -421,6 +429,22 @@ function HoldingsTable({
                 <div className="min-w-0">
                   <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
                   <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
+                  {asset.assetClass === "crypto" && (asset.cryptoCustody || asset.stakingEnabled) && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {asset.cryptoCustody && (
+                        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ backgroundColor: "#a78bfa18", color: "#a78bfa" }}>
+                          {CRYPTO_CUSTODY_LABELS[asset.cryptoCustody] ?? asset.cryptoCustody}
+                        </span>
+                      )}
+                      {asset.stakingEnabled && (
+                        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ backgroundColor: "#22c55e18", color: "#22c55e" }}>
+                          Staking/Lending
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               {/* Qty — centred, bold */}
@@ -500,6 +524,8 @@ export default function PortfoliosPage() {
       currency:    (form.nativeCurrency || "CHF") as "CHF" | "EUR" | "USD" | "GBP",
       date:        form.date,
       notes:       form.notes || undefined,
+      cryptoCustody: form.cryptoCustody || undefined,
+      stakingEnabled: form.stakingEnabled,
     })
     if (!res.ok) throw new Error(res.error ?? "Erreur Supabase")
     setTxModal(null)
@@ -511,7 +537,7 @@ export default function PortfoliosPage() {
   const [newColor,   setNewColor]   = useState("#3b82f6")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
-  const allTickers = portfolios.flatMap(p => p.assets.map(a => a.ticker))
+  const allTickers = portfolios.flatMap(p => p.assets.filter(a => a.assetClass !== "cash").map(a => a.ticker))
   const { prices: livePrices } = useLivePrices(allTickers, 30_000)
 
   // Enrich prices — include original currency for dual display
@@ -527,6 +553,9 @@ export default function PortfoliosPage() {
   // totalValue: sum of (live_price_in_user_currency × qty)
   const totalValue = portfolios.reduce((s, p) => {
     return s + p.assets.reduce((ss, a) => {
+      if (a.assetClass === "cash") {
+        return ss + convert(a.quantity * (a.currentPrice || a.avgBuyPrice || 1), a.currency as AppCurrency)
+      }
       const lp = liveEnriched[a.ticker]?.price  // already in user's currency
       return ss + (lp ?? a.currentPrice) * a.quantity
     }, 0)
@@ -547,7 +576,9 @@ export default function PortfoliosPage() {
   const allAssets = portfolios.flatMap(p => p.assets)
   const allAssetsEnriched = allAssets.map(a => ({
     ...a,
-    currentPrice: liveEnriched[a.ticker]?.price ?? a.currentPrice,
+    currentPrice: a.assetClass === "cash"
+      ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency)
+      : liveEnriched[a.ticker]?.price ?? a.currentPrice,
   }))
 
   // Top movers

@@ -3,6 +3,7 @@
 export type AssetClass = "stock" | "etf" | "crypto" | "real_estate" | "bond" | "cash"
 export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu"
 export type Currency = "CHF" | "EUR" | "USD" | "GBP"
+export type CryptoCustodyType = "cold_wallet" | "hot_wallet" | "exchange"
 
 // ─── Revenus Annexes ─────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ export interface Asset {
   logoUrl?: string
   sector?: string
   country?: string
+  cryptoCustody?: CryptoCustodyType
+  stakingEnabled?: boolean
 }
 
 export interface Transaction {
@@ -78,6 +81,8 @@ export interface Transaction {
   currency: Currency
   date: string
   notes?: string
+  cryptoCustody?: CryptoCustodyType
+  stakingEnabled?: boolean
 }
 
 export interface DividendEvent {
@@ -163,6 +168,8 @@ export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   bond: "Obligataire",
   cash: "Liquidités",
 }
+
+ASSET_CLASS_LABELS.cash = "Liquidités / Cash"
 
 export const ASSET_CLASS_COLORS: Record<AssetClass, string> = {
   stock: "#3b82f6",
