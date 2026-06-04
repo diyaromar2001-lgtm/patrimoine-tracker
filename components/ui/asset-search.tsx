@@ -83,8 +83,9 @@ export function AssetSearch({ onSelect, placeholder = "Rechercher un actif… (A
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.12 }}
-            className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border shadow-2xl"
+            className="absolute left-0 right-0 top-full z-50 mt-1 overflow-y-auto rounded-xl border shadow-2xl"
             style={{
+              maxHeight: "280px",
               backgroundColor: "var(--bg-elevated)",
               borderColor: "var(--border)",
               boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
