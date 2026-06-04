@@ -10,6 +10,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import type { DividendEvent } from "@/lib/types"
 import type { DividendInfo } from "@/app/api/dividends/route"
+import { dividendReceivedYTD, estimatedAnnualDividend } from "@/lib/finance"
 import {
   CalendarDays, TrendingUp, Clock, CheckCircle2,
   Plus, X, Check, ChevronLeft, ChevronRight, Loader2, RefreshCw,
@@ -88,7 +89,7 @@ function buildDividendEvents(
 
 export default function DividendsPage() {
   const { portfolios }  = useAppData()
-  const { format }      = useCurrency()
+  const { format, fxRates } = useCurrency()
   const today           = new Date()
 
   const [filter,    setFilter]    = useState<"all"|"upcoming"|"paid">("all")
@@ -157,18 +158,25 @@ export default function DividendsPage() {
   }, [liveInfos])
 
   // KPI totals — in user's currency (convert from asset currency)
-  const totalAnnual = useMemo(() =>
-    liveInfos.filter(i => i.paysDiv).reduce((s, i) => {
+  const totalAnnualChf = useMemo(() =>
+    estimatedAnnualDividend(liveInfos.filter(i => i.paysDiv).map(i => {
       const pos = assetsByTicker[i.ticker]
-      if (!pos) return s
-      return s + i.dividendRate * pos.quantity
-    }, 0), [liveInfos, assetsByTicker])
+      return {
+        amount: i.dividendRate,
+        currency: i.currency,
+        frequency: "annual",
+        quantity: pos?.quantity ?? 0,
+      }
+    }), fxRates), [liveInfos, assetsByTicker, fxRates])
 
   const totalPortValue = portfolios.flatMap(p => p.assets).reduce((s, a) => s + a.currentPrice * a.quantity, 0)
   const nextDiv = filtered.find(d => d.status === "upcoming")
   const daysToNext = nextDiv ? Math.ceil((new Date(nextDiv.payDate).getTime() - Date.now()) / 86400000) : null
-  const paidTotal  = allDividends.filter(d => d.status === "paid").reduce((s, d) => s + d.amount, 0)
-  const paidCount  = allDividends.filter(d => d.status === "paid").length
+  const paidTotalChf = useMemo(() => dividendReceivedYTD(
+    allDividends.map(d => ({ amount: d.amount, currency: d.currency, paymentDate: d.payDate, status: d.status })),
+    fxRates
+  ), [allDividends, fxRates])
+  const paidCount  = allDividends.filter(d => d.status === "paid" && new Date(d.payDate) <= new Date()).length
 
   // Calendar map
   const calDivMap: Record<string, DividendEvent[]> = {}
@@ -201,10 +209,10 @@ export default function DividendsPage() {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
           {[
-            { label: "Revenu annuel estimé", value: format(totalAnnual), sub: totalPortValue > 0 ? ((totalAnnual / totalPortValue) * 100).toFixed(2) + "% yield" : "", icon: TrendingUp, color: "#22c55e" },
-            { label: "Revenu mensuel moyen", value: format(totalAnnual / 12), sub: format(totalAnnual / 52) + "/sem.", icon: CalendarDays, color: "#3b82f6" },
+            { label: "Revenu annuel estimé", value: format(totalAnnualChf, "CHF"), sub: totalPortValue > 0 ? ((totalAnnualChf / totalPortValue) * 100).toFixed(2) + "% yield" : "", icon: TrendingUp, color: "#22c55e" },
+            { label: "Revenu mensuel moyen", value: format(totalAnnualChf / 12, "CHF"), sub: format(totalAnnualChf / 52, "CHF") + "/sem.", icon: CalendarDays, color: "#3b82f6" },
             { label: "Prochain versement", value: nextDiv ? "+" + format(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + "j" : "", icon: Clock, color: "#f59e0b" },
-            { label: "Reçus (année en cours)", value: format(paidTotal), sub: paidCount + " versement" + (paidCount > 1 ? "s" : ""), icon: CheckCircle2, color: "#a78bfa" },
+            { label: "Reçus (année en cours)", value: format(paidTotalChf, "CHF"), sub: paidCount + " versement" + (paidCount > 1 ? "s" : ""), icon: CheckCircle2, color: "#a78bfa" },
           ].map(({ label, value, sub, icon: Icon, color }) => (
             <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <div className="flex items-center gap-2 mb-2">

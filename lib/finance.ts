@@ -99,6 +99,50 @@ export interface TransactionChfAmounts {
   realizedPnlChf: number
 }
 
+export interface PositionMetricInput {
+  ticker?: string
+  quantity: number
+  currentPriceNative: number
+  nativeCurrency?: string
+  costBasisChf?: number
+  assetClass?: string
+}
+
+export type CashBalancesInput =
+  | Record<string, number | undefined>
+  | { CHF?: number; USD?: number; EUR?: number; GBP?: number }
+
+export interface PortfolioMetricInput {
+  assets: PositionMetricInput[]
+  cashBalances?: CashBalancesInput
+}
+
+export interface PortfolioMetrics {
+  positionValueChf: number
+  cashChf: number
+  portfolioValueChf: number
+  investedChf: number
+  totalPnlChf: number
+  totalReturnPercent: number
+  positionLineCount: number
+  uniqueAssetCount: number
+}
+
+export interface CashFlowSnapshot extends PortfolioSnapshot {
+  /** Net deposits are positive, withdrawals are negative. */
+  cashFlow?: number
+}
+
+export interface DividendCashflowInput {
+  amount: number
+  currency?: string
+  payDate?: string
+  paymentDate?: string
+  status?: "paid" | "upcoming" | string
+  frequency?: "monthly" | "quarterly" | "semi-annual" | "annual" | string
+  quantity?: number
+}
+
 // ─── Conversion de devises ────────────────────────────────────────────────────
 
 export function convertCurrency(
@@ -144,6 +188,120 @@ export function calculateTransactionChfAmounts(input: TransactionChfAmountsInput
     soldCostBasisChf,
     realizedPnlChf,
   }
+}
+
+export function amountToChf(amount: number, currency: string | undefined, rates: FXRates): number {
+  return amount * chfPerCurrencyUnit(currency, rates)
+}
+
+export function positionValue(asset: PositionMetricInput, rates: FXRates): number {
+  if (asset.quantity <= 0 || asset.currentPriceNative <= 0) return 0
+  return amountToChf(asset.quantity * asset.currentPriceNative, asset.nativeCurrency, rates)
+}
+
+export function cashValueChf(cashBalances: CashBalancesInput | undefined, rates: FXRates): number {
+  if (!cashBalances) return 0
+  return Object.entries(cashBalances).reduce((sum, [currency, value]) => {
+    const amount = Number(value ?? 0)
+    return amount > 0 ? sum + amountToChf(amount, currency, rates) : sum
+  }, 0)
+}
+
+export function portfolioValue(
+  assets: PositionMetricInput[],
+  cashBalances: CashBalancesInput | undefined,
+  rates: FXRates,
+): number {
+  return assets.reduce((sum, asset) => sum + positionValue(asset, rates), 0) + cashValueChf(cashBalances, rates)
+}
+
+export function totalPnL(assets: PositionMetricInput[], rates: FXRates): number {
+  const investedChf = assets.reduce((sum, asset) => sum + Math.max(0, asset.costBasisChf ?? 0), 0)
+  const valueChf = assets.reduce((sum, asset) => sum + positionValue(asset, rates), 0)
+  return valueChf - investedChf
+}
+
+export function totalReturnPercent(assets: PositionMetricInput[], rates: FXRates): number {
+  const investedChf = assets.reduce((sum, asset) => sum + Math.max(0, asset.costBasisChf ?? 0), 0)
+  if (investedChf <= 0) return 0
+  return (totalPnL(assets, rates) / investedChf) * 100
+}
+
+export function netWorth(portfolios: PortfolioMetricInput[], rates: FXRates): number {
+  return portfolios.reduce((sum, portfolio) => (
+    sum + portfolioValue(portfolio.assets, portfolio.cashBalances, rates)
+  ), 0)
+}
+
+export function calculatePortfolioMetrics(
+  assets: PositionMetricInput[],
+  cashBalances: CashBalancesInput | undefined,
+  rates: FXRates,
+): PortfolioMetrics {
+  const investableAssets = assets.filter(a => a.assetClass !== "cash" && a.quantity > 0)
+  const positionValueChf = investableAssets.reduce((sum, asset) => sum + positionValue(asset, rates), 0)
+  const cashChf = cashValueChf(cashBalances, rates)
+  const investedChf = investableAssets.reduce((sum, asset) => sum + Math.max(0, asset.costBasisChf ?? 0), 0)
+  const totalPnlChf = positionValueChf - investedChf
+
+  return {
+    positionValueChf,
+    cashChf,
+    portfolioValueChf: positionValueChf + cashChf,
+    investedChf,
+    totalPnlChf,
+    totalReturnPercent: investedChf > 0 ? (totalPnlChf / investedChf) * 100 : 0,
+    positionLineCount: investableAssets.length,
+    uniqueAssetCount: new Set(investableAssets.map(a => a.ticker).filter(Boolean)).size,
+  }
+}
+
+export function benchmarkAlpha(portfolioReturnPercent: number, benchmarkReturnPercent: number): number {
+  return portfolioReturnPercent - benchmarkReturnPercent
+}
+
+export function simpleMoneyWeightedReturn(
+  startValue: number,
+  endValue: number,
+  cashFlows: Array<{ amount: number; weight?: number }> = [],
+): number {
+  const netFlows = cashFlows.reduce((sum, flow) => sum + flow.amount, 0)
+  const weightedFlows = cashFlows.reduce((sum, flow) => sum + flow.amount * (flow.weight ?? 0.5), 0)
+  const denominator = startValue + weightedFlows
+  if (denominator <= 0) return 0
+  return ((endValue - startValue - netFlows) / denominator) * 100
+}
+
+export function timeWeightedReturn(snapshots: CashFlowSnapshot[]): number {
+  if (snapshots.length < 2) return 0
+  let compounded = 1
+
+  for (let i = 1; i < snapshots.length; i++) {
+    const prev = snapshots[i - 1].value
+    if (prev <= 0) continue
+    const current = snapshots[i].value
+    const cashFlow = snapshots[i].cashFlow ?? 0
+    compounded *= 1 + ((current - cashFlow - prev) / prev)
+  }
+
+  return (compounded - 1) * 100
+}
+
+export function maxDrawdownAdjusted(snapshots: CashFlowSnapshot[]): number {
+  if (snapshots.length < 2) return 0
+  const performanceSeries: PortfolioSnapshot[] = [{ date: snapshots[0].date, value: 100 }]
+  let indexedValue = 100
+
+  for (let i = 1; i < snapshots.length; i++) {
+    const prev = snapshots[i - 1].value
+    if (prev <= 0) continue
+    const current = snapshots[i].value
+    const cashFlow = snapshots[i].cashFlow ?? 0
+    indexedValue *= 1 + ((current - cashFlow - prev) / prev)
+    performanceSeries.push({ date: snapshots[i].date, value: indexedValue })
+  }
+
+  return maxDrawdown(performanceSeries)
 }
 
 // ─── Prix et valeur ───────────────────────────────────────────────────────────
@@ -284,6 +442,54 @@ export function totalAnnualDividend(dividends: DividendInput[]): number {
   return dividends.reduce((s, d) => {
     const annual = annualDividendPerShare(d.amountPerShare, d.frequency)
     return s + annual * d.quantity
+  }, 0)
+}
+
+function dividendDate(dividend: DividendCashflowInput): string {
+  return dividend.paymentDate ?? dividend.payDate ?? ""
+}
+
+export function dividendReceivedYTD(
+  dividends: DividendCashflowInput[],
+  rates: FXRates,
+  today: Date = new Date(),
+): number {
+  const year = today.getFullYear()
+  const todayTime = today.getTime()
+
+  return dividends.reduce((sum, dividend) => {
+    const date = dividendDate(dividend)
+    if (!date || dividend.status !== "paid") return sum
+    const paymentTime = new Date(date).getTime()
+    if (Number.isNaN(paymentTime) || paymentTime > todayTime || new Date(date).getFullYear() !== year) return sum
+    return sum + amountToChf(dividend.amount, dividend.currency, rates)
+  }, 0)
+}
+
+export function plannedDividends(
+  dividends: DividendCashflowInput[],
+  rates: FXRates,
+  today: Date = new Date(),
+): number {
+  const todayTime = today.getTime()
+
+  return dividends.reduce((sum, dividend) => {
+    const date = dividendDate(dividend)
+    if (!date) return sum
+    const paymentTime = new Date(date).getTime()
+    if (Number.isNaN(paymentTime) || paymentTime <= todayTime) return sum
+    return sum + amountToChf(dividend.amount, dividend.currency, rates)
+  }, 0)
+}
+
+export function estimatedAnnualDividend(
+  dividends: DividendCashflowInput[],
+  rates: FXRates,
+): number {
+  return dividends.reduce((sum, dividend) => {
+    const quantity = dividend.quantity ?? 1
+    const multiplier = FREQ_MULTIPLIER[dividend.frequency ?? "annual"] ?? 1
+    return sum + amountToChf(dividend.amount * quantity * multiplier, dividend.currency, rates)
   }, 0)
 }
 

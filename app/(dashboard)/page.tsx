@@ -117,6 +117,14 @@ export default function DashboardPage() {
   const { cost: totalCost, value: totalValue, pnl: totalPnl, pct: totalPnlPct } =
     convertPnL(pnlResult, currency, fxRates)
 
+  const totalCashConverted = useMemo(() => portfolios.reduce((sum, p) => {
+    return sum + Object.entries(p.cashBalances ?? {}).reduce((cashSum, [cur, val]) => (
+      cashSum + convert(Number(val ?? 0), cur as AppCurrency)
+    ), 0)
+  }, 0), [portfolios, convert])
+
+  const netWorthValue = totalValue + totalCashConverted
+
   // Today P&L: sum of each asset's day change
   const todayPnl = useMemo(
     () => allAssets.reduce((s, a) => {
@@ -137,14 +145,15 @@ export default function DashboardPage() {
         : livePrices[a.ticker]?.price ?? a.currentPrice
       byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + price * a.quantity
     })
+    if (totalCashConverted > 0) byClass.cash = (byClass.cash ?? 0) + totalCashConverted
     return Object.entries(byClass)
       .sort(([, a], [, b]) => b - a)
       .map(([cls, val]) => ({
         cls: cls as keyof typeof ASSET_CLASS_LABELS,
         val,
-        pct: totalValue > 0 ? (val / totalValue) * 100 : 0,
+        pct: netWorthValue > 0 ? (val / netWorthValue) * 100 : 0,
       }))
-  }, [allAssets, livePrices, totalValue])
+  }, [allAssets, livePrices, totalCashConverted, netWorthValue])
 
   const assetsForAnalytics = useMemo(() =>
     allAssets.map(a => ({
@@ -305,7 +314,7 @@ export default function DashboardPage() {
                       lineHeight: 1,
                     }}
                   >
-                    {format(totalValue)}
+                    {format(netWorthValue)}
                   </span>
                   <ChangeBadge value={todayPnlPct} size="md" />
                 </div>
@@ -341,11 +350,11 @@ export default function DashboardPage() {
         {/* ─── KPIs ─── */}
         <section>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-7">
-            <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="var(--accent)" index={0} />
+            <StatCard label="Valeur nette totale" value={format(netWorthValue)} change={totalPnlPct} changeLabel="P&L hors liquidités" icon={Wallet} iconColor="var(--accent)" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
             <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
             <StatCard label="Plus-value réalisée" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
-            <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={4} />
+            <StatCard label="Nb. lignes" value={String(allAssets.filter(a => a.assetClass !== "cash").length)} changeLabel="positions ouvertes" icon={BarChart2} iconColor="#f59e0b" index={4} />
             {/* Cash disponible — toutes devises converties */}
             {(() => {
               const cashTotals: Record<string, number> = {}

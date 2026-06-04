@@ -20,6 +20,15 @@ import {
   calculateRealizedPnLEvents,
   calculateRealizedPnL,
   calculateTransactionChfAmounts,
+  positionValue,
+  portfolioValue,
+  netWorth,
+  totalPnL,
+  totalReturnPercent,
+  benchmarkAlpha,
+  dividendReceivedYTD,
+  estimatedAnnualDividend,
+  maxDrawdownAdjusted,
   convertCurrency,
   formatPct,
   generateInsights,
@@ -211,6 +220,72 @@ describe("calculateTransactionChfAmounts", () => {
     expect(amounts.soldCostBasisChf).toBe(101)
     expect(amounts.netAmountChf).toBe(109)
     expect(amounts.realizedPnlChf).toBe(8)
+  })
+})
+
+describe("source unique des metriques financieres", () => {
+  const rates = { CHF: 1, USD: 2, EUR: 4 }
+  const assets = [
+    { ticker: "NVDA", quantity: 2, currentPriceNative: 120, nativeCurrency: "USD", costBasisChf: 100, assetClass: "stock" },
+    { ticker: "VUAA", quantity: 1, currentPriceNative: 80, nativeCurrency: "EUR", costBasisChf: 25, assetClass: "etf" },
+  ]
+
+  it("positionValue convertit prix natif * quantite en CHF", () => {
+    expect(positionValue(assets[0], rates)).toBe(120)
+  })
+
+  it("portfolioValue inclut le cash dans la valeur nette du portefeuille", () => {
+    expect(portfolioValue(assets, { CHF: 10, USD: 20 }, rates)).toBe(160)
+  })
+
+  it("netWorth additionne tous les portefeuilles avec cash", () => {
+    expect(netWorth([
+      { assets: [assets[0]], cashBalances: { CHF: 5 } },
+      { assets: [assets[1]], cashBalances: { USD: 10 } },
+    ], rates)).toBe(120 + 5 + 20 + 5)
+  })
+
+  it("totalPnL exclut le cash et utilise le cost basis CHF statique", () => {
+    expect(totalPnL(assets, rates)).toBe(15)
+  })
+
+  it("totalReturnPercent est base sur le PnL latent hors depots", () => {
+    expect(totalReturnPercent(assets, rates)).toBeCloseTo(12, 5)
+  })
+
+  it("benchmarkAlpha = rendement portefeuille - rendement benchmark", () => {
+    expect(benchmarkAlpha(-23.39, 25.89)).toBeCloseTo(-49.28, 2)
+  })
+})
+
+describe("dividendes convertis en CHF", () => {
+  const rates = { CHF: 1, USD: 2 }
+  const dividends = [
+    { amount: 20, currency: "USD", paymentDate: "2026-02-01", status: "paid" },
+    { amount: 10, currency: "CHF", paymentDate: "2026-07-01", status: "upcoming" },
+    { amount: 99, currency: "CHF", paymentDate: "2025-12-01", status: "paid" },
+  ]
+
+  it("dividendReceivedYTD ne compte que les versements payes de l'annee courante", () => {
+    expect(dividendReceivedYTD(dividends, rates, new Date("2026-06-04"))).toBe(10)
+  })
+
+  it("estimatedAnnualDividend annualise selon la frequence et la quantite", () => {
+    expect(estimatedAnnualDividend([
+      { amount: 1, currency: "USD", frequency: "quarterly", quantity: 10 },
+      { amount: 2, currency: "CHF", frequency: "monthly", quantity: 1 },
+    ], rates)).toBe(44)
+  })
+})
+
+describe("performance ajustee des cashflows", () => {
+  it("maxDrawdownAdjusted neutralise les depots et retraits", () => {
+    const dd = maxDrawdownAdjusted([
+      { date: "2026-01-01", value: 100 },
+      { date: "2026-01-08", value: 160, cashFlow: 50 },
+      { date: "2026-01-15", value: 132, cashFlow: 0 },
+    ])
+    expect(dd).toBeCloseTo(-17.5, 5)
   })
 })
 

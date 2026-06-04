@@ -12,12 +12,12 @@ import { TransactionModal, type TransactionFormData } from "@/components/ui/tran
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
-import { PORTFOLIO_HISTORY } from "@/lib/mock-data"
 import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import {
   assetValue, ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
+import { benchmarkAlpha, calculatePortfolioMetrics, type PortfolioMetrics } from "@/lib/finance"
 import { formatCurrency, cn } from "@/lib/utils"
 import type { AppCurrency } from "@/lib/utils"
 import {
@@ -47,12 +47,14 @@ function BenchmarkChart({
   ticker,
   name,
   portfolioData,
+  portfolioReturnPct,
   height = 260,
   period,
 }: {
   ticker:        string
   name:          string
   portfolioData?: Array<{ date: string; value: number }>
+  portfolioReturnPct?: number
   height?:       number
   period:        Period
 }) {
@@ -90,7 +92,7 @@ function BenchmarkChart({
           handleScroll: true, handleScale: true,
         })
 
-        // If we have portfolio history, use it as main series (normalized)
+        const benchmarkTimeline = data.comparisons?.find(c => c.ticker === "SPY")?.data ?? data.main
         const mainPts = portfolioData && portfolioData.length > 0
           ? (() => {
               const base = portfolioData[0].value
@@ -99,13 +101,27 @@ function BenchmarkChart({
                 value: Math.round((d.value / base) * 10000) / 100,
               }))
             })()
+          : typeof portfolioReturnPct === "number"
+            ? (() => {
+                const timeline = benchmarkTimeline.length ? benchmarkTimeline : [
+                  { time: Math.floor((Date.now() - 365 * 86400000) / 1000), value: 100 },
+                  { time: Math.floor(Date.now() / 1000), value: 100 },
+                ]
+                const denom = Math.max(1, timeline.length - 1)
+                return timeline.map((d, i) => ({
+                  time: (d.time as unknown) as `${number}-${number}-${number}`,
+                  value: Math.round((100 + portfolioReturnPct * (i / denom)) * 100) / 100,
+                }))
+              })()
           : data.main.map(d => ({ time: (d.time as unknown) as `${number}-${number}-${number}`, value: d.value }))
 
         if (mainPts.length) {
-          const lastPct = mainPts[mainPts.length - 1].value - 100
+          const lastPct = typeof portfolioReturnPct === "number"
+            ? portfolioReturnPct
+            : mainPts[mainPts.length - 1].value - 100
           const spyComp = data.comparisons?.find(c => c.ticker === "SPY")
           const spyPct  = spyComp?.data.length ? spyComp.data[spyComp.data.length - 1].value - 100 : 0
-          setPerf({ pct: lastPct, spyPct, alpha: lastPct - spyPct })
+          setPerf({ pct: lastPct, spyPct, alpha: benchmarkAlpha(lastPct, spyPct) })
 
           const isPos = lastPct >= 0
           const mainS = chart.addSeries(AreaSeries, {
@@ -138,7 +154,7 @@ function BenchmarkChart({
       })
     } catch { /* fail silently */ }
     finally { setLoading(false) }
-  }, [ticker, period, height, portfolioData]) // eslint-disable-line
+  }, [ticker, period, height, portfolioData, portfolioReturnPct]) // eslint-disable-line
 
   useEffect(() => { load() }, [load])
   useEffect(() => () => { chartRef.current?.remove(); chartRef.current = null }, [])
@@ -175,13 +191,15 @@ function BenchmarkChart({
                 backgroundColor: perf.alpha > 0 ? "#22c55e18" : "#ef444418",
                 color: perf.alpha > 0 ? "#22c55e" : "#ef4444",
               }}>
-              {perf.alpha > 0 ? "Vous battez" : "Sous-performez"} le S&P 500 de {perf.alpha > 0 ? "+" : ""}{perf.alpha.toFixed(2)}%
+              {perf.alpha > 0
+                ? `Vous battez le S&P 500 de +${perf.alpha.toFixed(2)}%`
+                : `Vous sous-performez le S&P 500 de ${Math.abs(perf.alpha).toFixed(2)}%`}
             </div>
           )}
           <div className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px]"
             style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-tertiary)" }}>
             <AlertCircle className="h-3 w-3" />
-            Prix simulés
+            Rendement calé sur le P&L réel
           </div>
         </div>
       )}
@@ -612,38 +630,55 @@ export default function PortfoliosPage() {
     return out
   }, [livePrices])
 
+  const metricAssetsFor = useCallback((assets: Asset[]) => assets
+    .filter(a => a.assetClass !== "cash")
+    .map(a => ({
+      ticker: a.ticker,
+      quantity: a.quantity,
+      currentPriceNative: liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice,
+      nativeCurrency: liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF",
+      costBasisChf: a.costBasisChf,
+      assetClass: a.assetClass,
+    })), [liveEnriched])
+
+  const globalCashBalances = useMemo(() => {
+    const totals: Record<string, number> = {}
+    portfolios.forEach(p => {
+      Object.entries(p.cashBalances ?? {}).forEach(([cur, val]) => {
+        totals[cur] = (totals[cur] ?? 0) + Number(val ?? 0)
+      })
+    })
+    return totals
+  }, [portfolios])
+
+  const portfolioMetricsById = useMemo(() => {
+    const metrics = new Map<string, PortfolioMetrics>()
+    portfolios.forEach(p => {
+      metrics.set(p.id, calculatePortfolioMetrics(metricAssetsFor(p.assets), p.cashBalances, fxRates))
+    })
+    return metrics
+  }, [portfolios, metricAssetsFor, fxRates])
+
+  const globalMetrics = useMemo(() =>
+    calculatePortfolioMetrics(metricAssetsFor(portfolios.flatMap(p => p.assets)), globalCashBalances, fxRates),
+    [portfolios, metricAssetsFor, globalCashBalances, fxRates]
+  )
+
   // ── Global totals — formule stricte CHF (spec) ───────────────────────────
   // Étape 1: tout en CHF via prix natifs, Étape 2: convertir vers devise user
 
   // cost_chf = Σ qty × avgBuyPrice_native / (fxRates as Record<string,number>)[native]
-  const totalCostCHF = portfolios.reduce((s, p) => {
-    return s + p.assets
-      .filter(a => a.assetClass !== "cash")
-      .reduce((ss, a) => {
-        const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
-        const rate = (fxRates as Record<string,number>)[nativeCurr] ?? 1
-        return ss + (a.costBasisChf ?? (a.avgBuyPrice * a.quantity) / rate)
-      }, 0)
-  }, 0)
+  const totalCostCHF = globalMetrics.investedChf
 
   // value_chf = Σ qty × currentPrice_native / (fxRates as Record<string,number>)[native]
-  const totalValueCHF = portfolios.reduce((s, p) => {
-    return s + p.assets
-      .filter(a => a.assetClass !== "cash")
-      .reduce((ss, a) => {
-        const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
-        const rate = (fxRates as Record<string,number>)[nativeCurr] ?? 1
-        const nativePrice = liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice
-        return ss + (nativePrice * a.quantity) / rate
-      }, 0)
-  }, 0)
+  const totalNetWorthCHF = globalMetrics.portfolioValueChf
 
   // Convertir CHF → devise user
   const userRate    = (fxRates as Record<string,number>)[currency] ?? 1
   const totalCost   = totalCostCHF  * userRate
-  const totalValue  = totalValueCHF * userRate
-  const totalPnl    = totalValue - totalCost
-  const totalPnlPct = totalCostCHF > 0 ? ((totalValueCHF - totalCostCHF) / totalCostCHF) * 100 : 0
+  const totalValue  = totalNetWorthCHF * userRate
+  const totalPnl    = globalMetrics.totalPnlChf * userRate
+  const totalPnlPct = globalMetrics.totalReturnPercent
 
   const allAssets = portfolios.flatMap(p => p.assets)
   const allAssetsEnriched = allAssets.map(a => ({
@@ -666,6 +701,9 @@ export default function PortfoliosPage() {
     acc[a.assetClass] = (acc[a.assetClass] ?? 0) + a.quantity * a.currentPrice
     return acc
   }, {})
+  if (globalMetrics.cashChf > 0) {
+    byClass.cash = (byClass.cash ?? 0) + globalMetrics.cashChf * userRate
+  }
 
   // Annual dividends (simplified)
   // Dividendes annuels calculés depuis les positions réelles (via useLiveDividends en production)
@@ -721,6 +759,7 @@ export default function PortfoliosPage() {
   }
 
   const activePortfolio = portfolios.find(p => p.id === activeTab)
+  const activePortfolioMetrics = activePortfolio ? portfolioMetricsById.get(activePortfolio.id) : undefined
 
   return (
     <div className="flex flex-col">
@@ -844,7 +883,7 @@ export default function PortfoliosPage() {
                     {[
                       { label: "Meilleur", value: best ? ("+" + ((liveEnriched[best.ticker]?.changePct ?? 0).toFixed(1)) + "%") : "--", sub: best?.ticker, color: "#22c55e" },
                       { label: "Pire", value: worst ? (((liveEnriched[worst.ticker]?.changePct ?? 0).toFixed(1)) + "%") : "--", sub: worst?.ticker, color: "#ef4444" },
-                      { label: "Actifs", value: String(allAssets.length), sub: `${portfolios.length} portef.`, color: "#3b82f6" },
+                      { label: "Lignes", value: String(globalMetrics.positionLineCount), sub: `${globalMetrics.uniqueAssetCount} uniques`, color: "#3b82f6" },
                     ].map(s => (
                       <div key={s.label} className="rounded-xl border px-3 py-2.5" style={{ borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.04)" }}>
                         <p className="text-[11px] text-zinc-500">{s.label}</p>
@@ -866,8 +905,8 @@ export default function PortfoliosPage() {
                   </div>
                   {[
                     { label: "Rendement total", value: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + " %", color: totalPnlPct >= 0 ? "#22c55e" : "#ef4444", tooltip: "" },
-                    { label: "vs S&P 500 (YTD)", value: "+~8.00 %  (estimé)", color: "#eab308", tooltip: METRIC_TOOLTIPS.ytd },
-                    { label: "Alpha généré", value: "+~" + Math.max(0, totalPnlPct - 8).toFixed(2) + " % (estimé)", color: "#3b82f6", tooltip: METRIC_TOOLTIPS.alpha },
+                    { label: "Capital investi", value: format(totalCost), color: "var(--text-primary)", tooltip: "" },
+                    { label: "Liquidités", value: format(globalMetrics.cashChf * userRate), color: "#0ea5e9", tooltip: "" },
                   ].map(r => (
                     <div key={r.label} className="flex items-center justify-between">
                       <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
@@ -940,11 +979,12 @@ export default function PortfoliosPage() {
                   </div>
                 </div>
                 {/* Only show benchmark chart when user has real assets */}
-                {allAssets.length > 0 ? (
+                {globalMetrics.positionLineCount > 0 ? (
                   <BenchmarkChart
-                    ticker="SPY"
+                    ticker="__portfolio__"
                     name="Mon Portefeuille"
                     portfolioData={undefined}
+                    portfolioReturnPct={totalPnlPct}
                     height={280}
                     period={period}
                   />
@@ -1064,21 +1104,11 @@ export default function PortfoliosPage() {
                     <span className="text-right">Actions</span>
                   </div>
                   {portfolios.map((p, i) => {
-                    // Formule stricte CHF
-                    const costC = p.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
-                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
-                      return s + (a.costBasisChf ?? (a.avgBuyPrice * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1))
-                    }, 0)
-                    const valC = p.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
-                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
-                      const np = liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice
-                      return s + (np * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1)
-                    }, 0)
+                    const metrics = portfolioMetricsById.get(p.id) ?? calculatePortfolioMetrics(metricAssetsFor(p.assets), p.cashBalances, fxRates)
                     const ur  = (fxRates as Record<string,number>)[currency] ?? 1
-                    const val = valC * ur
-                    const cost = costC * ur
-                    const pnl = val - cost
-                    const pct = costC > 0 ? ((valC - costC) / costC) * 100 : 0
+                    const val = metrics.portfolioValueChf * ur
+                    const pnl = metrics.totalPnlChf * ur
+                    const pct = metrics.totalReturnPercent
                     const dayPnl = p.assets.reduce((s, a) => s + (liveEnriched[a.ticker]?.changePct ?? 0) * (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity / 100, 0)
                     const dayPct = val > 0 ? (dayPnl / val) * 100 : 0
                     const exp   = expandedRows.has(p.id)
@@ -1093,7 +1123,7 @@ export default function PortfoliosPage() {
                             <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                             <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{p.name}</span>
                           </div>
-                          <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>{p.assets.length}</p>
+                          <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>{metrics.positionLineCount}</p>
                           <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
                           <div className="flex justify-end"><ChangeBadge value={dayPct} showIcon={false} /></div>
                           <p className="text-right text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>{pnl >= 0 ? "+" : ""}{format(pnl)}</p>
@@ -1121,7 +1151,7 @@ export default function PortfoliosPage() {
                 </div>
               </div>
               {/* Insights automatiques */}
-              {allAssets.length > 0 && (
+              {globalMetrics.positionLineCount > 0 && (
                 <InsightsWidget
                   assets={allAssetsEnriched.map(a => ({
                     ticker: a.ticker, quantity: a.quantity,
@@ -1175,20 +1205,11 @@ export default function PortfoliosPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   {(() => {
-                    const costC2 = activePortfolio.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
-                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
-                      return s + (a.costBasisChf ?? (a.avgBuyPrice * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1))
-                    }, 0)
-                    const valC2 = activePortfolio.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
-                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
-                      const np = liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice
-                      return s + (np * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1)
-                    }, 0)
+                    const metrics = activePortfolioMetrics ?? calculatePortfolioMetrics(metricAssetsFor(activePortfolio.assets), activePortfolio.cashBalances, fxRates)
                     const ur2  = (fxRates as Record<string,number>)[currency] ?? 1
-                    const val  = valC2 * ur2
-                    const cost = costC2 * ur2
-                    const pnl  = val - cost
-                    const pct  = costC2 > 0 ? ((valC2 - costC2) / costC2) * 100 : 0
+                    const val  = metrics.portfolioValueChf * ur2
+                    const pnl  = metrics.totalPnlChf * ur2
+                    const pct  = metrics.totalReturnPercent
                     return (
                       <>
                         <div className="text-right">
@@ -1231,12 +1252,11 @@ export default function PortfoliosPage() {
                     ))}
                   </div>
                 </div>
-                {/* portfolioData = PORTFOLIO_HISTORY (simulé) car pas de vraie série historique */}
-                {/* La ligne verte représente une simulation — elle divergera de SPY par construction */}
                 <BenchmarkChart
-                  ticker="SPY"
+                  ticker="__portfolio__"
                   name={activePortfolio.name}
-                  portfolioData={allAssets.length > 0 ? PORTFOLIO_HISTORY : undefined}
+                  portfolioData={undefined}
+                  portfolioReturnPct={activePortfolioMetrics?.totalReturnPercent ?? 0}
                   height={260}
                   period={period}
                 />
@@ -1246,7 +1266,7 @@ export default function PortfoliosPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    Positions — {activePortfolio.assets.length} actif{activePortfolio.assets.length !== 1 ? "s" : ""}
+                    Positions — {activePortfolioMetrics?.positionLineCount ?? 0} ligne{(activePortfolioMetrics?.positionLineCount ?? 0) !== 1 ? "s" : ""}
                   </p>
                   <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
                     Cliquer sur une colonne pour trier
@@ -1257,7 +1277,7 @@ export default function PortfoliosPage() {
                   livePrices={liveEnriched}
                   onDeleteAsset={id => handleDeleteAsset(activePortfolio.id, id)}
                   onSellAsset={openSellModal}
-                  totalValue={activePortfolio.assets.reduce((s, a) => s + (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity, 0)}
+                  totalValue={(activePortfolioMetrics?.positionValueChf ?? 0) * ((fxRates as Record<string,number>)[currency] ?? 1)}
                 />
               </div>
 
