@@ -95,6 +95,16 @@ export default function RevenusPage() {
   const [activeTab, setActiveTab] = useState<"liquidite" | "revenus" | "dividends">("liquidite")
   const [showModal, setShowModal] = useState(false)
 
+  // ── États de l'onglet Liquidité (top-level — règle des hooks) ──────────────
+  const [showDepositModal,  setShowDepositModal]  = useState(false)
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false)
+  const [showConvertModal,  setShowConvertModal]  = useState(false)
+  const [actionAmount,      setActionAmount]      = useState("")
+  const [actionCurrency,    setActionCurrency]    = useState<"CHF"|"USD"|"EUR">("CHF")
+  const [actionToCurrency,  setActionToCurrency]  = useState<"CHF"|"USD"|"EUR">("USD")
+  const [actionError,       setActionError]       = useState("")
+  const [actionNote,        setActionNote]        = useState("")
+
   // Total in CHF
   const totalCHF = useMemo(() =>
     revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0),
@@ -205,14 +215,6 @@ export default function RevenusPage() {
             revenue_credit:  "#a855f7",
           }
 
-          const [showDepositModal,  setShowDepositModal]  = useState(false)
-          const [showWithdrawModal, setShowWithdrawModal] = useState(false)
-          const [showConvertModal,  setShowConvertModal]  = useState(false)
-          const [actionAmount,      setActionAmount]      = useState("")
-          const [actionCurrency,    setActionCurrency]    = useState<"CHF"|"USD"|"EUR">("CHF")
-          const [actionToCurrency,  setActionToCurrency]  = useState<"CHF"|"USD"|"EUR">("USD")
-          const [actionError,       setActionError]       = useState("")
-          const [actionNote,        setActionNote]        = useState("")
 
           return (
             <div className="space-y-5">
