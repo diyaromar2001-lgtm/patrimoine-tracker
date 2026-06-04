@@ -425,7 +425,10 @@ export default function DashboardPage() {
           {/* Chart */}
           <section className="lg:col-span-3 space-y-3">
             <div className="flex items-center justify-between">
-              <SectionHeader title="Évolution du patrimoine" description="Valeur nette historique" />
+              {/* Ce graphique affiche la VALEUR des positions (qty actuelle × prix historique)
+                PAS la performance. Les dépôts cash et revenus annexes ne sont pas inclus.
+                Pour la performance hors cashflows, voir l'onglet "Portefeuilles" → benchmark. */}
+            <SectionHeader title="Valeur du patrimoine" description="Positions uniquement · hors dépôts et revenus" />
               <div className="flex gap-1">
                 {PERIODS.map(p => (
                   <button key={p} onClick={() => setPeriod(p)}
@@ -449,8 +452,8 @@ export default function DashboardPage() {
                   {historyLoading
                     ? "Calcul de l'historique réel…"
                     : isReal
-                    ? "Valeurs calculées depuis vos positions réelles · prix Yahoo Finance"
-                    : "Ajoutez des actifs pour voir votre évolution réelle"
+                    ? "Valeur des positions (hors dépôts/retraits) · prix Yahoo Finance · base = valeur actuelle des quantités détenues"
+                    : "Ajoutez des actifs pour voir la valeur de vos positions"
                   }
                 </span>
               </div>

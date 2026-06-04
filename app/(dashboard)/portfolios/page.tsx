@@ -10,6 +10,8 @@ import { InsightsWidget } from "@/components/ui/insights-widget"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
 import { useLivePrices } from "@/hooks/use-live-prices"
+import { usePortfolioHistory } from "@/hooks/use-portfolio-history"
+import type { PortfolioAsset } from "@/app/api/portfolio-history/route"
 import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import { useAppData } from "@/hooks/use-app-data"
@@ -763,6 +765,45 @@ export default function PortfoliosPage() {
   const activePortfolio = portfolios.find(p => p.id === activeTab)
   const activePortfolioMetrics = activePortfolio ? portfolioMetricsById.get(activePortfolio.id) : undefined
 
+  // ── Historique réel pour les BenchmarkCharts ────────────────────────────────
+  // Méthode: qty_actuelle × prix_historique — cashflows/dépôts/retraits exclus (positions only)
+  // → Base 100 normalisée = vraie performance hors cashflows
+  const API_PERIOD_MAP: Record<Period, string> = {
+    "1W": "1W", "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1Y", "MAX": "MAX"
+  }
+
+  // Vue individuelle — portefeuille actif
+  const activePortfolioHistoryAssets = useMemo<PortfolioAsset[]>(() => {
+    if (!activePortfolio) return []
+    return activePortfolio.assets
+      .filter(a => a.assetClass !== "cash")
+      .map(a => ({
+        ticker:         a.ticker,
+        quantity:       a.quantity,
+        nativeCurrency: liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
+      }))
+  }, [activePortfolio, liveEnriched])
+
+  const { history: activePortfolioHistory, loading: activeHistoryLoading } =
+    usePortfolioHistory(activePortfolioHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
+
+  // Vue globale — tous les portefeuilles agrégés
+  const globalHistoryAssets = useMemo<PortfolioAsset[]>(() =>
+    portfolios.flatMap(p =>
+      p.assets
+        .filter(a => a.assetClass !== "cash")
+        .map(a => ({
+          ticker:         a.ticker,
+          quantity:       a.quantity,
+          nativeCurrency: liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
+        }))
+    ),
+    [portfolios, liveEnriched]
+  )
+
+  const { history: globalPortfolioHistory, loading: globalHistoryLoading } =
+    usePortfolioHistory(globalHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
+
   return (
     <div className="flex flex-col">
       <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuilles · ${format(totalValue)}`} />
@@ -980,16 +1021,26 @@ export default function PortfoliosPage() {
                     ))}
                   </div>
                 </div>
-                {/* Only show benchmark chart when user has real assets */}
+                {/* Performance globale hors dépôts/retraits — base 100 vs SPY / MSCI World
+                    Données: qty_actuelle × prix_historique (cashflows exclus)
+                    Un dépôt de cash n'apparaît PAS ici — seules les positions comptent */}
                 {globalMetrics.positionLineCount > 0 ? (
-                  <BenchmarkChart
-                    ticker="__portfolio__"
-                    name="Mon Portefeuille"
-                    portfolioData={undefined}
-                    portfolioReturnPct={totalPnlPct}
-                    height={280}
-                    period={period}
-                  />
+                  <div className="relative">
+                    {globalHistoryLoading && (
+                      <div className="absolute top-2 right-3 flex items-center gap-1.5 z-10">
+                        <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                        <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>chargement…</span>
+                      </div>
+                    )}
+                    <BenchmarkChart
+                      ticker="__portfolio__"
+                      name="Mon Portefeuille"
+                      portfolioData={globalPortfolioHistory.length > 1 ? globalPortfolioHistory : undefined}
+                      portfolioReturnPct={totalPnlPct}
+                      height={280}
+                      period={period}
+                    />
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-40 rounded-xl border"
                     style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", borderStyle: "dashed" }}>
@@ -1254,14 +1305,25 @@ export default function PortfoliosPage() {
                     ))}
                   </div>
                 </div>
-                <BenchmarkChart
-                  ticker="__portfolio__"
-                  name={activePortfolio.name}
-                  portfolioData={undefined}
-                  portfolioReturnPct={activePortfolioMetrics?.totalReturnPercent ?? 0}
-                  height={260}
-                  period={period}
-                />
+                {/* Performance hors dépôts/retraits — base 100 normalisée
+                    Données: qty_actuelle × prix_historique (cashflows exclus)
+                    Comparaison: SPY et MSCI World (base 100 identique) */}
+                <div className="relative">
+                  {activeHistoryLoading && (
+                    <div className="absolute top-2 right-3 flex items-center gap-1.5 z-10">
+                      <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>chargement historique…</span>
+                    </div>
+                  )}
+                  <BenchmarkChart
+                    ticker="__portfolio__"
+                    name={activePortfolio.name}
+                    portfolioData={activePortfolioHistory.length > 1 ? activePortfolioHistory : undefined}
+                    portfolioReturnPct={activePortfolioMetrics?.totalReturnPercent ?? 0}
+                    height={260}
+                    period={period}
+                  />
+                </div>
               </div>
 
               {/* ── Détail du calcul ── */}
