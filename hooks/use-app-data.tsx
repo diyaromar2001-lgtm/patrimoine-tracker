@@ -131,38 +131,43 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   async function migrateCorruptedCostBasis(portfolios: Portfolio[], transactions: Transaction[]) {
     if (migrated) return
     setMigrated(true)
+    // Note: la fonction est protégée par la condition Math.abs(current - totalCostChf) < 1
+    // donc si tous les costBasisChf sont corrects, aucun update DB n'est fait.
 
     const fixes: Array<{ assetId: string; portfolioId: string; qty: number; avg: number; newCostChf: number }> = []
 
+    // RÈGLE SIMPLE: pour TOUTE position non-CHF qui a au moins 1 transaction buy,
+    // on recalcule TOUJOURS le cost_basis_chf via les taux BCE historiques.
+    // Plus de détection "ratio" fragile : la vérité = somme des CHF réellement payés.
     for (const p of portfolios) {
       for (const a of p.assets) {
         if (a.assetClass === "cash") continue
-        const nativeTotal = a.quantity * a.avgBuyPrice
         const native = a.currency
-        // Skip CHF assets — pas de conversion nécessaire
         if (!native || native === "CHF") continue
-        // Skip si costBasisChf semble déjà valide (ratio loin de 1.0)
-        const isCorrupted = a.costBasisChf != null && Math.abs(a.costBasisChf / nativeTotal - 1.0) < 0.03
-        const isMissing   = a.costBasisChf == null || a.costBasisChf <= 0
-        if (!isCorrupted && !isMissing) continue
 
-        // Agrège tous les achats pour cet asset → coût pondéré avec taux historique
         const buys = transactions.filter(t => t.portfolioId === p.id && t.ticker === a.ticker && t.type === "buy")
         if (!buys.length) continue
 
         let totalCostChf = 0
+        let allFetched   = true
         for (const tx of buys) {
           try {
             const res = await fetch(`/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`)
-            if (!res.ok) { totalCostChf = 0; break }
+            if (!res.ok) { allFetched = false; break }
             const hist = await res.json() as { rate: number }
             const rate = hist.rate ?? 1
+            if (rate <= 0) { allFetched = false; break }
             totalCostChf += (tx.quantity * tx.price + (tx.fees ?? 0)) / rate
-          } catch { totalCostChf = 0; break }
+          } catch { allFetched = false; break }
         }
-        if (totalCostChf > 0) {
-          fixes.push({ assetId: a.id, portfolioId: p.id, qty: a.quantity, avg: a.avgBuyPrice, newCostChf: totalCostChf })
-        }
+
+        if (!allFetched || totalCostChf <= 0) continue
+
+        // Compare au costBasisChf actuel — n'applique le fix QUE si différent (>1 CHF)
+        const current = a.costBasisChf ?? 0
+        if (Math.abs(current - totalCostChf) < 1) continue
+
+        fixes.push({ assetId: a.id, portfolioId: p.id, qty: a.quantity, avg: a.avgBuyPrice, newCostChf: totalCostChf })
       }
     }
 
@@ -174,7 +179,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
     if (fixes.length > 0) {
       console.log(`[AppData] Migration: ${fixes.length} asset(s) corrigé(s) avec taux BCE historiques`)
-      // Re-fetch pour appliquer les corrections au state
       const fresh = await Q.fetchPortfolios()
       if (fresh) setPortfolios(fresh)
     }
