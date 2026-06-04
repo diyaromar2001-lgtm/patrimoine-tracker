@@ -475,12 +475,14 @@ function HoldingsTable({
           ? origPrice * asset.quantity / rateToChf          // natif → CHF
           : livePriceUserCurr * asset.quantity               // déjà en devise user (CHF si user=CHF)
 
-        const legacyCostCHF = nativeAvg * asset.quantity / rateToChf
-        const costCHF   = asset.costBasisChf != null && asset.costBasisChf > 0
-          ? asset.costBasisChf
-          : legacyCostCHF
+        // TOUJOURS utiliser le même taux FX actuel pour les deux membres (valueCHF et costCHF)
+        // → jamais utiliser asset.costBasisChf ici : il peut être stocké en USD natif (pas en CHF)
+        //   ce qui donnerait (337 CHF - 446 USD_as_CHF) = -109 CHF FAUX
+        // La cohérence pnlAmount / pnlPct est garantie quand les deux utilisent rateToChf
+        const costCHF = nativeAvg * asset.quantity / rateToChf
 
-        const pnlUserCurr = (valueCHF - costCHF) * ((fxRates as Record<string,number>)[currency] ?? 1)
+        const userRate    = ((fxRates as Record<string,number>)[currency] ?? 1)
+        const pnlUserCurr = (valueCHF - costCHF) * userRate
 
         // ─ Avg price converted to user's currency (for display) ────────────
         const avgPriceUserCurr = convert(nativeAvg, origCurrency as AppCurrency)
@@ -1048,65 +1050,47 @@ export default function PortfoliosPage() {
 
               {/* 3 stat cards */}
               <div className="grid gap-4 sm:grid-cols-3">
-                {/* Performance */}
-                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4" style={{ color: "#22c55e" }} />
-                    <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Performance</p>
-                  </div>
+                {/* Vue rapide — 3 colonnes compactes */}
+                <div className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border"
+                  style={{ borderColor: "var(--border)", backgroundColor: "var(--border)" }}>
                   {[
-                    { label: "Rendement total", value: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + " %", color: totalPnlPct >= 0 ? "#22c55e" : "#ef4444", tooltip: "" },
-                    { label: "Capital investi", value: format(totalCost), color: "var(--text-primary)", tooltip: "" },
-                    { label: "Liquidités", value: format(globalMetrics.cashChf * userRate), color: "#0ea5e9", tooltip: "" },
-                  ].map(r => (
-                    <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-                        {r.label}
-                        {r.tooltip && <Tooltip content={r.tooltip} icon />}
-                      </span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: r.color }}>{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Risk */}
-                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4" style={{ color: "#a78bfa" }} />
-                    <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Risque</p>
-                  </div>
-                  {[
-                    { label: "Bêta (vs SPY)",    value: "~0.92  (estimé)",  tooltip: METRIC_TOOLTIPS.beta   },
-                    { label: "Volatilité 30j",   value: "~14.20 %  (estimé)", tooltip: ""                    },
-                    { label: "Ratio de Sharpe",  value: "~1.18  (estimé)",  tooltip: METRIC_TOOLTIPS.sharpe  },
-                  ].map(r => (
-                    <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-                        {r.label}
-                        {r.tooltip && <Tooltip content={r.tooltip} icon />}
-                      </span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Income */}
-                <div className="rounded-xl border p-5 space-y-3" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                  <div className="flex items-center gap-2">
-                    <BarChart2 className="h-4 w-4" style={{ color: "#f59e0b" }} />
-                    <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Revenus</p>
-                  </div>
-                  {[
-                    { label: "Dividendes annuels",  value: format(annualDivs), color: "#22c55e", tooltip: "" },
-                    { label: "Prochain versement",  value: "dans 38j",         color: "",         tooltip: "" },
-                    { label: "Yield on cost",        value: ((annualDivs / totalCost) * 100).toFixed(2) + " %", color: "", tooltip: METRIC_TOOLTIPS.yieldOnCost },
-                  ].map(r => (
-                    <div key={r.label} className="flex items-center justify-between">
-                      <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-                        {r.label}
-                        {(r as {tooltip?: string}).tooltip && <Tooltip content={(r as {tooltip: string}).tooltip} icon />}
-                      </span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: (r as {color?: string}).color ?? "var(--text-primary)" }}>{r.value}</span>
+                    {
+                      icon: TrendingUp, iconColor: "#22c55e", label: "Performance",
+                      rows: [
+                        { k: "Rendement", v: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + "%", c: totalPnlPct >= 0 ? "#22c55e" : "#ef4444" },
+                        { k: "P&L latent", v: (totalPnl >= 0 ? "+" : "") + format(totalPnl), c: totalPnl >= 0 ? "#22c55e" : "#ef4444" },
+                        { k: "Capital", v: format(totalCost), c: "var(--text-primary)" },
+                      ],
+                    },
+                    {
+                      icon: Activity, iconColor: "#a78bfa", label: "Risque",
+                      rows: [
+                        { k: "Bêta (SPY)", v: "~0.92", c: "var(--text-primary)" },
+                        { k: "Volatilité", v: "~14.2%", c: "var(--text-primary)" },
+                        { k: "Sharpe",     v: "~1.18",  c: "var(--text-primary)" },
+                      ],
+                    },
+                    {
+                      icon: BarChart2, iconColor: "#f59e0b", label: "Revenus",
+                      rows: [
+                        { k: "Dividendes / an", v: format(annualDivs), c: "#22c55e" },
+                        { k: "Yield on cost", v: totalCost > 0 ? ((annualDivs / totalCost) * 100).toFixed(2) + "%" : "—", c: "var(--text-primary)" },
+                        { k: "Liquidités", v: format(globalMetrics.cashChf * userRate), c: "#0ea5e9" },
+                      ],
+                    },
+                  ].map(({ icon: Icon, iconColor, label, rows }) => (
+                    <div key={label} className="px-4 py-3 space-y-2"
+                      style={{ backgroundColor: "var(--bg-elevated)" }}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Icon className="h-3.5 w-3.5" style={{ color: iconColor }} />
+                        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>{label}</span>
+                      </div>
+                      {rows.map(r => (
+                        <div key={r.k} className="flex items-center justify-between gap-2">
+                          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{r.k}</span>
+                          <span className="text-[11px] font-semibold tabular-nums" style={{ color: r.c }}>{r.v}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

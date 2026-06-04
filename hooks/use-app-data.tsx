@@ -514,8 +514,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   /** Retrait de liquidité globale */
   async function withdrawGlobalCash(amount: number, currency: keyof GlobalCash, note?: string): Promise<{ ok: boolean; error?: string }> {
-    // Tolérance flottante : évite que 0.10 < 0.10 donne true à cause des arrondis JS
-    if (globalCash[currency] < amount - 0.000001) {
+    // Arrondir à 8 décimales avant comparaison — évite 0.09999... < 0.10 = true (float JS)
+    const available = Math.round(globalCash[currency] * 1e8) / 1e8
+    const needed    = Math.round(amount * 1e8) / 1e8
+    if (available < needed) {
       return { ok: false, error: `Solde insuffisant : ${globalCash[currency].toFixed(2)} ${currency} disponible, ${amount.toFixed(2)} requis.` }
     }
     const newCash = { ...globalCash, [currency]: globalCash[currency] - amount }
