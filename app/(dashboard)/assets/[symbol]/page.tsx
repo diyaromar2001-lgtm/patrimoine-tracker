@@ -61,16 +61,17 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
       .then(data => {
         const p = data[decodedSymbol]
         if (p) {
+          const displayPrice = p[currency.toLowerCase() as "chf" | "usd" | "eur"] ?? p.chf ?? p.originalPrice ?? 0
           setQuote({
             symbol:      decodedSymbol,
             shortName:   decodedSymbol,
-            regularMarketPrice:         p.price,
-            regularMarketChange:        p.change,
+            regularMarketPrice:         displayPrice,
+            regularMarketChange:        displayPrice * ((p.changePct ?? 0) / 100),
             regularMarketChangePercent: p.changePct,
-            regularMarketDayHigh:       p.price * 1.02,
-            regularMarketDayLow:        p.price * 0.98,
-            fiftyTwoWeekHigh:           p.price * 1.35,
-            fiftyTwoWeekLow:            p.price * 0.65,
+            regularMarketDayHigh:       displayPrice * 1.02,
+            regularMarketDayLow:        displayPrice * 0.98,
+            fiftyTwoWeekHigh:           displayPrice * 1.35,
+            fiftyTwoWeekLow:            displayPrice * 0.65,
             marketCap:                  null,
             trailingPE:                 null,
             forwardPE:                  null,
@@ -84,9 +85,20 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
-  }, [decodedSymbol])
+  }, [decodedSymbol, currency])
 
-  const isPos = (quote?.regularMarketChangePercent ?? 0) >= 0
+  const userRate = (fxRates as Record<string, number>)[currency] ?? 1
+  const positionPrice = quote?.regularMarketPrice ?? heldAsset?.currentPrice ?? 0
+  const positionValueChf = heldAsset ? (positionPrice * heldAsset.quantity) / userRate : 0
+  const legacyCostChf = heldAsset
+    ? (heldAsset.avgBuyPrice * heldAsset.quantity) / ((fxRates as Record<string, number>)[heldAsset.currency] ?? 1)
+    : 0
+  const positionCostChf = heldAsset ? (heldAsset.costBasisChf ?? legacyCostChf) : 0
+  const positionPnlChf = positionValueChf - positionCostChf
+  const positionPnlPct = positionCostChf > 0 ? (positionPnlChf / positionCostChf) * 100 : 0
+  const positionPnlDisplay = positionPnlChf * userRate
+
+  const isPos = heldAsset ? positionPnlChf >= 0 : (quote?.regularMarketChangePercent ?? 0) >= 0
   const color = isPos ? "#22c55e" : "#ef4444"
 
   return (
@@ -133,7 +145,10 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
                   <div className="flex items-center gap-2 justify-end mt-1">
                     {isPos ? <TrendingUp className="h-4 w-4" style={{ color }} /> : <TrendingDown className="h-4 w-4" style={{ color }} />}
                     <span className="text-sm tabular-nums font-medium" style={{ color }}>
-                      {isPos ? "+" : ""}{format(quote.regularMarketChange)} ({isPos ? "+" : ""}{quote.regularMarketChangePercent.toFixed(2)}%)
+                      {heldAsset
+                        ? `${positionPnlDisplay >= 0 ? "+" : ""}${format(positionPnlDisplay)} (${positionPnlPct >= 0 ? "+" : ""}${positionPnlPct.toFixed(2)}%)`
+                        : `${isPos ? "+" : ""}${format(quote.regularMarketChange)} (${isPos ? "+" : ""}${quote.regularMarketChangePercent.toFixed(2)}%)`
+                      }
                     </span>
                   </div>
                 </div>
@@ -178,12 +193,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
                     { label: "Prix moyen",     value: format(heldAsset.avgBuyPrice) },
                     { label: "Valeur actuelle",value: format((quote?.regularMarketPrice ?? heldAsset.currentPrice) * heldAsset.quantity) },
                     { label: "P&L total",      value: (() => {
-                      const current = quote?.regularMarketPrice ?? heldAsset.currentPrice
-                      const userRate = (fxRates as Record<string, number>)[currency] ?? 1
-                      const valueChf = (current * heldAsset.quantity) / userRate
-                      const costChf = heldAsset.costBasisChf ?? valueChf
-                      const pnl = (valueChf - costChf) * userRate
-                      return (pnl >= 0 ? "+" : "") + format(pnl)
+                      return (positionPnlDisplay >= 0 ? "+" : "") + format(positionPnlDisplay)
                     })() },
                   ].map(s => (
                     <div key={s.label}>
