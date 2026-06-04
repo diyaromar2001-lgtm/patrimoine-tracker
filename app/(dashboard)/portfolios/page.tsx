@@ -313,10 +313,14 @@ function HoldingsTable({
           const liveData      = livePrices[asset.ticker]
           const livePrice     = liveData?.price ?? asset.currentPrice
           const dayChangePct  = liveData?.changePct ?? 0
-          const origPrice     = liveData?.originalPrice
+          const origPrice     = liveData?.originalPrice   // prix natif (USD/EUR) — peut être undefined
           const origCurrency  = liveData?.originalCurrency ?? asset.currency
           const nativeAvg     = asset.avgBuyPrice
-          const pnlPct        = nativeAvg > 0 ? ((origPrice ?? livePrice) - nativeAvg) / nativeAvg * 100 : 0
+          // ⚠️ Ne jamais utiliser livePrice (déjà converti CHF) comme fallback de origPrice (natif USD)
+          // Si origPrice indisponible → on ne peut pas calculer un % fiable → afficher 0
+          const pnlPct = (origPrice != null && nativeAvg > 0)
+            ? ((origPrice - nativeAvg) / nativeAvg) * 100
+            : 0
           const val           = livePrice * asset.quantity
           const color         = ASSET_CLASS_COLORS[asset.assetClass]
 
@@ -432,19 +436,35 @@ function HoldingsTable({
         // ─ Value in user's currency ─────────────────────────────────────────
         const val = livePriceUserCurr * asset.quantity
 
-        // ─ P&L : formule stricte CHF (spec) ─────────────────────────────────
-        //   cost_chf  = qty × avgBuyPrice_native / (fxRates as Record<string,number>)[native]
-        //   value_chf = qty × currentPrice_native / (fxRates as Record<string,number>)[native]
-        //   pnlPct    = (value_chf - cost_chf) / cost_chf × 100  (currency-independent)
-        const nativeCurrent = origPrice ?? asset.currentPrice
-        const nativeAvg     = asset.avgBuyPrice  // in native currency
+        // ─ P&L : TOUJOURS comparer native vs native (pas CHF vs USD) ────────
+        //
+        //   RÈGLE: pnlPct = (origPrice_USD - avgBuyPrice_USD) / avgBuyPrice_USD
+        //   Ne JAMAIS utiliser asset.currentPrice (déjà converti CHF) comme proxy
+        //   de origPrice — ce serait comparer CHF avec USD.
+        //
+        //   Pour le montant CHF: utiliser costBasisChf (historique figé)
+        //   et valeur convertie depuis le prix natif.
 
+        const nativeAvg = asset.avgBuyPrice  // en devise native (USD/EUR/CHF)
         const rateToChf = ((fxRates as Record<string,number>)[origCurrency] ?? 1)
-        const legacyCostCHF = nativeAvg * asset.quantity / rateToChf
-        const costCHF   = asset.costBasisChf ?? legacyCostCHF
-        const valueCHF  = nativeCurrent * asset.quantity / rateToChf
 
-        const pnlPct      = costCHF > 0 ? ((valueCHF - costCHF) / costCHF) * 100 : 0
+        // P&L %: toujours native vs native (currency-independent)
+        const pnlPct = (origPrice != null && nativeAvg > 0)
+          ? ((origPrice - nativeAvg) / nativeAvg) * 100
+          : 0
+
+        // Montant P&L en devise user:
+        //   valueCHF = prix natif → CHF via fxRates (ou livePriceUserCurr si pas de native)
+        //   costCHF  = costBasisChf (taux historique) ou fallback native avg
+        const valueCHF = origPrice != null
+          ? origPrice * asset.quantity / rateToChf          // natif → CHF
+          : livePriceUserCurr * asset.quantity               // déjà en devise user (CHF si user=CHF)
+
+        const legacyCostCHF = nativeAvg * asset.quantity / rateToChf
+        const costCHF   = asset.costBasisChf != null && asset.costBasisChf > 0
+          ? asset.costBasisChf
+          : legacyCostCHF
+
         const pnlUserCurr = (valueCHF - costCHF) * ((fxRates as Record<string,number>)[currency] ?? 1)
 
         // ─ Avg price converted to user's currency (for display) ────────────
@@ -519,7 +539,7 @@ function HoldingsTable({
               </div>
               <div className="flex items-center justify-end gap-1">
                 <button
-                  onClick={() => onSellAsset(asset, nativeCurrent, origCurrency)}
+                  onClick={() => onSellAsset(asset, origPrice ?? livePriceUserCurr, origCurrency)}
                   className="flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium hover:bg-green-500/20 transition-colors"
                   style={{ color: "var(--gain)" }}
                   title="Vendre"
