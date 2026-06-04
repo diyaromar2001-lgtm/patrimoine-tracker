@@ -690,13 +690,16 @@ export default function PortfoliosPage() {
     try {
       const res       = await fetch("/api/prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tickers: [result.ticker] }) })
       const data      = await res.json()
-      const livePrice = data[result.ticker]?.price ?? 0
+      const live      = data[result.ticker]
+      const livePrice = live?.originalPrice ?? live?.chf ?? live?.price ?? 0
       await dbAddAsset(portfolioId, {
         id: `a${Date.now()}`, portfolioId,
         ticker: result.ticker, name: result.name,
         assetClass: result.type as AssetClass,
         quantity: 1, avgBuyPrice: livePrice || 0,
-        currency: "CHF",
+        currency: live?.originalCurrency ?? "CHF",
+        costBasisChf: live?.chf ?? livePrice,
+        costBasisSource: "computed" as const,
       })
     } catch {
       await dbAddAsset(portfolioId, {

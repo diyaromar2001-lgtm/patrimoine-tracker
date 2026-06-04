@@ -1,12 +1,11 @@
 "use client"
 
-import { useState, useEffect, useRef, use } from "react"
+import { useState, useEffect, use } from "react"
 import { Topbar } from "@/components/layout/topbar"
 import { LiveChart } from "@/components/charts/live-chart"
-import { ChangeBadge } from "@/components/ui/badge"
 import { useCurrency } from "@/hooks/use-currency"
 import { useAppData } from "@/hooks/use-app-data"
-import { Loader2, TrendingUp, TrendingDown, Star, Plus, ArrowLeft, AlertCircle } from "lucide-react"
+import { Loader2, TrendingUp, TrendingDown, Star, Plus, ArrowLeft, Pencil, Save, X } from "lucide-react"
 import Link from "next/link"
 
 interface QuoteData {
@@ -38,11 +37,15 @@ function formatLargeNumber(n: number | null): string {
 export default function AssetDetailPage(props: { params: Promise<{ symbol: string }> }) {
   const { symbol } = use(props.params)
   const decodedSymbol = decodeURIComponent(symbol).toUpperCase()
-  const { portfolios } = useAppData()
+  const { portfolios, updateAssetCostBasis } = useAppData()
 
   const [quote, setQuote]     = useState<QuoteData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
+  const [costModalOpen, setCostModalOpen] = useState(false)
+  const [costDraft, setCostDraft] = useState("")
+  const [costError, setCostError] = useState("")
+  const [savingCost, setSavingCost] = useState(false)
   const { format, fxRates, currency } = useCurrency()
 
   // Find if this asset is in any of the user's real portfolios
@@ -64,7 +67,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
           const displayPrice = p[currency.toLowerCase() as "chf" | "usd" | "eur"] ?? p.chf ?? p.originalPrice ?? 0
           setQuote({
             symbol:      decodedSymbol,
-            shortName:   decodedSymbol,
+            shortName:   p.resolvedSymbol ? `${decodedSymbol} · ${p.resolvedSymbol}` : decodedSymbol,
             regularMarketPrice:         displayPrice,
             regularMarketChange:        displayPrice * ((p.changePct ?? 0) / 100),
             regularMarketChangePercent: p.changePct,
@@ -76,7 +79,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
             trailingPE:                 null,
             forwardPE:                  null,
             dividendYield:              null,
-            currency:                   p.currency ?? "CHF",
+            currency:                   p.originalCurrency ?? "CHF",
             regularMarketVolume:        0,
           })
         } else {
@@ -96,10 +99,38 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
   const positionCostChf = heldAsset ? (heldAsset.costBasisChf ?? legacyCostChf) : 0
   const positionPnlChf = positionValueChf - positionCostChf
   const positionPnlPct = positionCostChf > 0 ? (positionPnlChf / positionCostChf) * 100 : 0
+  const positionCostDisplay = positionCostChf * userRate
   const positionPnlDisplay = positionPnlChf * userRate
 
   const isPos = heldAsset ? positionPnlChf >= 0 : (quote?.regularMarketChangePercent ?? 0) >= 0
   const color = isPos ? "#22c55e" : "#ef4444"
+
+  function openCostBasisModal() {
+    if (!heldAsset) return
+    setCostDraft(String(Number(positionCostChf || 0).toFixed(2)))
+    setCostError("")
+    setCostModalOpen(true)
+  }
+
+  async function saveCostBasis() {
+    if (!heldAsset) return
+    const nextCost = Number(costDraft.replace(",", "."))
+    if (!Number.isFinite(nextCost) || nextCost <= 0) {
+      setCostError("Saisis un montant CHF positif.")
+      return
+    }
+
+    setSavingCost(true)
+    setCostError("")
+    try {
+      await updateAssetCostBasis(heldAsset.portfolioId, heldAsset.id, nextCost)
+      setCostModalOpen(false)
+    } catch {
+      setCostError("Impossible d'enregistrer le coût historique.")
+    } finally {
+      setSavingCost(false)
+    }
+  }
 
   return (
     <div className="flex flex-col">
@@ -183,15 +214,27 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
             {/* Your position */}
             {heldAsset && (
               <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "#22c55e40" }}>
-                <p className="text-xs font-semibold mb-3 flex items-center gap-2" style={{ color: "#22c55e" }}>
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
-                  Votre position
-                </p>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs font-semibold flex items-center gap-2" style={{ color: "#22c55e" }}>
+                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                    Votre position
+                  </p>
+                  <button
+                    type="button"
+                    onClick={openCostBasisModal}
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-800"
+                    style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modifier le coût historique
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
                   {[
                     { label: "Quantité",      value: String(heldAsset.quantity) },
                     { label: "Prix moyen",     value: format(heldAsset.avgBuyPrice) },
                     { label: "Valeur actuelle",value: format((quote?.regularMarketPrice ?? heldAsset.currentPrice) * heldAsset.quantity) },
+                    { label: "Investi",        value: format(positionCostDisplay) },
                     { label: "P&L total",      value: (() => {
                       return (positionPnlDisplay >= 0 ? "+" : "") + format(positionPnlDisplay)
                     })() },
@@ -223,6 +266,68 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
           </>
         )}
       </div>
+      {costModalOpen && heldAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div
+            className="w-full max-w-sm rounded-xl border p-5 shadow-2xl"
+            style={{ backgroundColor: "var(--bg-overlay)", borderColor: "var(--border)" }}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Modifier le coût historique
+                </p>
+                <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  Montant total réellement payé en CHF pour {heldAsset.ticker}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCostModalOpen(false)}
+                className="rounded-lg p-1.5 transition-colors hover:bg-zinc-800"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Coût historique total (CHF)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={costDraft}
+              onChange={e => setCostDraft(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-blue-500"
+              style={{ backgroundColor: "var(--bg-muted)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+            />
+            {costError && <p className="mt-2 text-xs text-red-400">{costError}</p>}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCostModalOpen(false)}
+                className="rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-800"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={saveCostBasis}
+                disabled={savingCost}
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
+                style={{ backgroundColor: "#2563eb" }}
+              >
+                {savingCost ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -18,6 +18,10 @@ const COINGECKO_IDS: Record<string, string> = {
   UNI: "uniswap",     ATOM: "cosmos",      NEAR: "near",
 }
 
+const TICKER_ALIASES: Record<string, string[]> = {
+  VUAA: ["VUAA.L", "VUAA.MI", "VUAA.DE"],
+}
+
 function isCrypto(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") in COINGECKO_IDS }
 function baseTicker(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") }
 
@@ -59,10 +63,12 @@ async function fetchCryptoPrices(tickers: string[]) {
     for (const [id, v] of Object.entries(data)) {
       const ticker = Object.entries(COINGECKO_IDS).find(([, cid]) => cid === id)?.[0]
       if (ticker) out[ticker] = {
+        price: v.chf,
         chf: v.chf, usd: v.usd, eur: v.eur,
         changePct:       v.chf_24h_change ?? 0,
         originalPrice:   v.usd,           // BTC/ETH quoted in USD natively
         originalCurrency:"USD",
+        resolvedSymbol: ticker,
       }
     }
     return out
@@ -70,12 +76,29 @@ async function fetchCryptoPrices(tickers: string[]) {
 }
 
 interface PriceResult {
+  price?:           number  // legacy CHF display price for older callers
   chf:             number
   usd:             number
   eur:             number
   changePct:       number
   originalPrice:   number  // price in the asset's native currency
   originalCurrency:string  // e.g. "USD" for US stocks, "EUR" for FR stocks
+  resolvedSymbol?: string
+}
+
+async function resolveYahooQuote(ticker: string): Promise<{ requested: string; quote: Record<string, unknown> } | null> {
+  const candidates = [...new Set([ticker, ...(TICKER_ALIASES[ticker.toUpperCase()] ?? [])])]
+  for (const candidate of candidates) {
+    try {
+      const quote = await yf.quote(candidate) as Record<string, unknown> | undefined
+      if (quote?.symbol && quote.regularMarketPrice) {
+        return { requested: ticker, quote }
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null
 }
 
 export async function POST(req: NextRequest) {
@@ -93,24 +116,27 @@ export async function POST(req: NextRequest) {
       const cached = await cacheFetch(
         `yf:quotes:${stockTickers.sort().join(",")}`,
         async () => {
-          const result = await yf.quote(stockTickers)
-          return Array.isArray(result) ? result : [result]
+          return Promise.all(stockTickers.map(t => resolveYahooQuote(t)))
         },
         20
-      ) as Array<Record<string, unknown>>
+      ) as Array<{ requested: string; quote: Record<string, unknown> } | null>
 
-      for (const q of cached) {
+      for (const item of cached) {
+        if (!item) continue
+        const q = item.quote
         if (!q?.symbol || !q.regularMarketPrice) continue
         const nativePrice    = q.regularMarketPrice as number
         const nativeCurrency = ((q.currency as string) ?? "USD") as AppCurrency
         // Convert to all 3 display currencies using live FX rates
         const converted = await toAllCurrencies(nativePrice, nativeCurrency)
 
-        out[q.symbol as string] = {
+        out[item.requested] = {
+          price: converted.chf,
           ...converted,
           changePct:       (q.regularMarketChangePercent as number) ?? 0,
           originalPrice:   nativePrice,
           originalCurrency: nativeCurrency,
+          resolvedSymbol:   q.symbol as string,
         }
       }
     } catch { /* Yahoo rate-limit — return empty */ }
@@ -121,7 +147,7 @@ export async function POST(req: NextRequest) {
     const prices = await fetchCryptoPrices(cryptoTickers) as Record<string, PriceResult>
     for (const t of cryptoTickers) {
       const p = prices[baseTicker(t)]
-      out[t] = p ?? { chf: 0, usd: 0, eur: 0, changePct: 0, originalPrice: 0, originalCurrency: "USD" }
+      out[t] = p ?? { price: 0, chf: 0, usd: 0, eur: 0, changePct: 0, originalPrice: 0, originalCurrency: "USD", resolvedSymbol: t }
     }
   }
 
