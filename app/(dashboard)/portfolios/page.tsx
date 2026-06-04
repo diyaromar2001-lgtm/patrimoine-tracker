@@ -241,17 +241,32 @@ function HoldingsTable({
   livePrices,
   onDeleteAsset,
   onSellAsset,
+  onEditAsset,
   totalValue,
 }: {
-  portfolio:   Portfolio
-  livePrices:  Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }>
+  portfolio:    Portfolio
+  livePrices:   Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }>
   onDeleteAsset: (assetId: string) => void
-  onSellAsset: (asset: Asset, price: number, currency: string) => void
-  totalValue:  number
+  onSellAsset:  (asset: Asset, price: number, currency: string) => void
+  onEditAsset:  (asset: Asset, price: number, currency: string) => void
+  totalValue:   number
 }) {
   const { format, convert, fxRates, currency } = useCurrency()
   const [sortKey, setSortKey] = useState<SortKey>("value")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Ferme le menu si clic hors
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
   // JS-based responsive — avoids Tailwind v4 hidden/md:grid issues
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -537,7 +552,8 @@ function HoldingsTable({
                   {weight.toFixed(0)}%
                 </span>
               </div>
-              <div className="flex items-center justify-end gap-1">
+              <div className="flex items-center justify-end gap-1" ref={openMenuId === asset.id ? menuRef : null}>
+                {/* Bouton Vendre */}
                 <button
                   onClick={() => onSellAsset(asset, origPrice ?? livePriceUserCurr, origCurrency)}
                   className="flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium hover:bg-green-500/20 transition-colors"
@@ -547,9 +563,56 @@ function HoldingsTable({
                   <ArrowUpRight className="h-3.5 w-3.5" />
                   Vendre
                 </button>
-                <button onClick={() => onDeleteAsset(asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-500/20 transition-colors" style={{ color: "var(--text-tertiary)" }} title="Supprimer">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+
+                {/* Menu trois points */}
+                <div className="relative">
+                  <button
+                    onClick={e => { e.stopPropagation(); setOpenMenuId(openMenuId === asset.id ? null : asset.id) }}
+                    className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-zinc-700 transition-colors"
+                    style={{ color: "var(--text-tertiary)" }}
+                    title="Options"
+                  >
+                    <span className="text-sm font-bold leading-none" style={{ letterSpacing: "0.05em" }}>···</span>
+                  </button>
+
+                  <AnimatePresence>
+                    {openMenuId === asset.id && (
+                      <motion.div
+                        ref={menuRef}
+                        initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                        transition={{ duration: 0.1 }}
+                        className="absolute right-0 top-full mt-1 z-50 w-40 rounded-xl border overflow-hidden shadow-2xl"
+                        style={{ backgroundColor: "var(--bg-overlay)", borderColor: "var(--border)", boxShadow: "0 16px 40px rgba(0,0,0,0.7)" }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        {/* Modifier */}
+                        <button
+                          onClick={() => { setOpenMenuId(null); onEditAsset(asset, origPrice ?? livePriceUserCurr, origCurrency) }}
+                          className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-zinc-700/60 transition-colors"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+                          Modifier
+                        </button>
+
+                        {/* Separator */}
+                        <div className="h-px mx-3" style={{ backgroundColor: "var(--border)" }} />
+
+                        {/* Supprimer */}
+                        <button
+                          onClick={() => { setOpenMenuId(null); onDeleteAsset(asset.id) }}
+                          className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-500/10 transition-colors"
+                          style={{ color: "#ef4444" }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Supprimer
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
           </div>
@@ -581,6 +644,26 @@ export default function PortfoliosPage() {
 
   function openTxModal(portfolioId?: string) {
     setTxModal({ defaultPortfolioId: portfolioId ?? portfolios[0]?.id ?? "" })
+  }
+
+  function openEditModal(asset: Asset, price: number, currency: string) {
+    setTxModal({
+      defaultPortfolioId: asset.portfolioId,
+      initial: {
+        portfolioId:   asset.portfolioId,
+        ticker:        asset.ticker,
+        assetName:     asset.name,
+        assetClass:    asset.assetClass,
+        selectedClass: (["stock","etf","crypto"].includes(asset.assetClass) ? asset.assetClass : "stock") as "stock"|"etf"|"crypto",
+        type:          "buy",
+        quantity:      "",
+        price:         String(Number(price || asset.currentPrice || 0).toFixed(4)),
+        nativeCurrency: currency || asset.currency || "CHF",
+        fees:          "1",
+        date:          new Date().toISOString().slice(0, 10),
+        notes:         "",
+      },
+    })
   }
 
   function openSellModal(asset: Asset, price: number, currency: string) {
@@ -1204,6 +1287,7 @@ export default function PortfoliosPage() {
                               livePrices={liveEnriched}
                               onDeleteAsset={id => handleDeleteAsset(p.id, id)}
                               onSellAsset={openSellModal}
+                              onEditAsset={openEditModal}
                               totalValue={val}
                             />
                           </div>
@@ -1410,6 +1494,7 @@ export default function PortfoliosPage() {
                   livePrices={liveEnriched}
                   onDeleteAsset={id => handleDeleteAsset(activePortfolio.id, id)}
                   onSellAsset={openSellModal}
+                  onEditAsset={openEditModal}
                   totalValue={(activePortfolioMetrics?.positionValueChf ?? 0) * ((fxRates as Record<string,number>)[currency] ?? 1)}
                 />
               </div>
