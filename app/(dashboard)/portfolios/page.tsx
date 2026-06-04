@@ -463,32 +463,29 @@ function HoldingsTable({
         const nativeAvg = asset.avgBuyPrice  // en devise native (USD/EUR/CHF)
         const rateToChf = ((fxRates as Record<string,number>)[origCurrency] ?? 1)
 
-        // P&L %: toujours native vs native (currency-independent)
-        const pnlPct = (origPrice != null && nativeAvg > 0)
-          ? ((origPrice - nativeAvg) / nativeAvg) * 100
-          : 0
-
-        // Montant P&L en devise user:
-        //   valueCHF = prix natif → CHF via fxRates (ou livePriceUserCurr si pas de native)
-        //   costCHF  = costBasisChf (taux historique) ou fallback native avg
+        // Montant P&L : valueCHF vs costCHF en devise de base (CHF)
         const valueCHF = origPrice != null
-          ? origPrice * asset.quantity / rateToChf          // natif → CHF
-          : livePriceUserCurr * asset.quantity               // déjà en devise user (CHF si user=CHF)
+          ? origPrice * asset.quantity / rateToChf
+          : livePriceUserCurr * asset.quantity
 
-        // costCHF : utilise costBasisChf (taux historique achat) si disponible et valide.
-        // DÉTECTION data corrompue : si costBasisChf ≈ nativeAvg × qty (ratio ~1.0),
-        //   la valeur a été stockée en devise native sans conversion FX → fallback.
-        // Exemple : costBasisChf=446 pour MSFT à 446 USD → ratio=1.0 → mauvaise data.
-        //           costBasisChf=689 pour EUNL à 107.31 EUR × 6.89 = 739 → ratio=0.93 → bonne data.
+        // costCHF : costBasisChf (taux historique) si valide, sinon taux actuel
         const legacyCostCHF = nativeAvg * asset.quantity / rateToChf
         const costCHFRaw    = asset.costBasisChf
         const isCorrupted   = costCHFRaw != null && Math.abs(costCHFRaw / (nativeAvg * asset.quantity) - 1.0) < 0.03
-        const costCHF = (costCHFRaw != null && costCHFRaw > 0 && !isCorrupted)
-          ? costCHFRaw      // taux historique — correspond au vrai CHF dépensé
-          : legacyCostCHF   // fallback taux actuel (data corrompue ou absente)
+        const hasValidCost  = costCHFRaw != null && costCHFRaw > 0 && !isCorrupted
+        const costCHF       = hasValidCost ? costCHFRaw! : legacyCostCHF
 
         const userRate    = ((fxRates as Record<string,number>)[currency] ?? 1)
         const pnlUserCurr = (valueCHF - costCHF) * userRate
+
+        // P&L % :
+        //   Si costBasisChf valide → % en CHF (correspond au broker : inclut effet FX)
+        //   Sinon → % natif native/native (currency-independent)
+        const pnlPct = hasValidCost
+          ? (costCHF > 0 ? ((valueCHF - costCHF) / costCHF) * 100 : 0)
+          : (origPrice != null && nativeAvg > 0
+              ? ((origPrice - nativeAvg) / nativeAvg) * 100
+              : 0)
 
         // ─ Avg price converted to user's currency (for display) ────────────
         const avgPriceUserCurr = convert(nativeAvg, origCurrency as AppCurrency)
