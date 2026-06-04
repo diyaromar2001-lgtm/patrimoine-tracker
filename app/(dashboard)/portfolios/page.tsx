@@ -463,29 +463,22 @@ function HoldingsTable({
         const nativeAvg = asset.avgBuyPrice  // en devise native (USD/EUR/CHF)
         const rateToChf = ((fxRates as Record<string,number>)[origCurrency] ?? 1)
 
-        // Montant P&L : valueCHF vs costCHF en devise de base (CHF)
+        // Source unique : costBasisChf (DB) = CHF historique enregistré au taux du jour d'achat.
+        // Le système garantit que cette valeur est toujours en CHF (jamais en devise native).
+        // Fallback rare = taux actuel si data manquante.
         const valueCHF = origPrice != null
           ? origPrice * asset.quantity / rateToChf
           : livePriceUserCurr * asset.quantity
 
-        // costCHF : costBasisChf (taux historique) si valide, sinon taux actuel
-        const legacyCostCHF = nativeAvg * asset.quantity / rateToChf
-        const costCHFRaw    = asset.costBasisChf
-        const isCorrupted   = costCHFRaw != null && Math.abs(costCHFRaw / (nativeAvg * asset.quantity) - 1.0) < 0.03
-        const hasValidCost  = costCHFRaw != null && costCHFRaw > 0 && !isCorrupted
-        const costCHF       = hasValidCost ? costCHFRaw! : legacyCostCHF
+        const costCHF = (asset.costBasisChf != null && asset.costBasisChf > 0)
+          ? asset.costBasisChf
+          : nativeAvg * asset.quantity / rateToChf
 
         const userRate    = ((fxRates as Record<string,number>)[currency] ?? 1)
         const pnlUserCurr = (valueCHF - costCHF) * userRate
 
-        // P&L % :
-        //   Si costBasisChf valide → % en CHF (correspond au broker : inclut effet FX)
-        //   Sinon → % natif native/native (currency-independent)
-        const pnlPct = hasValidCost
-          ? (costCHF > 0 ? ((valueCHF - costCHF) / costCHF) * 100 : 0)
-          : (origPrice != null && nativeAvg > 0
-              ? ((origPrice - nativeAvg) / nativeAvg) * 100
-              : 0)
+        // P&L % CHF-based : correspond au broker (inclut effet FX)
+        const pnlPct = costCHF > 0 ? ((valueCHF - costCHF) / costCHF) * 100 : 0
 
         // ─ Avg price converted to user's currency (for display) ────────────
         const avgPriceUserCurr = convert(nativeAvg, origCurrency as AppCurrency)
@@ -683,10 +676,7 @@ export default function PortfoliosPage() {
     const lastBuy = [...transactions]
       .filter(t => t.portfolioId === asset.portfolioId && t.ticker === asset.ticker && t.type === "buy")
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-    // Pré-rempli avec costBasisChf existant (le vrai CHF historique si disponible)
-    const existingCostChf = asset.costBasisChf
-    const nativeTotal = asset.quantity * asset.avgBuyPrice
-    const isCorrupted = existingCostChf != null && Math.abs(existingCostChf / nativeTotal - 1.0) < 0.03
+    // Pré-rempli avec costBasisChf — la valeur en DB est garantie correcte (migration auto)
     setEditAssetModal({
       asset,
       qty:          String(asset.quantity),
@@ -695,8 +685,8 @@ export default function PortfoliosPage() {
       currency:     asset.currency ?? "CHF",
       date:         lastBuy?.date ?? new Date().toISOString().slice(0, 10),
       notes:        "",
-      costBasisChf: (!isCorrupted && existingCostChf && existingCostChf > 0)
-        ? String(existingCostChf.toFixed(2))
+      costBasisChf: (asset.costBasisChf != null && asset.costBasisChf > 0)
+        ? String(asset.costBasisChf.toFixed(2))
         : "",
     })
   }
@@ -778,13 +768,10 @@ export default function PortfoliosPage() {
     .map(a => {
       const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF"
       const rateToChf  = (fxRates as Record<string,number>)[nativeCurr] ?? 1
-      const nativeTotal = a.quantity * a.avgBuyPrice
-      // Même détection de corruption que HoldingsTable
-      const raw = a.costBasisChf
-      const isCorrupted = raw != null && Math.abs(raw / nativeTotal - 1.0) < 0.03
-      const costBasisChf = (raw != null && raw > 0 && !isCorrupted)
-        ? raw                          // taux historique valide
-        : nativeTotal / rateToChf      // fallback taux actuel
+      // costBasisChf en DB est garanti en CHF historique (migration automatique au load)
+      const costBasisChf = (a.costBasisChf != null && a.costBasisChf > 0)
+        ? a.costBasisChf
+        : (a.quantity * a.avgBuyPrice) / rateToChf
       return {
         ticker: a.ticker,
         quantity: a.quantity,
@@ -1560,46 +1547,7 @@ export default function PortfoliosPage() {
                     <summary className="flex cursor-pointer items-center justify-between px-5 py-3 text-xs font-semibold uppercase tracking-wide select-none hover:bg-zinc-800/40 transition-colors"
                       style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-elevated)" }}>
                       <span>🔍 Détail du calcul</span>
-                      <div className="flex items-center gap-3">
-                        {/* Bouton recalibrer — corrige costBasisChf avec taux historiques BCE */}
-                        <button
-                          onClick={async e => {
-                            e.preventDefault(); e.stopPropagation()
-                            const buys = transactions.filter(t =>
-                              t.portfolioId === activePortfolio.id &&
-                              t.type === "buy" && t.currency && t.currency !== "CHF"
-                            )
-                            if (!buys.length) { alert("Aucune transaction EUR/USD à recalibrer."); return }
-
-                            // Calcul cost basis agrégé par ticker via taux historiques
-                            const costByTicker: Record<string, number> = {}
-                            for (const tx of buys) {
-                              try {
-                                const res  = await fetch(`/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`)
-                                const hist = res.ok ? await res.json() as { rate: number } : { rate: (fxRates as Record<string,number>)[tx.currency as string] ?? 1 }
-                                const rate = hist.rate ?? 1
-                                const cost = (tx.quantity * tx.price + (tx.fees ?? 0)) / rate
-                                costByTicker[tx.ticker] = (costByTicker[tx.ticker] ?? 0) + cost
-                              } catch { /* skip */ }
-                            }
-
-                            // Mise à jour chaque asset
-                            for (const [ticker, costChf] of Object.entries(costByTicker)) {
-                              const asset = activePortfolio.assets.find(a => a.ticker === ticker)
-                              if (asset) {
-                                await doEditAsset(activePortfolio.id, asset.id, asset.quantity, asset.avgBuyPrice, costChf)
-                              }
-                            }
-                            alert(`✅ ${Object.keys(costByTicker).length} position(s) recalibrée(s) avec taux BCE historiques.`)
-                          }}
-                          className="rounded-lg border px-3 py-1.5 text-[10px] font-semibold hover:bg-zinc-700 transition-colors"
-                          style={{ borderColor: "#0ea5e940", color: "#0ea5e9", backgroundColor: "#0ea5e908" }}
-                          title="Recalcule le coût CHF de chaque position avec le vrai taux BCE à la date d'achat"
-                        >
-                          ↻ Recalibrer taux historiques
-                        </button>
-                        <span style={{ color: "var(--text-tertiary)" }}>cliquer pour afficher / masquer</span>
-                      </div>
+                      <span style={{ color: "var(--text-tertiary)" }}>cliquer pour afficher / masquer</span>
                     </summary>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-zinc-800" style={{ backgroundColor: "var(--border)" }}>
                       {[

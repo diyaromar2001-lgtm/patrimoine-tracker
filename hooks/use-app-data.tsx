@@ -115,11 +115,70 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       if (r)  setRevenus(r)
       if (gc) setGlobalCash(gc)
       if (cm) setCashMovements(cm)
+
+      // ── MIGRATION AUTO : corrige les costBasisChf corrompus (1 fois par session) ──
+      // Si costBasisChf ≈ qty × avgBuyPrice (ratio ~1.0) → valeur stockée sans FX
+      // → on recalcule via API BCE avec la date des transactions d'achat
+      if (p && t) await migrateCorruptedCostBasis(p, t)
     } catch (e) {
       console.error("[AppData] refresh failed:", e)
     }
     setLoading(false)
   }, [])
+
+  // ── Migration silencieuse — exécutée 1× par session pour les anciens assets ──
+  const [migrated, setMigrated] = useState(false)
+  async function migrateCorruptedCostBasis(portfolios: Portfolio[], transactions: Transaction[]) {
+    if (migrated) return
+    setMigrated(true)
+
+    const fixes: Array<{ assetId: string; portfolioId: string; qty: number; avg: number; newCostChf: number }> = []
+
+    for (const p of portfolios) {
+      for (const a of p.assets) {
+        if (a.assetClass === "cash") continue
+        const nativeTotal = a.quantity * a.avgBuyPrice
+        const native = a.currency
+        // Skip CHF assets — pas de conversion nécessaire
+        if (!native || native === "CHF") continue
+        // Skip si costBasisChf semble déjà valide (ratio loin de 1.0)
+        const isCorrupted = a.costBasisChf != null && Math.abs(a.costBasisChf / nativeTotal - 1.0) < 0.03
+        const isMissing   = a.costBasisChf == null || a.costBasisChf <= 0
+        if (!isCorrupted && !isMissing) continue
+
+        // Agrège tous les achats pour cet asset → coût pondéré avec taux historique
+        const buys = transactions.filter(t => t.portfolioId === p.id && t.ticker === a.ticker && t.type === "buy")
+        if (!buys.length) continue
+
+        let totalCostChf = 0
+        for (const tx of buys) {
+          try {
+            const res = await fetch(`/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`)
+            if (!res.ok) { totalCostChf = 0; break }
+            const hist = await res.json() as { rate: number }
+            const rate = hist.rate ?? 1
+            totalCostChf += (tx.quantity * tx.price + (tx.fees ?? 0)) / rate
+          } catch { totalCostChf = 0; break }
+        }
+        if (totalCostChf > 0) {
+          fixes.push({ assetId: a.id, portfolioId: p.id, qty: a.quantity, avg: a.avgBuyPrice, newCostChf: totalCostChf })
+        }
+      }
+    }
+
+    // Applique les corrections silencieusement
+    for (const f of fixes) {
+      try {
+        await Q.updateAssetPosition(f.assetId, f.qty, f.avg, f.newCostChf)
+      } catch { /* skip */ }
+    }
+    if (fixes.length > 0) {
+      console.log(`[AppData] Migration: ${fixes.length} asset(s) corrigé(s) avec taux BCE historiques`)
+      // Re-fetch pour appliquer les corrections au state
+      const fresh = await Q.fetchPortfolios()
+      if (fresh) setPortfolios(fresh)
+    }
+  }
 
   useEffect(() => { refresh() }, [refresh])
 
