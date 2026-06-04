@@ -6,8 +6,8 @@ import {
 } from "react"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import * as Q from "@/lib/supabase/queries"
-import type { Portfolio, Transaction, Asset, RevenuAnnexe, CashBalance } from "@/lib/types"
-import { EMPTY_CASH_BALANCE } from "@/lib/types"
+import type { Portfolio, Transaction, Asset, RevenuAnnexe, CashBalance, GlobalCash, CashMovement } from "@/lib/types"
+import { EMPTY_CASH_BALANCE, EMPTY_GLOBAL_CASH } from "@/lib/types"
 import { calculateRealizedPnLEvents, calculateTransactionChfAmounts, chfPerCurrencyUnit, type RealizedPnLEvent } from "@/lib/finance"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -18,6 +18,9 @@ interface AppData {
   portfolios:    Portfolio[]
   transactions:  Transaction[]
   revenus:       RevenuAnnexe[]
+  /** Liquidité globale (toutes devises, commune à tous les portfolios) */
+  globalCash:    GlobalCash
+  cashMovements: CashMovement[]
   loading:       boolean
   realizedPnLEvents: RealizedPnLEvent[]
   totalRealizedPnL: number
@@ -34,15 +37,27 @@ interface AppData {
   // Revenus Annexes mutations
   addRevenu:    (rev: Omit<RevenuAnnexe, "id" | "createdAt" | "userId">) => Promise<void>
   removeRevenu: (id: string) => Promise<void>
-  // Cash / Liquidité mutations
+  // ── Liquidité globale (nouvelle logique) ──────────────────────────────────
+  /** Dépose du cash dans la réserve globale */
+  depositGlobalCash: (amount: number, currency: keyof GlobalCash, note?: string) => Promise<void>
+  /** Retire du cash de la réserve globale */
+  withdrawGlobalCash: (amount: number, currency: keyof GlobalCash, note?: string) => Promise<{ ok: boolean; error?: string }>
+  /** Convertit du cash entre devises (ex: 100 CHF → USD) */
+  convertGlobalCash: (fromCurrency: keyof GlobalCash, toCurrency: keyof GlobalCash, fromAmount: number) => Promise<{ ok: boolean; error?: string }>
+  /** Total de la liquidité globale convertie en CHF */
+  globalCashInChf: () => number
+  // Rétrocompatibilité (deprecated)
+  /** @deprecated Utiliser depositGlobalCash */
   depositCash:   (portfolioId: string, amount: number, currency: keyof CashBalance) => Promise<void>
+  /** @deprecated Utiliser globalCash directement */
   getAvailableCash: (portfolioId: string, currency: keyof CashBalance) => number
   // Refresh
   refresh: () => Promise<void>
 }
 
 const DEFAULT: AppData = {
-  portfolios: [], transactions: [], revenus: [], loading: true,
+  portfolios: [], transactions: [], revenus: [], globalCash: { ...EMPTY_GLOBAL_CASH },
+  cashMovements: [], loading: true,
   realizedPnLEvents: [], totalRealizedPnL: 0,
   addPortfolio:    async () => null,
   removePortfolio: async () => {},
@@ -54,6 +69,10 @@ const DEFAULT: AppData = {
   removeTransaction: async () => {},
   addRevenu:    async () => {},
   removeRevenu: async () => {},
+  depositGlobalCash:   async () => {},
+  withdrawGlobalCash:  async () => ({ ok: true }),
+  convertGlobalCash:   async () => ({ ok: true }),
+  globalCashInChf: () => 0,
   depositCash:  async () => {},
   getAvailableCash: () => 0,
   refresh: async () => {},
@@ -65,10 +84,12 @@ const AppDataContext = createContext<AppData>(DEFAULT)
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const { fxRates } = useCurrency()
-  const [portfolios,   setPortfolios]   = useState<Portfolio[]>([])
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [revenus,      setRevenus]      = useState<RevenuAnnexe[]>([])
-  const [loading,      setLoading]      = useState(isSupabaseConfigured)
+  const [portfolios,    setPortfolios]    = useState<Portfolio[]>([])
+  const [transactions,  setTransactions]  = useState<Transaction[]>([])
+  const [revenus,       setRevenus]       = useState<RevenuAnnexe[]>([])
+  const [globalCash,    setGlobalCash]    = useState<GlobalCash>({ ...EMPTY_GLOBAL_CASH })
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([])
+  const [loading,       setLoading]       = useState(isSupabaseConfigured)
   const realizedPnLEvents = useMemo(() => calculateRealizedPnLEvents(transactions), [transactions])
   const totalRealizedPnL = useMemo(
     () => realizedPnLEvents.reduce((sum, event) => sum + event.pnl, 0),
@@ -79,14 +100,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured) { setLoading(false); return }
     setLoading(true)
     try {
-      const [p, t, r] = await Promise.all([
+      const [p, t, r, gc, cm] = await Promise.all([
         Q.fetchPortfolios(),
         Q.fetchTransactions(),
         Q.fetchRevenus(),
+        Q.fetchGlobalCash(),
+        Q.fetchCashMovements(200),
       ])
-      if (p) setPortfolios(p)
-      if (t) setTransactions(t)
-      if (r) setRevenus(r)
+      if (p)  setPortfolios(p)
+      if (t)  setTransactions(t)
+      if (r)  setRevenus(r)
+      if (gc) setGlobalCash(gc)
+      if (cm) setCashMovements(cm)
     } catch (e) {
       console.error("[AppData] refresh failed:", e)
     }
@@ -211,20 +236,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (tx.type === "buy" && tx.assetClass !== "cash") {
-      // ── Validation du solde GLOBAL de cash ─────────────────────────────────
-      // Le cash est global : agréger tous les portefeuilles dans la devise native
-      const nativeCurr = (tx.currency ?? "CHF") as keyof CashBalance
-      const globalCash = portfolios.reduce(
-        (sum, p) => sum + ((p.cashBalances?.[nativeCurr] as number | undefined) ?? 0),
-        0
-      )
-      const totalCost = tx.quantity * tx.price + (tx.fees ?? 0)
+      // ── Validation liquidité GLOBALE avec cross-devise ────────────────────
+      const nativeCurr = (tx.currency ?? "CHF") as keyof GlobalCash
+      const totalCostNative = tx.quantity * tx.price + (tx.fees ?? 0)
+      const fxN = (fxRates as Record<string,number>)[nativeCurr] ?? 1
+      const costChf = totalCostNative / fxN  // coût en CHF
 
-      // Bloquer SEULEMENT si du cash a été déposé ET que le coût dépasse le solde
-      if (globalCash > 0 && totalCost > globalCash) {
+      const cashChf = globalCash.CHF
+      const cashUsd = globalCash.USD
+      const cashEur = globalCash.EUR
+      const fxUsd = (fxRates as Record<string,number>)["USD"] ?? 1
+      const fxEur = (fxRates as Record<string,number>)["EUR"] ?? 1
+      const totalGlobalInChf = cashChf + cashUsd / fxUsd + cashEur / fxEur
+
+      // Bloquer si liquidité globale insuffisante
+      if (totalGlobalInChf > 0 && costChf > totalGlobalInChf) {
         return {
           ok: false,
-          error: `Solde insuffisant : ${totalCost.toFixed(2)} ${nativeCurr} requis, mais seulement ${globalCash.toFixed(2)} ${nativeCurr} disponible. Déposez des liquidités d'abord.`,
+          error: `Liquidité insuffisante. Requis : ${costChf.toFixed(2)} CHF — Disponible : ${totalGlobalInChf.toFixed(2)} CHF (manque ${(costChf - totalGlobalInChf).toFixed(2)} CHF).`,
         }
       }
     }
@@ -341,16 +370,39 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         })
       }
 
-      // ── 5. Update cash balance (réservoir global = portfolios[0]) ────────────
-      const nativeCurr   = (tx.currency ?? "CHF") as keyof CashBalance
-      const globalPid    = portfolios[0]?.id  // poche de cash globale
-      if (globalPid && tx.assetClass !== "cash") {
+      // ── 5. Update GLOBAL cash balance ────────────────────────────────────────
+      // Achat  → déduit dans la devise native si dispo, sinon CHF converti
+      // Vente  → crédite en devise native de l'actif
+      if (tx.assetClass !== "cash") {
+        const nativeCurr = (tx.currency ?? "CHF") as keyof GlobalCash
         if (tx.type === "buy") {
-          const totalCost = tx.quantity * tx.price + (tx.fees ?? 0)
-          await updateCash(globalPid, nativeCurr, -totalCost)
+          const totalCostNative = tx.quantity * tx.price + (tx.fees ?? 0)
+          const fxN = (fxRates as Record<string,number>)[nativeCurr] ?? 1
+          const costChf = totalCostNative / fxN
+
+          let newCash = { ...globalCash }
+          if (nativeCurr !== "CHF" && newCash[nativeCurr] >= totalCostNative) {
+            // Déduit en devise native directement
+            newCash[nativeCurr] = Math.max(0, newCash[nativeCurr] - totalCostNative)
+            await Q.insertCashMovement("buy_deduction", nativeCurr, -totalCostNative, newCash,
+              { ticker: tx.ticker, portfolioId: tx.portfolioId })
+          } else {
+            // Déduit en CHF converti
+            newCash.CHF = Math.max(0, newCash.CHF - costChf)
+            await Q.insertCashMovement("buy_deduction", "CHF", -costChf, newCash,
+              { ticker: tx.ticker, portfolioId: tx.portfolioId, note: `${totalCostNative.toFixed(2)} ${nativeCurr} converti` })
+          }
+          setGlobalCash(newCash)
+          await Q.upsertGlobalCash(newCash)
+
         } else if (tx.type === "sell") {
+          // Crédite en devise native de l'actif vendu
           const netProceeds = tx.quantity * tx.price - (tx.fees ?? 0)
-          await updateCash(globalPid, nativeCurr, netProceeds)
+          const newCash = { ...globalCash, [nativeCurr]: globalCash[nativeCurr] + netProceeds }
+          await Q.insertCashMovement("sell_credit", nativeCurr, netProceeds, newCash,
+            { ticker: tx.ticker, portfolioId: tx.portfolioId })
+          setGlobalCash(newCash)
+          await Q.upsertGlobalCash(newCash)
         }
       }
 
@@ -387,21 +439,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   async function addRevenu(rev: Omit<RevenuAnnexe, "id" | "createdAt" | "userId">) {
     const tempId = `local-${Date.now()}`
-    const local: RevenuAnnexe = {
-      ...rev,
-      id: tempId,
-      userId: "local",
-      createdAt: new Date().toISOString(),
-    }
+    const local: RevenuAnnexe = { ...rev, id: tempId, userId: "local", createdAt: new Date().toISOString() }
     setRevenus(prev => [local, ...prev])
+
+    // ── Revenu annexe → crédite aussi la liquidité globale (pas de double comptage) ──
+    // Le patrimoine = positions + cash global (les revenus expliquent l'ORIGINE du cash)
+    const revCurrency = (rev.currency || "CHF") as keyof GlobalCash
+    if (["CHF","USD","EUR"].includes(revCurrency)) {
+      const newCash = { ...globalCash, [revCurrency]: globalCash[revCurrency] + rev.amount }
+      setGlobalCash(newCash)
+      if (isSupabaseConfigured) {
+        await Q.upsertGlobalCash(newCash)
+        await Q.insertCashMovement("revenue_credit", revCurrency, rev.amount, newCash,
+          { note: rev.label ?? "Revenu annexe" })
+      }
+    }
+
     if (!isSupabaseConfigured) return
     try {
       const result = await Q.createRevenu(rev)
-      if (result) {
-        setRevenus(prev => prev.map(r => r.id === tempId ? { ...r, id: result.id } : r))
-      } else {
-        setRevenus(prev => prev.filter(r => r.id !== tempId))
-      }
+      if (result) setRevenus(prev => prev.map(r => r.id === tempId ? { ...r, id: result.id } : r))
+      else        setRevenus(prev => prev.filter(r => r.id !== tempId))
     } catch (e) {
       console.error("[AppData] addRevenu failed:", e)
       setRevenus(prev => prev.filter(r => r.id !== tempId))
@@ -416,78 +474,100 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // ── Cash / Liquidité ─────────────────────────────────────────────────────────
+  // ── Liquidité globale ────────────────────────────────────────────────────────
 
-  /** Lit le solde de cash disponible d'un portfolio dans une devise donnée */
-  function getAvailableCash(portfolioId: string, currency: keyof CashBalance): number {
-    const p = portfolios.find(p => p.id === portfolioId)
-    return p?.cashBalances?.[currency] ?? 0
+  /** Total de la liquidité globale converti en CHF */
+  function globalCashInChf(): number {
+    const fxUsd = (fxRates as Record<string,number>)["USD"] ?? 1
+    const fxEur = (fxRates as Record<string,number>)["EUR"] ?? 1
+    return globalCash.CHF + globalCash.USD / fxUsd + globalCash.EUR / fxEur
   }
 
-  /** Met à jour le solde cash d'un portfolio (delta positif = dépôt, négatif = déduction) */
-  async function updateCash(portfolioId: string, currency: keyof CashBalance, delta: number) {
-    setPortfolios(prev => prev.map(p => {
-      if (p.id !== portfolioId) return p
-      const current  = p.cashBalances ?? { CHF: 0, USD: 0, EUR: 0 }
-      const updated  = { ...current, [currency]: Math.max(0, (current[currency] ?? 0) + delta) }
-      return { ...p, cashBalances: updated }
-    }))
-    if (isSupabaseConfigured) {
-      const p = portfolios.find(p => p.id === portfolioId)
-      if (p) {
-        const current = p.cashBalances ?? { CHF: 0, USD: 0, EUR: 0 }
-        const updated = { ...current, [currency]: Math.max(0, (current[currency] ?? 0) + delta) }
-        await Q.updateCashBalance(portfolioId, updated)
-      }
-    }
-  }
-
-  /** Dépôt de liquidité : incrémente le solde */
-  async function depositCash(portfolioId: string, amount: number, currency: keyof CashBalance) {
+  /** Dépôt de liquidité globale — augmente le cash, PAS de P&L */
+  async function depositGlobalCash(amount: number, currency: keyof GlobalCash, note?: string) {
     if (!amount || amount <= 0) return
-
-    // 1. Optimistic: update cash balance locally
-    await updateCash(portfolioId, currency, amount)
-
-    // 2. Save as a transaction for history (direct call — not recursive via addTransaction)
-    //    to avoid the "price is null" issue from the modal form
-    const tempId = `local-${Date.now()}`
+    const newCash = { ...globalCash, [currency]: globalCash[currency] + amount }
+    setGlobalCash(newCash)
+    if (isSupabaseConfigured) {
+      await Q.upsertGlobalCash(newCash)
+      await Q.insertCashMovement("deposit", currency, amount, newCash, { note })
+    }
+    // Enregistre comme transaction pour l'historique
     const tx: Omit<Transaction, "id"> = {
-      portfolioId,
-      ticker:     currency as string,
+      portfolioId: portfolios[0]?.id ?? "global",
+      ticker:     currency,
       assetName:  `Dépôt ${currency}`,
       assetClass: "cash" as Transaction["assetClass"],
       type:       "deposit" as Transaction["type"],
-      quantity:   1,
-      price:      amount,
-      fees:       0,
+      quantity:   1, price: amount, fees: 0,
       currency:   currency as unknown as Transaction["currency"],
       date:       new Date().toISOString().slice(0, 10),
+      notes:      note,
     }
+    const tempId = `local-${Date.now()}`
     setTransactions(prev => [{ ...tx, id: tempId } as Transaction, ...prev])
-
     if (isSupabaseConfigured) {
-      try {
-        const result = await Q.createTransaction(tx)
-        if (result) {
-          setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
-        } else {
-          setTransactions(prev => prev.filter(t => t.id !== tempId))
-        }
-      } catch (e) {
-        console.error("[depositCash] transaction save failed:", e)
-        setTransactions(prev => prev.filter(t => t.id !== tempId))
-      }
+      const result = await Q.createTransaction(tx)
+      if (result) setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
     }
+  }
+
+  /** Retrait de liquidité globale */
+  async function withdrawGlobalCash(amount: number, currency: keyof GlobalCash, note?: string): Promise<{ ok: boolean; error?: string }> {
+    if (globalCash[currency] < amount) {
+      return { ok: false, error: `Solde insuffisant : ${globalCash[currency].toFixed(2)} ${currency} disponible, ${amount.toFixed(2)} requis.` }
+    }
+    const newCash = { ...globalCash, [currency]: globalCash[currency] - amount }
+    setGlobalCash(newCash)
+    if (isSupabaseConfigured) {
+      await Q.upsertGlobalCash(newCash)
+      await Q.insertCashMovement("withdrawal", currency, -amount, newCash, { note })
+    }
+    return { ok: true }
+  }
+
+  /** Conversion de devise dans la liquidité globale */
+  async function convertGlobalCash(fromCurrency: keyof GlobalCash, toCurrency: keyof GlobalCash, fromAmount: number): Promise<{ ok: boolean; error?: string }> {
+    if (globalCash[fromCurrency] < fromAmount) {
+      return { ok: false, error: `Solde insuffisant en ${fromCurrency} : ${globalCash[fromCurrency].toFixed(2)} disponible.` }
+    }
+    const fxFrom = (fxRates as Record<string,number>)[fromCurrency] ?? 1
+    const fxTo   = (fxRates as Record<string,number>)[toCurrency]   ?? 1
+    const chfAmount = fromAmount / fxFrom
+    const toAmount  = chfAmount * fxTo
+    const newCash = {
+      ...globalCash,
+      [fromCurrency]: globalCash[fromCurrency] - fromAmount,
+      [toCurrency]:   globalCash[toCurrency] + toAmount,
+    }
+    setGlobalCash(newCash)
+    if (isSupabaseConfigured) {
+      await Q.upsertGlobalCash(newCash)
+      await Q.insertCashMovement("conversion", fromCurrency, -fromAmount, newCash,
+        { note: `Converti ${fromAmount.toFixed(2)} ${fromCurrency} → ${toAmount.toFixed(2)} ${toCurrency}` })
+    }
+    return { ok: true }
+  }
+
+  // ── Rétrocompatibilité ────────────────────────────────────────────────────────
+  /** @deprecated Utiliser depositGlobalCash */
+  async function depositCash(portfolioId: string, amount: number, currency: keyof CashBalance) {
+    await depositGlobalCash(amount, currency as keyof GlobalCash)
+  }
+
+  /** @deprecated Utiliser globalCash directement */
+  function getAvailableCash(_portfolioId: string, currency: keyof CashBalance): number {
+    return globalCash[currency as keyof GlobalCash] ?? 0
   }
 
   return (
     <AppDataContext.Provider value={{
-      portfolios, transactions, revenus, loading,
+      portfolios, transactions, revenus, globalCash, cashMovements, loading,
       realizedPnLEvents, totalRealizedPnL,
       addPortfolio, removePortfolio, addAsset, removeAsset, updateAssetCostBasis,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,
+      depositGlobalCash, withdrawGlobalCash, convertGlobalCash, globalCashInChf,
       depositCash, getAvailableCash,
       refresh,
     }}>

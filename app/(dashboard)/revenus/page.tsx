@@ -89,10 +89,10 @@ function RevenuDonut({ data }: { data: Array<{ type: RevenuType; amount: number;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function RevenusPage() {
-  const { revenus, portfolios, addRevenu, removeRevenu } = useAppData()
-  const { format, convert } = useCurrency()
+  const { revenus, portfolios, globalCash, cashMovements, addRevenu, removeRevenu, depositGlobalCash, withdrawGlobalCash, convertGlobalCash } = useAppData()
+  const { format, convert, fxRates, currency } = useCurrency()
 
-  const [activeTab, setActiveTab] = useState<"revenus" | "dividends">("revenus")
+  const [activeTab, setActiveTab] = useState<"liquidite" | "revenus" | "dividends">("liquidite")
   const [showModal, setShowModal] = useState(false)
 
   // Total in CHF
@@ -157,22 +157,259 @@ export default function RevenusPage() {
 
   return (
     <div className="flex flex-col">
-      <Topbar title="Revenus Passifs" subtitle="Dividendes + revenus annexes" />
+      <Topbar title="Revenus Passifs" subtitle="Liquidité · Dividendes · Revenus annexes" />
       <div className="flex-1 space-y-5 p-4 sm:p-6">
 
         {/* ─── Tabs ─── */}
         <div className="flex gap-1 rounded-xl border p-1" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)", width: "fit-content" }}>
-          {([["revenus", "💜 Revenus annexes"], ["dividends", "💚 Dividendes"]] as const).map(([tab, label]) => (
+          {([
+            ["liquidite", "💵 Liquidité",      "#0ea5e9"],
+            ["revenus",   "💜 Revenus annexes", "#a855f7"],
+            ["dividends", "💚 Dividendes",      "#22c55e"],
+          ] as const).map(([tab, label, color]) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="rounded-lg px-4 py-2 text-sm font-medium transition-all"
               style={{
-                backgroundColor: activeTab === tab ? (tab === "revenus" ? "#a855f7" : "#22c55e") : "transparent",
+                backgroundColor: activeTab === tab ? color : "transparent",
                 color:           activeTab === tab ? "white" : "var(--text-secondary)",
               }}>
               {label}
             </button>
           ))}
         </div>
+
+        {/* ══ ONGLET LIQUIDITÉ ══════════════════════════════════════════════ */}
+        {activeTab === "liquidite" && (() => {
+          const fxUsd = (fxRates as Record<string,number>)["USD"] ?? 1
+          const fxEur = (fxRates as Record<string,number>)["EUR"] ?? 1
+          const totalChf = globalCash.CHF + globalCash.USD / fxUsd + globalCash.EUR / fxEur
+          const userRate = (fxRates as Record<string,number>)[currency] ?? 1
+          const totalUser = totalChf * userRate
+
+          const MOVEMENT_LABELS: Record<string, string> = {
+            deposit:         "Dépôt",
+            withdrawal:      "Retrait",
+            conversion:      "Conversion",
+            buy_deduction:   "Achat (déduction)",
+            sell_credit:     "Vente (crédit)",
+            dividend_credit: "Dividende reçu",
+            revenue_credit:  "Revenu annexe",
+          }
+          const MOVEMENT_COLORS: Record<string, string> = {
+            deposit:         "#0ea5e9",
+            withdrawal:      "#ef4444",
+            conversion:      "#f59e0b",
+            buy_deduction:   "#a78bfa",
+            sell_credit:     "#22c55e",
+            dividend_credit: "#22c55e",
+            revenue_credit:  "#a855f7",
+          }
+
+          const [showDepositModal,  setShowDepositModal]  = useState(false)
+          const [showWithdrawModal, setShowWithdrawModal] = useState(false)
+          const [showConvertModal,  setShowConvertModal]  = useState(false)
+          const [actionAmount,      setActionAmount]      = useState("")
+          const [actionCurrency,    setActionCurrency]    = useState<"CHF"|"USD"|"EUR">("CHF")
+          const [actionToCurrency,  setActionToCurrency]  = useState<"CHF"|"USD"|"EUR">("USD")
+          const [actionError,       setActionError]       = useState("")
+          const [actionNote,        setActionNote]        = useState("")
+
+          return (
+            <div className="space-y-5">
+              {/* ── KPI Liquidités ── */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="col-span-2 sm:col-span-4 rounded-xl border px-5 py-4 flex items-center justify-between"
+                  style={{ backgroundColor: "var(--bg-elevated)", borderColor: "#0ea5e930" }}>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: "#0ea5e9" }}>Total liquidités</p>
+                    <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: "var(--text-primary)" }}>{format(totalUser)}</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+                      Commune à tous les portefeuilles · hors positions
+                    </p>
+                  </div>
+                  <div className="text-4xl">💵</div>
+                </div>
+                {(["CHF","USD","EUR"] as const).map(cur => {
+                  const val = globalCash[cur]
+                  const inUser = convert(val, cur)
+                  return (
+                    <div key={cur} className="rounded-xl border px-4 py-3"
+                      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                      <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{cur}</p>
+                      <p className="text-xl font-bold tabular-nums mt-0.5" style={{ color: val > 0 ? "#0ea5e9" : "var(--text-tertiary)" }}>
+                        {val.toFixed(2)}
+                      </p>
+                      {cur !== currency && val > 0 && (
+                        <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>≈ {format(inUser)}</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* ── Action buttons ── */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "＋ Déposer",   color: "#0ea5e9", onClick: () => { setShowDepositModal(true); setShowWithdrawModal(false); setShowConvertModal(false); setActionError("") } },
+                  { label: "－ Retirer",   color: "#ef4444", onClick: () => { setShowWithdrawModal(true); setShowDepositModal(false); setShowConvertModal(false); setActionError("") } },
+                  { label: "⇄ Convertir",  color: "#f59e0b", onClick: () => { setShowConvertModal(true); setShowDepositModal(false); setShowWithdrawModal(false); setActionError("") } },
+                ].map(btn => (
+                  <button key={btn.label} onClick={btn.onClick}
+                    className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
+                    style={{ backgroundColor: btn.color }}>
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Mini forms ── */}
+              <AnimatePresence>
+                {(showDepositModal || showWithdrawModal || showConvertModal) && (
+                  <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                    className="rounded-xl border p-5 space-y-4"
+                    style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {showDepositModal ? "Dépôt de liquidité" : showWithdrawModal ? "Retrait de liquidité" : "Conversion de devises"}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>
+                          Montant {showConvertModal ? "à convertir" : ""}
+                        </label>
+                        <input type="number" placeholder="0.00" value={actionAmount}
+                          onChange={e => { setActionAmount(e.target.value); setActionError("") }}
+                          className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                          style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          autoFocus />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>
+                          {showConvertModal ? "Devise source" : "Devise"}
+                        </label>
+                        <div className="flex gap-1.5">
+                          {(["CHF","USD","EUR"] as const).map(c => (
+                            <button key={c} onClick={() => setActionCurrency(c)}
+                              className="flex-1 rounded-lg border py-2 text-xs font-semibold transition-all"
+                              style={{
+                                backgroundColor: actionCurrency === c ? "#0ea5e918" : "var(--bg-base)",
+                                borderColor:     actionCurrency === c ? "#0ea5e9" : "var(--border)",
+                                color:           actionCurrency === c ? "#0ea5e9" : "var(--text-secondary)",
+                              }}>{c}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {showConvertModal && (
+                        <div className="col-span-2">
+                          <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Devise cible</label>
+                          <div className="flex gap-1.5">
+                            {(["CHF","USD","EUR"] as const).filter(c => c !== actionCurrency).map(c => (
+                              <button key={c} onClick={() => setActionToCurrency(c)}
+                                className="rounded-xl border px-4 py-2 text-sm font-semibold transition-all"
+                                style={{
+                                  backgroundColor: actionToCurrency === c ? "#f59e0b18" : "var(--bg-base)",
+                                  borderColor:     actionToCurrency === c ? "#f59e0b" : "var(--border)",
+                                  color:           actionToCurrency === c ? "#f59e0b" : "var(--text-secondary)",
+                                }}>{c}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="col-span-2">
+                        <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Note (optionnel)</label>
+                        <input type="text" placeholder="Ex: virement BCV…" value={actionNote}
+                          onChange={e => setActionNote(e.target.value)}
+                          className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                          style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
+                      </div>
+                    </div>
+                    {actionError && (
+                      <p className="text-xs rounded-lg px-3 py-2" style={{ backgroundColor: "#ef444415", color: "#ef4444" }}>{actionError}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={async () => {
+                        const amt = parseFloat(actionAmount)
+                        if (!amt || amt <= 0) { setActionError("Montant invalide"); return }
+                        if (showDepositModal) {
+                          await depositGlobalCash(amt, actionCurrency, actionNote || undefined)
+                          setShowDepositModal(false)
+                        } else if (showWithdrawModal) {
+                          const res = await withdrawGlobalCash(amt, actionCurrency, actionNote || undefined)
+                          if (!res.ok) { setActionError(res.error ?? "Erreur"); return }
+                          setShowWithdrawModal(false)
+                        } else if (showConvertModal) {
+                          const res = await convertGlobalCash(actionCurrency, actionToCurrency, amt)
+                          if (!res.ok) { setActionError(res.error ?? "Erreur"); return }
+                          setShowConvertModal(false)
+                        }
+                        setActionAmount(""); setActionNote("")
+                      }}
+                        className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-all"
+                        style={{ backgroundColor: showDepositModal ? "#0ea5e9" : showWithdrawModal ? "#ef4444" : "#f59e0b" }}>
+                        Confirmer
+                      </button>
+                      <button onClick={() => { setShowDepositModal(false); setShowWithdrawModal(false); setShowConvertModal(false); setActionError("") }}
+                        className="rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
+                        style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                        Annuler
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ── Historique des mouvements ── */}
+              <div className="space-y-2">
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Historique des mouvements ({cashMovements.length})
+                </p>
+                {cashMovements.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 rounded-xl border"
+                    style={{ borderColor: "var(--border)", borderStyle: "dashed" }}>
+                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucun mouvement enregistré</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>Déposez du cash pour commencer</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+                    {cashMovements.map((mv, i) => {
+                      const color = MOVEMENT_COLORS[mv.type] ?? "#6b7280"
+                      const isPos = mv.amount > 0
+                      return (
+                        <div key={mv.id}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
+                          style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                          <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-sm"
+                            style={{ backgroundColor: color + "20", color }}>
+                            {mv.type === "deposit" ? "↓" : mv.type === "withdrawal" ? "↑" : mv.type === "conversion" ? "⇄" : mv.type.includes("credit") ? "+" : "−"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                              {MOVEMENT_LABELS[mv.type] ?? mv.type}
+                              {mv.refTicker ? ` · ${mv.refTicker}` : ""}
+                            </p>
+                            <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                              {mv.date}
+                              {mv.note ? ` · ${mv.note}` : ""}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold tabular-nums" style={{ color }}>
+                              {isPos ? "+" : ""}{mv.amount.toFixed(2)} {mv.currency}
+                            </p>
+                            {mv.balanceAfterChf != null && (
+                              <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                                solde CHF: {mv.balanceAfterChf.toFixed(2)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {activeTab === "revenus" && (
           <>

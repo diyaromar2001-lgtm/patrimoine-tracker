@@ -68,7 +68,7 @@ function normalizeGeography(country?: string) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, revenus, loading, realizedPnLEvents } = useAppData()
+  const { portfolios, transactions, revenus, globalCash, loading, realizedPnLEvents } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
@@ -117,20 +117,19 @@ export default function DashboardPage() {
   const { cost: totalCost, value: totalValue, pnl: totalPnl, pct: totalPnlPct } =
     convertPnL(pnlResult, currency, fxRates)
 
-  const totalCashConverted = useMemo(() => portfolios.reduce((sum, p) => {
-    return sum + Object.entries(p.cashBalances ?? {}).reduce((cashSum, [cur, val]) => (
-      cashSum + convert(Number(val ?? 0), cur as AppCurrency)
-    ), 0)
-  }, 0), [portfolios, convert])
-
-  // Revenus annexes encaissés → comptent dans le patrimoine, PAS dans le P&L marché
-  const totalRevenus = useMemo(
-    () => revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0),
-    [revenus, convert]
+  // Liquidité globale — depuis AppData.globalCash (source unique)
+  const totalCashConverted = useMemo(() =>
+    Object.entries(globalCash).reduce((sum, [cur, val]) =>
+      sum + convert(Number(val ?? 0), cur as AppCurrency), 0
+    ),
+    [globalCash, convert]
   )
 
-  // Patrimoine net = positions + cash + revenus annexes encaissés
-  const netWorthValue = totalValue + totalCashConverted + totalRevenus
+  // Patrimoine net = positions + cash global
+  // ⚠️ NE PAS ajouter totalRevenus — les revenus annexes et dividendes
+  //    sont déjà crédités dans globalCash lors de leur enregistrement.
+  //    Ajouter totalRevenus ici créerait un double comptage.
+  const netWorthValue = totalValue + totalCashConverted
 
   // Today P&L: sum of each asset's day change
   const todayPnl = useMemo(
@@ -365,26 +364,15 @@ export default function DashboardPage() {
             {/* P&L réalisé = somme des gains/pertes sur ventes clôturées */}
             <StatCard label="P&L réalisé (ventes)" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="gains ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
             <StatCard label="Nb. positions" value={String(allAssets.filter(a => a.assetClass !== "cash").length)} changeLabel="lignes ouvertes" icon={BarChart2} iconColor="#f59e0b" index={4} />
-            {/* Cash disponible — toutes devises converties */}
+            {/* Liquidités globales — depuis globalCash (source unique) */}
             {(() => {
-              const cashTotals: Record<string, number> = {}
-              portfolios.forEach(p => {
-                Object.entries(p.cashBalances ?? {}).forEach(([cur, val]) => {
-                  if ((val as number) > 0) {
-                    cashTotals[cur] = (cashTotals[cur] ?? 0) + (val as number)
-                  }
-                })
-              })
-              const totalCashConverted = Object.entries(cashTotals).reduce(
-                (s, [cur, val]) => s + convert(val as number, cur as AppCurrency), 0
-              )
-              const cashLines = Object.entries(cashTotals)
-                .filter(([, v]) => v > 0)
+              const cashLines = Object.entries(globalCash)
+                .filter(([, v]) => (v as number) > 0)
                 .map(([cur, val]) => `${(val as number).toFixed(0)} ${cur}`)
                 .join(" · ")
               return (
                 <StatCard
-                  label="Liquidités"
+                  label="Liquidités globales"
                   value={format(totalCashConverted)}
                   changeLabel={cashLines || "Aucun dépôt"}
                   icon={Wallet}

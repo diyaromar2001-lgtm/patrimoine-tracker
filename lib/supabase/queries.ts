@@ -1,7 +1,86 @@
 import { createClient } from "./client"
-import type { Portfolio, Asset, Transaction, CashBalance } from "@/lib/types"
+import type { Portfolio, Asset, Transaction, CashBalance, GlobalCash, CashMovement, CashMovementType } from "@/lib/types"
 
 const EMPTY_CASH: CashBalance = { CHF: 0, USD: 0, EUR: 0 }
+const EMPTY_GLOBAL: GlobalCash = { CHF: 0, USD: 0, EUR: 0 }
+
+// ─── Global Cash ─────────────────────────────────────────────────────────────
+
+export async function fetchGlobalCash(): Promise<GlobalCash> {
+  const sb = createClient()
+  if (!sb) return { ...EMPTY_GLOBAL }
+  const { data } = await sb.from("global_cash").select("chf,usd,eur").maybeSingle()
+  if (!data) return { ...EMPTY_GLOBAL }
+  return { CHF: Number(data.chf ?? 0), USD: Number(data.usd ?? 0), EUR: Number(data.eur ?? 0) }
+}
+
+export async function upsertGlobalCash(cash: GlobalCash): Promise<boolean> {
+  const sb = createClient()
+  if (!sb) return false
+  const { data: user } = await sb.auth.getUser()
+  if (!user.user) return false
+  const { error } = await sb.from("global_cash").upsert({
+    user_id:    user.user.id,
+    chf:        cash.CHF,
+    usd:        cash.USD,
+    eur:        cash.EUR,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id" })
+  if (error) console.error("[upsertGlobalCash]", error.message)
+  return !error
+}
+
+export async function fetchCashMovements(limit = 100): Promise<CashMovement[]> {
+  const sb = createClient()
+  if (!sb) return []
+  const { data } = await sb
+    .from("cash_movements")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(limit)
+  if (!data) return []
+  return data.map(d => ({
+    id:               d.id,
+    type:             d.type as CashMovementType,
+    currency:         d.currency,
+    amount:           Number(d.amount),
+    balanceAfterChf:  d.balance_after_chf != null ? Number(d.balance_after_chf) : undefined,
+    balanceAfterUsd:  d.balance_after_usd != null ? Number(d.balance_after_usd) : undefined,
+    balanceAfterEur:  d.balance_after_eur != null ? Number(d.balance_after_eur) : undefined,
+    note:             d.note ?? undefined,
+    refTicker:        d.ref_ticker ?? undefined,
+    refPortfolioId:   d.ref_portfolio_id ?? undefined,
+    date:             typeof d.date === "string" ? d.date.slice(0, 10) : new Date(d.date).toISOString().slice(0, 10),
+  }))
+}
+
+export async function insertCashMovement(
+  type: CashMovementType,
+  currency: string,
+  amount: number,
+  afterCash: GlobalCash,
+  opts?: { note?: string; ticker?: string; portfolioId?: string; date?: string }
+): Promise<string | null> {
+  const sb = createClient()
+  if (!sb) return null
+  const { data: user } = await sb.auth.getUser()
+  if (!user.user) return null
+  const { data, error } = await sb.from("cash_movements").insert({
+    user_id:           user.user.id,
+    type,
+    currency,
+    amount,
+    balance_after_chf: afterCash.CHF,
+    balance_after_usd: afterCash.USD,
+    balance_after_eur: afterCash.EUR,
+    note:              opts?.note ?? null,
+    ref_ticker:        opts?.ticker ?? null,
+    ref_portfolio_id:  opts?.portfolioId ?? null,
+    date:              opts?.date ?? new Date().toISOString(),
+  }).select("id").single()
+  if (error) console.error("[insertCashMovement]", error.message)
+  return data?.id ?? null
+}
 
 // ─── Portfolios ───────────────────────────────────────────────────────────────
 

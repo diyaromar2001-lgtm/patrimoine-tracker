@@ -1,20 +1,60 @@
 // ─── Core domain types ───────────────────────────────────────────────────────
 
 export type AssetClass = "stock" | "etf" | "crypto" | "real_estate" | "bond" | "cash"
-export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu" | "deposit"
+export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu" | "deposit" | "withdrawal" | "conversion"
 export type Currency = "CHF" | "EUR" | "USD" | "GBP"
 export type CryptoCustodyType = "cold_wallet" | "hot_wallet" | "exchange"
 export type CostBasisSource = "computed" | "manual" | "backfill"
 
-// ─── Cash / Liquidités ────────────────────────────────────────────────────────
+// ─── Cash / Liquidités globales ───────────────────────────────────────────────
+//
+// La liquidité est GLOBALE — pas attachée à un portefeuille précis.
+// Tous les portefeuilles piochent dans la même réserve globale.
+//
+// Formule patrimoine: positions + globalCash (NO double-comptage avec revenus)
 
-/** Soldes de liquidité par devise pour un portefeuille */
+/** Liquidité globale multi-devises (indépendante des portefeuilles) */
+export interface GlobalCash {
+  CHF: number
+  USD: number
+  EUR: number
+}
+
+export const EMPTY_GLOBAL_CASH: GlobalCash = { CHF: 0, USD: 0, EUR: 0 }
+
+/** Type de mouvement dans l'historique de cash */
+export type CashMovementType =
+  | "deposit"          // dépôt de cash (argent perso)
+  | "withdrawal"       // retrait de cash
+  | "conversion"       // conversion entre devises
+  | "buy_deduction"    // déduction lors d'un achat
+  | "sell_credit"      // crédit lors d'une vente
+  | "dividend_credit"  // dividende reçu → crédité en cash
+  | "revenue_credit"   // revenu annexe → crédité en cash
+
+export interface CashMovement {
+  id:          string
+  type:        CashMovementType
+  currency:    string
+  amount:      number   // positif = entrée, négatif = sortie
+  balanceAfterChf?: number
+  balanceAfterUsd?: number
+  balanceAfterEur?: number
+  note?:       string
+  refTicker?:  string
+  refPortfolioId?: string
+  date:        string
+}
+
+// ─── Rétrocompatibilité ───────────────────────────────────────────────────────
+/** @deprecated Utiliser GlobalCash à la place */
 export interface CashBalance {
   CHF: number
   USD: number
   EUR: number
 }
 
+/** @deprecated Utiliser EMPTY_GLOBAL_CASH */
 export const EMPTY_CASH_BALANCE: CashBalance = { CHF: 0, USD: 0, EUR: 0 }
 
 /**

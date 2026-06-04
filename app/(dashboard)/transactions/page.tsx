@@ -17,13 +17,13 @@ import {
 } from "lucide-react"
 
 const TX_COLORS: Record<TransactionType, string> = {
-  buy: "#3b82f6", sell: "#a78bfa", dividend: "#22c55e", transfer: "#64748b", revenu: "#a855f7", deposit: "#0ea5e9",
+  buy: "#3b82f6", sell: "#a78bfa", dividend: "#22c55e", transfer: "#64748b", revenu: "#a855f7", deposit: "#0ea5e9", withdrawal: "#ef4444", conversion: "#f59e0b",
 }
 const TX_LABELS: Record<TransactionType, string> = {
-  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert", revenu: "Revenu", deposit: "Dépôt",
+  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert", revenu: "Revenu", deposit: "Dépôt", withdrawal: "Retrait", conversion: "Conversion",
 }
 const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
-  buy: ArrowDownLeft, sell: ArrowUpRight, dividend: Gift, transfer: ArrowLeftRight, revenu: Zap, deposit: Wallet,
+  buy: ArrowDownLeft, sell: ArrowUpRight, dividend: Gift, transfer: ArrowLeftRight, revenu: Zap, deposit: Wallet, withdrawal: Wallet, conversion: ArrowLeftRight,
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
