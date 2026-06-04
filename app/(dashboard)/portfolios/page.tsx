@@ -544,7 +544,7 @@ function HoldingsTable({
 export default function PortfoliosPage() {
   const { format, convert, fxRates, currency } = useCurrency()
   const {
-    portfolios, transactions, revenus, realizedPnLEvents,
+    portfolios, transactions, revenus, globalCash, realizedPnLEvents,
     loading: dbLoading,
     addPortfolio: dbAddPortfolio,
     removePortfolio: dbRemovePortfolio,
@@ -645,20 +645,16 @@ export default function PortfoliosPage() {
       assetClass: a.assetClass,
     })), [liveEnriched])
 
-  const globalCashBalances = useMemo(() => {
-    const totals: Record<string, number> = {}
-    portfolios.forEach(p => {
-      Object.entries(p.cashBalances ?? {}).forEach(([cur, val]) => {
-        totals[cur] = (totals[cur] ?? 0) + Number(val ?? 0)
-      })
-    })
-    return totals
-  }, [portfolios])
+    // Liquidité globale — depuis AppData.globalCash (source unique, indépendante des portfolios)
+  const globalCashBalances = useMemo(() => ({
+    CHF: globalCash.CHF, USD: globalCash.USD, EUR: globalCash.EUR
+  }), [globalCash])
 
   const portfolioMetricsById = useMemo(() => {
     const metrics = new Map<string, PortfolioMetrics>()
+    // Les portfolios n'ont plus de cash propre — on passe {} (vide)
     portfolios.forEach(p => {
-      metrics.set(p.id, calculatePortfolioMetrics(metricAssetsFor(p.assets), p.cashBalances, fxRates))
+      metrics.set(p.id, calculatePortfolioMetrics(metricAssetsFor(p.assets), {}, fxRates))
     })
     return metrics
   }, [portfolios, metricAssetsFor, fxRates])
@@ -888,15 +884,9 @@ export default function PortfoliosPage() {
                     <p className="mt-1 text-sm text-zinc-500">
                       {totalPnl >= 0 ? "+" : ""}{format(totalPnl)} depuis le début
                     </p>
-                    {/* Cash balances summary across all portfolios */}
+                    {/* Liquidité globale — depuis globalCash (source unique) */}
                     {(() => {
-                      const totals: Record<string, number> = {}
-                      portfolios.forEach(p => {
-                        Object.entries(p.cashBalances ?? {}).forEach(([cur, val]) => {
-                          if (val > 0) totals[cur] = (totals[cur] ?? 0) + (val as number)
-                        })
-                      })
-                      const nonZero = Object.entries(totals).filter(([, v]) => v > 0)
+                      const nonZero = Object.entries(globalCash).filter(([, v]) => (v as number) > 0)
                       if (!nonZero.length) return null
                       return (
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -904,7 +894,7 @@ export default function PortfoliosPage() {
                             <span key={cur}
                               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums"
                               style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
-                              💵 {val.toFixed(2)} {cur} en liquidité
+                              💵 {(val as number).toFixed(2)} {cur} en liquidité
                             </span>
                           ))}
                         </div>
@@ -1157,7 +1147,7 @@ export default function PortfoliosPage() {
                     <span className="text-right">Actions</span>
                   </div>
                   {portfolios.map((p, i) => {
-                    const metrics = portfolioMetricsById.get(p.id) ?? calculatePortfolioMetrics(metricAssetsFor(p.assets), p.cashBalances, fxRates)
+                    const metrics = portfolioMetricsById.get(p.id) ?? calculatePortfolioMetrics(metricAssetsFor(p.assets), {}, fxRates)
                     const ur  = (fxRates as Record<string,number>)[currency] ?? 1
                     const val = metrics.portfolioValueChf * ur
                     const pnl = metrics.totalPnlChf * ur
@@ -1233,10 +1223,9 @@ export default function PortfoliosPage() {
                     {activePortfolio.description && (
                       <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{activePortfolio.description}</p>
                     )}
-                    {/* ── Cash balance row ─────────────────────────────── */}
+                    {/* ── Liquidité globale (commune à tous les portfolios) ── */}
                     {(() => {
-                      const cash = activePortfolio.cashBalances ?? { CHF: 0, USD: 0, EUR: 0 }
-                      const nonZero = Object.entries(cash).filter(([, v]) => v > 0)
+                      const nonZero = Object.entries(globalCash).filter(([, v]) => (v as number) > 0)
                       if (!nonZero.length) return (
                         <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: "var(--text-tertiary)" }}>
                           💵 Aucune liquidité — déposez du cash pour acheter
@@ -1258,7 +1247,7 @@ export default function PortfoliosPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   {(() => {
-                    const metrics = activePortfolioMetrics ?? calculatePortfolioMetrics(metricAssetsFor(activePortfolio.assets), activePortfolio.cashBalances, fxRates)
+                    const metrics = activePortfolioMetrics ?? calculatePortfolioMetrics(metricAssetsFor(activePortfolio.assets), {}, fxRates)
                     const ur2  = (fxRates as Record<string,number>)[currency] ?? 1
                     const val  = metrics.portfolioValueChf * ur2
                     const pnl  = metrics.totalPnlChf * ur2
