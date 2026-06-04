@@ -281,6 +281,10 @@ export async function upsertAssetFromBuy(tx: {
     if (error) console.error("[upsertAsset] update error:", error.message, error.details)
   } else {
     // Create new asset row
+    // ⚠️ costBasisChf DOIT être fourni par le caller — c'est le CHF réel dépensé au moment de l'achat
+    // Fallback: si manquant, supposer 1:1 (dangereux mais mieux que rien)
+    const buyCostBasisChf = tx.costBasisChf ?? (tx.quantity * tx.price + (tx.fees ?? 0))
+
     const { error } = await sb.from("assets").insert({
       portfolio_id:  tx.portfolioId,
       ticker:        tx.ticker,
@@ -289,8 +293,8 @@ export async function upsertAssetFromBuy(tx: {
       quantity:      tx.quantity,
       avg_buy_price: tx.quantity > 0 ? tx.price + ((tx.fees ?? 0) / tx.quantity) : tx.price,
       currency:      tx.currency ?? "CHF",
-      cost_basis_chf: tx.costBasisChf ?? (tx.quantity * tx.price + (tx.fees ?? 0)),
-      cost_basis_source: "computed",
+      cost_basis_chf: buyCostBasisChf,
+      cost_basis_source: tx.costBasisChf ? "computed" : "backfill",
       cost_basis_updated_at: new Date().toISOString(),
       crypto_custody: tx.assetClass === "crypto" ? tx.cryptoCustody : undefined,
       staking_enabled: tx.assetClass === "crypto" ? Boolean(tx.stakingEnabled) : undefined,

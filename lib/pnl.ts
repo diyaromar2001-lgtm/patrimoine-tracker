@@ -76,7 +76,8 @@ export function calculatePortfolioPnL(
     const nativeCurr = a.nativeCurrency || "CHF"
 
     // ── Cost basis en CHF ────────────────────────────────────────────────────
-    // avgBuyPrice est en devise native → convertir en CHF
+    // ✓ costBasisChf est stocké en DB = CHF réel dépensé au moment de l'achat (JAMAIS recalculé)
+    // → Fallback: recalculer SEULEMENT si costBasisChf manquant (legacy assets)
     const legacyCostCHF = toCHF(a.avgBuyPrice * a.quantity, nativeCurr, rates)
     const costCHF = a.costBasisChf != null && a.costBasisChf > 0 ? a.costBasisChf : legacyCostCHF
 
