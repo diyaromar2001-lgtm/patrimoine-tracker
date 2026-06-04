@@ -775,14 +775,25 @@ export default function PortfoliosPage() {
 
   const metricAssetsFor = useCallback((assets: Asset[]) => assets
     .filter(a => a.assetClass !== "cash")
-    .map(a => ({
-      ticker: a.ticker,
-      quantity: a.quantity,
-      currentPriceNative: liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice,
-      nativeCurrency: liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF",
-      costBasisChf: a.costBasisChf,
-      assetClass: a.assetClass,
-    })), [liveEnriched])
+    .map(a => {
+      const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF"
+      const rateToChf  = (fxRates as Record<string,number>)[nativeCurr] ?? 1
+      const nativeTotal = a.quantity * a.avgBuyPrice
+      // Même détection de corruption que HoldingsTable
+      const raw = a.costBasisChf
+      const isCorrupted = raw != null && Math.abs(raw / nativeTotal - 1.0) < 0.03
+      const costBasisChf = (raw != null && raw > 0 && !isCorrupted)
+        ? raw                          // taux historique valide
+        : nativeTotal / rateToChf      // fallback taux actuel
+      return {
+        ticker: a.ticker,
+        quantity: a.quantity,
+        currentPriceNative: liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice,
+        nativeCurrency: nativeCurr,
+        costBasisChf,
+        assetClass: a.assetClass,
+      }
+    }), [liveEnriched, fxRates])
 
     // Liquidité globale — depuis AppData.globalCash (source unique, indépendante des portfolios)
   const globalCashBalances = useMemo(() => ({
