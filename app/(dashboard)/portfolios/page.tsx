@@ -520,6 +520,8 @@ export default function PortfoliosPage() {
     addAsset: dbAddAsset,
     removeAsset: dbRemoveAsset,
     addTransaction,
+    depositCash,
+    getAvailableCash,
   } = useAppData()
   // setPortfolios not available in AppData — mutations are reflected automatically
   const setPortfolios = (_: unknown) => {} // noop placeholder
@@ -551,6 +553,16 @@ export default function PortfoliosPage() {
   }
 
   async function handleSaveTx(form: TransactionFormData) {
+    // ── Dépôt de liquidité (cash mode) ──────────────────────────────────────
+    if (form.selectedClass === "cash" || form.type === "deposit") {
+      const amount   = parseFloat(form.depositAmount || "0")
+      const currency = (form.depositCurrency || "CHF") as "CHF" | "USD" | "EUR"
+      if (!amount || amount <= 0) throw new Error("Montant invalide")
+      await depositCash(form.portfolioId, amount, currency)
+      setTxModal(null)
+      return
+    }
+    // ── Transaction normale ──────────────────────────────────────────────────
     const res = await addTransaction({
       portfolioId: form.portfolioId,
       ticker:      form.ticker,

@@ -355,20 +355,41 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   /** Dépôt de liquidité : incrémente le solde */
   async function depositCash(portfolioId: string, amount: number, currency: keyof CashBalance) {
+    if (!amount || amount <= 0) return
+
+    // 1. Optimistic: update cash balance locally
     await updateCash(portfolioId, currency, amount)
-    // Enregistre aussi comme transaction de type "deposit" pour l'historique
-    await addTransaction({
+
+    // 2. Save as a transaction for history (direct call — not recursive via addTransaction)
+    //    to avoid the "price is null" issue from the modal form
+    const tempId = `local-${Date.now()}`
+    const tx: Omit<Transaction, "id"> = {
       portfolioId,
-      ticker:     currency,
+      ticker:     currency as string,
       assetName:  `Dépôt ${currency}`,
-      assetClass: "cash",
-      type:       "deposit",
+      assetClass: "cash" as Transaction["assetClass"],
+      type:       "deposit" as Transaction["type"],
       quantity:   1,
       price:      amount,
       fees:       0,
-      currency,
+      currency:   currency as unknown as Transaction["currency"],
       date:       new Date().toISOString().slice(0, 10),
-    })
+    }
+    setTransactions(prev => [{ ...tx, id: tempId } as Transaction, ...prev])
+
+    if (isSupabaseConfigured) {
+      try {
+        const result = await Q.createTransaction(tx)
+        if (result) {
+          setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
+        } else {
+          setTransactions(prev => prev.filter(t => t.id !== tempId))
+        }
+      } catch (e) {
+        console.error("[depositCash] transaction save failed:", e)
+        setTransactions(prev => prev.filter(t => t.id !== tempId))
+      }
+    }
   }
 
   return (

@@ -28,7 +28,7 @@ const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
-  const { transactions, portfolios, realizedPnLEvents, addTransaction, editTransaction, removeTransaction } = useAppData()
+  const { transactions, portfolios, realizedPnLEvents, addTransaction, editTransaction, removeTransaction, depositCash } = useAppData()
   const { format, convert } = useCurrency()
 
   const [search,     setSearch]     = useState("")
@@ -96,6 +96,15 @@ export default function TransactionsPage() {
   }
 
   async function handleSave(form: TransactionFormData) {
+    // ── Dépôt de liquidité ───────────────────────────────────────────────────
+    if (form.selectedClass === "cash" || form.type === "deposit") {
+      const amount   = parseFloat(form.depositAmount || "0")
+      const currency = (form.depositCurrency || "CHF") as "CHF" | "USD" | "EUR"
+      if (!amount || amount <= 0) throw new Error("Montant invalide")
+      await depositCash(form.portfolioId, amount, currency)
+      setModal(null)
+      return
+    }
     if (modal?.mode === "edit" && form.id) {
       await editTransaction(form.id, {
 
