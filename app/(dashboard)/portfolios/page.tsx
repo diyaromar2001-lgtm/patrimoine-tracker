@@ -15,7 +15,7 @@ import type { SearchResult } from "@/hooks/use-asset-search"
 import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import {
-  assetValue, ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
+  ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
 import { benchmarkAlpha, calculatePortfolioMetrics, type PortfolioMetrics } from "@/lib/finance"
 import { formatCurrency, cn } from "@/lib/utils"
@@ -542,7 +542,8 @@ function HoldingsTable({
 export default function PortfoliosPage() {
   const { format, convert, fxRates, currency } = useCurrency()
   const {
-    portfolios, loading: dbLoading,
+    portfolios, transactions, revenus, realizedPnLEvents,
+    loading: dbLoading,
     addPortfolio: dbAddPortfolio,
     removePortfolio: dbRemovePortfolio,
     addAsset: dbAddAsset,
@@ -1262,6 +1263,66 @@ export default function PortfoliosPage() {
                   period={period}
                 />
               </div>
+
+              {/* ── Détail du calcul ── */}
+              {(() => {
+                const m = activePortfolioMetrics
+                if (!m) return null
+                const ur = (fxRates as Record<string,number>)[currency] ?? 1
+                const costUser     = m.investedChf * ur
+                const valueUser    = m.positionValueChf * ur
+                const pnlUser      = m.totalPnlChf * ur
+                const cashUser     = m.cashChf * ur
+                const feesUser     = transactions
+                  .filter(t => t.portfolioId === activePortfolio.id)
+                  .reduce((s,t) => s + ((t.feesChf ?? 0) * ur), 0)
+                const divUser = transactions
+                  .filter(t => t.portfolioId === activePortfolio.id && t.type === "dividend")
+                  .reduce((s,t) => s + ((t.netAmountChf ?? 0) * ur), 0)
+                const revUser = revenus
+                  .filter(r => !r.portfolioId || r.portfolioId === activePortfolio.id)
+                  .reduce((s,r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
+                // RealizedPnLEvent n'a pas portfolioId — filtrer via transactions SELL du portfolio
+                const realPnlUser = transactions
+                  .filter(t => t.portfolioId === activePortfolio.id && t.type === "sell")
+                  .reduce((s,t) => s + ((t.realizedPnlChf ?? 0) * ur), 0)
+                const fxLine = Object.entries(fxRates as Record<string,number>)
+                  .filter(([k]) => k !== "CHF")
+                  .map(([k,v]) => `1 CHF = ${v.toFixed(4)} ${k}`)
+                  .join(" · ")
+
+                return (
+                  <details className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+                    <summary className="flex cursor-pointer items-center justify-between px-5 py-3 text-xs font-semibold uppercase tracking-wide select-none hover:bg-zinc-800/40 transition-colors"
+                      style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-elevated)" }}>
+                      <span>🔍 Détail du calcul</span>
+                      <span style={{ color: "var(--text-tertiary)" }}>cliquer pour afficher / masquer</span>
+                    </summary>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-zinc-800" style={{ backgroundColor: "var(--border)" }}>
+                      {[
+                        { label: "Capital investi historique", value: format(costUser), note: "Coût d'achat CHF au taux du jour d'achat", color: "var(--text-primary)" },
+                        { label: "Valeur actuelle positions", value: format(valueUser), note: "Prix Yahoo Finance × quantité", color: "var(--text-primary)" },
+                        { label: "P&L marché (latent)", value: (pnlUser >= 0 ? "+" : "") + format(pnlUser) + "  /  " + (m.totalReturnPercent >= 0 ? "+" : "") + m.totalReturnPercent.toFixed(2) + "%", note: "Valeur − coût historique", color: pnlUser >= 0 ? "var(--gain)" : "var(--loss)" },
+                        { label: "P&L réalisé (ventes)", value: (realPnlUser >= 0 ? "+" : "") + format(realPnlUser), note: "Gains/pertes sur ventes clôturées", color: realPnlUser >= 0 ? "var(--gain)" : "var(--loss)" },
+                        { label: "Liquidités (cash)", value: format(cashUser), note: "Cash disponible dans ce portefeuille", color: "#0ea5e9" },
+                        { label: "Dividendes encaissés", value: "+" + format(divUser), note: "Transactions type dividende", color: "#22c55e" },
+                        { label: "Revenus annexes", value: "+" + format(revUser), note: "Parrainage, cashback, bonus…", color: "#a855f7" },
+                        { label: "Frais payés", value: "−" + format(feesUser), note: "Frais sur toutes les transactions", color: "#ef4444" },
+                        { label: "Taux FX (BCE)", value: fxLine || "CHF uniquement", note: "Source: Banque Centrale Européenne", color: "var(--text-secondary)" },
+                        { label: "Source des prix", value: "Yahoo Finance", note: "Délai possible 15 min — différent du broker", color: "var(--text-tertiary)" },
+                        { label: "Écart broker possible", value: "±0.5–2%", note: "FX broker ≠ FX BCE · prix temps réel ≠ Yahoo", color: "#f59e0b" },
+                        { label: "Patrimoine total portfolio", value: format(valueUser + cashUser), note: "Positions + liquidités propres", color: "var(--accent)" },
+                      ].map(row => (
+                        <div key={row.label} className="flex flex-col gap-0.5 px-4 py-3" style={{ backgroundColor: "var(--bg-elevated)" }}>
+                          <span className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>{row.label}</span>
+                          <span className="text-sm font-bold tabular-nums" style={{ color: row.color }}>{row.value}</span>
+                          <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{row.note}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )
+              })()}
 
               {/* Holdings table (sortable) */}
               <div className="space-y-3">

@@ -357,11 +357,14 @@ export default function DashboardPage() {
         {/* ─── KPIs ─── */}
         <section>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-7">
-            <StatCard label="Valeur nette totale" value={format(netWorthValue)} change={totalPnlPct} changeLabel="P&L hors liquidités" icon={Wallet} iconColor="var(--accent)" index={0} />
-            <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
-            <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
-            <StatCard label="Plus-value réalisée" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
-            <StatCard label="Nb. lignes" value={String(allAssets.filter(a => a.assetClass !== "cash").length)} changeLabel="positions ouvertes" icon={BarChart2} iconColor="#f59e0b" index={4} />
+            {/* Patrimoine = positions + cash + revenus. % = marché uniquement (hors dépôts) */}
+            <StatCard label="Patrimoine net total" value={format(netWorthValue)} change={totalPnlPct} changeLabel="Perf. marché hors dépôts" icon={Wallet} iconColor="var(--accent)" index={0} />
+            <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="variation aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
+            {/* P&L latent = gains sur positions ouvertes uniquement */}
+            <StatCard label="P&L marché (latent)" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="positions ouvertes" icon={TrendingUp} iconColor="var(--gain)" index={2} />
+            {/* P&L réalisé = somme des gains/pertes sur ventes clôturées */}
+            <StatCard label="P&L réalisé (ventes)" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="gains ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
+            <StatCard label="Nb. positions" value={String(allAssets.filter(a => a.assetClass !== "cash").length)} changeLabel="lignes ouvertes" icon={BarChart2} iconColor="#f59e0b" index={4} />
             {/* Cash disponible — toutes devises converties */}
             {(() => {
               const cashTotals: Record<string, number> = {}
