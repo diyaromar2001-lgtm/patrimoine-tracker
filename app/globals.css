@@ -261,11 +261,11 @@ body {
 
 /* ═══ Table rows ════════════════════════════════════════════════════════════ */
 
-.table-row {
+.portfolio-table-row {
   transition: background-color 120ms var(--ease-out);
 }
 
-.table-row:hover {
+.portfolio-table-row:hover {
   background: var(--bg-muted);
 }
 

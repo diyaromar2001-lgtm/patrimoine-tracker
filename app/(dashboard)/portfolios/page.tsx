@@ -411,7 +411,7 @@ function HoldingsTable({
           <div key={asset.id} style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
             {/* Mobile card */}
             {/* Desktop-only row (isMobile handled above, returns early) */}
-            <div className="grid items-center px-5 py-3 transition-colors table-row"
+            <div className="portfolio-table-row grid items-center px-5 py-3 transition-colors"
               style={{ minWidth: "900px", gridTemplateColumns: COL }}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold"
