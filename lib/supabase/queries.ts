@@ -162,7 +162,14 @@ export async function createTransaction(tx: Omit<Transaction, "id">) {
   }).select().single()
 
   if (error) {
-    console.error("[createTransaction] Supabase error:", error.message, error.details, error.hint)
+    // Log complet pour diagnostiquer: code, message, détails, hint
+    console.error("[createTransaction] Supabase error:", {
+      code:    error.code,
+      message: error.message,
+      details: error.details,
+      hint:    error.hint,
+      payload: { portfolio_id: tx.portfolioId, type: tx.type, ticker: tx.ticker },
+    })
     return null
   }
   return data
