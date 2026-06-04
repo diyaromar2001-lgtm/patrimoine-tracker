@@ -30,7 +30,7 @@ interface AppData {
   addAsset:        (portfolioId: string, asset: Omit<Asset, "currentPrice">) => Promise<void>
   removeAsset:     (portfolioId: string, assetId: string) => Promise<void>
   /** Modifie directement quantité + prix moyen d'une position (sans créer de transaction) */
-  editAsset:       (portfolioId: string, assetId: string, qty: number, avgBuyPrice: number) => Promise<void>
+  editAsset:       (portfolioId: string, assetId: string, qty: number, avgBuyPrice: number, costBasisChf?: number) => Promise<void>
   updateAssetCostBasis: (portfolioId: string, assetId: string, costBasisChf: number) => Promise<void>
   // Transaction mutations
   addTransaction:    (tx: Omit<Transaction, "id">) => Promise<{ ok: boolean; error?: string }>
@@ -169,7 +169,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function editAsset(portfolioId: string, assetId: string, qty: number, avgBuyPrice: number) {
+  async function editAsset(portfolioId: string, assetId: string, qty: number, avgBuyPrice: number, costBasisChf?: number) {
     // Optimistic update
     setPortfolios(prev => prev.map(p => {
       if (p.id !== portfolioId) return p
@@ -179,8 +179,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           ...a,
           quantity:    qty,
           avgBuyPrice: avgBuyPrice,
-          // Recalcul costBasisChf = qty × avgBuyPrice (même devise, manuel)
-          costBasisChf:       qty * avgBuyPrice,
+          costBasisChf:       costBasisChf ?? qty * avgBuyPrice,
           costBasisSource:    "manual" as const,
           costBasisUpdatedAt: new Date().toISOString(),
         }),
@@ -188,7 +187,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }))
     if (isSupabaseConfigured) {
       try {
-        await Q.updateAssetPosition(assetId, qty, avgBuyPrice, qty * avgBuyPrice)
+        await Q.updateAssetPosition(assetId, qty, avgBuyPrice, costBasisChf ?? qty * avgBuyPrice)
       } catch (e) {
         console.error("[AppData] editAsset failed:", e)
         await refresh()

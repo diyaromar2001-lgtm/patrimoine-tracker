@@ -673,27 +673,34 @@ export default function PortfoliosPage() {
   // Modale "Modifier la position" — formulaire complet
   const [editAssetModal, setEditAssetModal] = useState<{
     asset: Asset
-    qty:      string
-    avgPrice: string
-    fees:     string
-    currency: string
-    date:     string
-    notes:    string
+    qty:        string
+    avgPrice:   string
+    fees:       string
+    currency:   string
+    date:       string
+    notes:      string
+    costBasisChf: string   // CHF réel payé (taux historique) — override le calcul
   } | null>(null)
 
   function openEditModal(asset: Asset) {
-    // Cherche la dernière transaction d'achat pour pré-remplir frais et date
     const lastBuy = [...transactions]
       .filter(t => t.portfolioId === asset.portfolioId && t.ticker === asset.ticker && t.type === "buy")
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+    // Pré-rempli avec costBasisChf existant (le vrai CHF historique si disponible)
+    const existingCostChf = asset.costBasisChf
+    const nativeTotal = asset.quantity * asset.avgBuyPrice
+    const isCorrupted = existingCostChf != null && Math.abs(existingCostChf / nativeTotal - 1.0) < 0.03
     setEditAssetModal({
       asset,
-      qty:      String(asset.quantity),
-      avgPrice: String(Number(asset.avgBuyPrice).toFixed(4)),
-      fees:     String(lastBuy?.fees ?? 0),
-      currency: asset.currency ?? "CHF",
-      date:     lastBuy?.date ?? new Date().toISOString().slice(0, 10),
-      notes:    "",
+      qty:          String(asset.quantity),
+      avgPrice:     String(Number(asset.avgBuyPrice).toFixed(4)),
+      fees:         String(lastBuy?.fees ?? 0),
+      currency:     asset.currency ?? "CHF",
+      date:         lastBuy?.date ?? new Date().toISOString().slice(0, 10),
+      notes:        "",
+      costBasisChf: (!isCorrupted && existingCostChf && existingCostChf > 0)
+        ? String(existingCostChf.toFixed(2))
+        : "",
     })
   }
 
@@ -1733,19 +1740,39 @@ export default function PortfoliosPage() {
                     style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
                 </div>
 
-                {/* Aperçu P&L */}
+                {/* Coût CHF historique — override pour correspondre au broker */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                    Coût total réel en CHF
+                    <span className="ml-2 text-[10px]" style={{ color: "#0ea5e9" }}>
+                      ← pour correspondre à ton broker (Trading212, IBKR…)
+                    </span>
+                  </label>
+                  <input type="number" step="any" placeholder={`Ex: ${(parseFloat(editAssetModal.avgPrice || "0") * parseFloat(editAssetModal.qty || "0") * 0.93).toFixed(2)} CHF`}
+                    value={editAssetModal.costBasisChf}
+                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, costBasisChf: e.target.value } : null)}
+                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: editAssetModal.costBasisChf ? "#0ea5e9" : "var(--border)", color: "var(--text-primary)" }} />
+                  <p className="mt-1 text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                    Laisse vide = calcul automatique. Remplis si ton broker affiche un coût CHF différent.
+                  </p>
+                </div>
+
+                {/* Aperçu coût */}
                 {(() => {
                   const qty = parseFloat(editAssetModal.qty)
                   const avg = parseFloat(editAssetModal.avgPrice)
-                  const fees = parseFloat(editAssetModal.fees || "0")
+                  const chfOverride = parseFloat(editAssetModal.costBasisChf || "0")
                   if (!qty || !avg) return null
-                  const totalCost = qty * avg + fees
+                  const displayed = chfOverride > 0 ? chfOverride : qty * avg
                   return (
                     <div className="rounded-xl border px-4 py-3 flex items-center justify-between"
-                      style={{ backgroundColor: "#6366f108", borderColor: "#6366f130" }}>
-                      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Coût total calculé</span>
-                      <span className="text-sm font-bold tabular-nums" style={{ color: "var(--accent)" }}>
-                        {totalCost.toFixed(2)} {editAssetModal.currency}
+                      style={{ backgroundColor: chfOverride > 0 ? "#0ea5e908" : "#6366f108", borderColor: chfOverride > 0 ? "#0ea5e930" : "#6366f130" }}>
+                      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                        {chfOverride > 0 ? "Coût CHF (broker)" : "Coût calculé (auto)"}
+                      </span>
+                      <span className="text-sm font-bold tabular-nums" style={{ color: chfOverride > 0 ? "#0ea5e9" : "var(--accent)" }}>
+                        {displayed.toFixed(2)} CHF
                       </span>
                     </div>
                   )
@@ -1759,10 +1786,10 @@ export default function PortfoliosPage() {
                     const qty = parseFloat(editAssetModal.qty)
                     const avg = parseFloat(editAssetModal.avgPrice)
                     if (!qty || qty <= 0 || !avg || avg <= 0) return
-                    // Recalcul du avgBuyPrice avec frais : (qty × price + fees) / qty = avg + fees/qty
-                    const fees = parseFloat(editAssetModal.fees || "0")
-                    const avgWithFees = fees > 0 ? avg : avg  // frais déjà inclus dans avg
-                    await doEditAsset(editAssetModal.asset.portfolioId, editAssetModal.asset.id, qty, avgWithFees)
+                    // Si l'utilisateur a renseigné le coût CHF broker → on l'utilise
+                    const chfOverride = parseFloat(editAssetModal.costBasisChf || "0")
+                    const costBasisToSave = chfOverride > 0 ? chfOverride : undefined
+                    await doEditAsset(editAssetModal.asset.portfolioId, editAssetModal.asset.id, qty, avg, costBasisToSave)
                     setEditAssetModal(null)
                   }}
                   disabled={!parseFloat(editAssetModal.qty) || !parseFloat(editAssetModal.avgPrice)}
