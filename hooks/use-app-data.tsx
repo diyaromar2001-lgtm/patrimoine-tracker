@@ -29,6 +29,8 @@ interface AppData {
   removePortfolio: (id: string) => Promise<void>
   addAsset:        (portfolioId: string, asset: Omit<Asset, "currentPrice">) => Promise<void>
   removeAsset:     (portfolioId: string, assetId: string) => Promise<void>
+  /** Modifie directement quantité + prix moyen d'une position (sans créer de transaction) */
+  editAsset:       (portfolioId: string, assetId: string, qty: number, avgBuyPrice: number) => Promise<void>
   updateAssetCostBasis: (portfolioId: string, assetId: string, costBasisChf: number) => Promise<void>
   // Transaction mutations
   addTransaction:    (tx: Omit<Transaction, "id">) => Promise<{ ok: boolean; error?: string }>
@@ -63,6 +65,7 @@ const DEFAULT: AppData = {
   removePortfolio: async () => {},
   addAsset:        async () => {},
   removeAsset:     async () => {},
+  editAsset:       async () => {},
   updateAssetCostBasis: async () => {},
   addTransaction:    async () => ({ ok: true }),
   editTransaction:   async () => {},
@@ -163,6 +166,33 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured) {
       try { await Q.deleteAsset(assetId) }
       catch (e) { console.error("[AppData] removeAsset failed:", e); await refresh() }
+    }
+  }
+
+  async function editAsset(portfolioId: string, assetId: string, qty: number, avgBuyPrice: number) {
+    // Optimistic update
+    setPortfolios(prev => prev.map(p => {
+      if (p.id !== portfolioId) return p
+      return {
+        ...p,
+        assets: p.assets.map(a => a.id !== assetId ? a : {
+          ...a,
+          quantity:    qty,
+          avgBuyPrice: avgBuyPrice,
+          // Recalcul costBasisChf = qty × avgBuyPrice (même devise, manuel)
+          costBasisChf:       qty * avgBuyPrice,
+          costBasisSource:    "manual" as const,
+          costBasisUpdatedAt: new Date().toISOString(),
+        }),
+      }
+    }))
+    if (isSupabaseConfigured) {
+      try {
+        await Q.updateAssetPosition(assetId, qty, avgBuyPrice, qty * avgBuyPrice)
+      } catch (e) {
+        console.error("[AppData] editAsset failed:", e)
+        await refresh()
+      }
     }
   }
 
@@ -567,7 +597,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     <AppDataContext.Provider value={{
       portfolios, transactions, revenus, globalCash, cashMovements, loading,
       realizedPnLEvents, totalRealizedPnL,
-      addPortfolio, removePortfolio, addAsset, removeAsset, updateAssetCostBasis,
+      addPortfolio, removePortfolio, addAsset, removeAsset, editAsset, updateAssetCostBasis,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,
       depositGlobalCash, withdrawGlobalCash, convertGlobalCash, globalCashInChf,

@@ -456,6 +456,29 @@ export async function updateAssetCostBasisChf(assetId: string, costBasisChf: num
   return !error
 }
 
+/** Modifie directement la quantité et le prix moyen d'une position existante */
+export async function updateAssetPosition(
+  assetId: string,
+  qty: number,
+  avgBuyPrice: number,
+  costBasisChf?: number,
+) {
+  const sb = createClient()
+  if (!sb) return false
+  const { error } = await sb
+    .from("assets")
+    .update({
+      quantity:               qty,
+      avg_buy_price:          avgBuyPrice,
+      cost_basis_chf:         costBasisChf ?? null,
+      cost_basis_source:      "manual",
+      cost_basis_updated_at:  new Date().toISOString(),
+    })
+    .eq("id", assetId)
+  if (error) console.error("[updateAssetPosition]", error.message)
+  return !error
+}
+
 // ─── Revenus Annexes ──────────────────────────────────────────────────────────
 
 import type { RevenuAnnexe } from "@/lib/types"

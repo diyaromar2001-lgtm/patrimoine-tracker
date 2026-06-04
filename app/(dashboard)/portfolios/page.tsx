@@ -248,7 +248,7 @@ function HoldingsTable({
   livePrices:   Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }>
   onDeleteAsset: (assetId: string) => void
   onSellAsset:  (asset: Asset, price: number, currency: string) => void
-  onEditAsset:  (asset: Asset, price: number, currency: string) => void
+  onEditAsset:  (asset: Asset) => void
   totalValue:   number
 }) {
   const { format, convert, fxRates, currency } = useCurrency()
@@ -608,7 +608,7 @@ function HoldingsTable({
                       >
                         {/* Modifier */}
                         <button
-                          onClick={() => { setOpenMenuId(null); onEditAsset(asset, origPrice ?? livePriceUserCurr, origCurrency) }}
+                          onClick={() => { setOpenMenuId(null); onEditAsset(asset) }}
                           className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-zinc-700/60 transition-colors"
                           style={{ color: "var(--text-primary)" }}
                         >
@@ -646,7 +646,7 @@ function HoldingsTable({
 export default function PortfoliosPage() {
   const { format, convert, fxRates, currency } = useCurrency()
   const {
-    portfolios, transactions, revenus, globalCash, realizedPnLEvents,
+    portfolios, transactions, revenus, globalCash, realizedPnLEvents, editAsset: doEditAsset,
     loading: dbLoading,
     addPortfolio: dbAddPortfolio,
     removePortfolio: dbRemovePortfolio,
@@ -665,23 +665,16 @@ export default function PortfoliosPage() {
     setTxModal({ defaultPortfolioId: portfolioId ?? portfolios[0]?.id ?? "" })
   }
 
-  function openEditModal(asset: Asset, price: number, currency: string) {
-    setTxModal({
-      defaultPortfolioId: asset.portfolioId,
-      initial: {
-        portfolioId:   asset.portfolioId,
-        ticker:        asset.ticker,
-        assetName:     asset.name,
-        assetClass:    asset.assetClass,
-        selectedClass: (["stock","etf","crypto"].includes(asset.assetClass) ? asset.assetClass : "stock") as "stock"|"etf"|"crypto",
-        type:          "buy",
-        quantity:      "",
-        price:         String(Number(price || asset.currentPrice || 0).toFixed(4)),
-        nativeCurrency: currency || asset.currency || "CHF",
-        fees:          "1",
-        date:          new Date().toISOString().slice(0, 10),
-        notes:         "",
-      },
+  // Modale "Modifier la position" — modifie qty + prix moyen directement
+  const [editAssetModal, setEditAssetModal] = useState<{
+    asset: Asset; qty: string; avgPrice: string
+  } | null>(null)
+
+  function openEditModal(asset: Asset) {
+    setEditAssetModal({
+      asset,
+      qty:      String(asset.quantity),
+      avgPrice: String(Number(asset.avgBuyPrice).toFixed(4)),
     })
   }
 
@@ -1288,7 +1281,7 @@ export default function PortfoliosPage() {
                               livePrices={liveEnriched}
                               onDeleteAsset={id => handleDeleteAsset(p.id, id)}
                               onSellAsset={openSellModal}
-                              onEditAsset={openEditModal}
+                              onEditAsset={(a) => openEditModal(a)}
                               totalValue={val}
                             />
                           </div>
@@ -1501,7 +1494,7 @@ export default function PortfoliosPage() {
                   livePrices={liveEnriched}
                   onDeleteAsset={id => handleDeleteAsset(activePortfolio.id, id)}
                   onSellAsset={openSellModal}
-                  onEditAsset={openEditModal}
+                  onEditAsset={(a) => openEditModal(a)}
                   totalValue={(activePortfolioMetrics?.positionValueChf ?? 0) * ((fxRates as Record<string,number>)[currency] ?? 1)}
                 />
               </div>
@@ -1535,6 +1528,85 @@ export default function PortfoliosPage() {
             onSave={handleSaveTx}
             onClose={() => setTxModal(null)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ─── Edit Asset Modal (Modifier la position) ─── */}
+      <AnimatePresence>
+        {editAssetModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.85)" }}
+            onClick={() => setEditAssetModal(null)}>
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}
+              className="w-full max-w-sm rounded-2xl border overflow-hidden"
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+              onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Modifier — {editAssetModal.asset.ticker}
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Correction directe · sans créer de transaction
+                  </p>
+                </div>
+                <button onClick={() => setEditAssetModal(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
+                  <X className="h-4 w-4 text-zinc-500" />
+                </button>
+              </div>
+              {/* Form */}
+              <div className="px-5 py-4 space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                    Quantité détenue *
+                  </label>
+                  <input type="number" step="any" placeholder="0"
+                    value={editAssetModal.qty}
+                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, qty: e.target.value } : null)}
+                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    autoFocus />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                    Prix moyen d'achat ({editAssetModal.asset.currency}) *
+                    <span className="ml-2 text-[10px]" style={{ color: "var(--text-tertiary)" }}>frais inclus</span>
+                  </label>
+                  <input type="number" step="any" placeholder="0.00"
+                    value={editAssetModal.avgPrice}
+                    onChange={e => setEditAssetModal(prev => prev ? { ...prev, avgPrice: e.target.value } : null)}
+                    className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
+                  <p className="mt-1 text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                    Actuel : {editAssetModal.asset.avgBuyPrice.toFixed(4)} {editAssetModal.asset.currency}
+                  </p>
+                </div>
+              </div>
+              {/* Footer */}
+              <div className="flex gap-3 px-5 pb-5">
+                <button
+                  onClick={async () => {
+                    const qty = parseFloat(editAssetModal.qty)
+                    const avg = parseFloat(editAssetModal.avgPrice)
+                    if (!qty || qty <= 0 || !avg || avg <= 0) return
+                    await doEditAsset(editAssetModal.asset.portfolioId, editAssetModal.asset.id, qty, avg)
+                    setEditAssetModal(null)
+                  }}
+                  disabled={!parseFloat(editAssetModal.qty) || !parseFloat(editAssetModal.avgPrice)}
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-all disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg,#6366f1,#818cf8)" }}>
+                  Enregistrer
+                </button>
+                <button onClick={() => setEditAssetModal(null)}
+                  className="rounded-xl border px-5 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
+                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                  Annuler
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
