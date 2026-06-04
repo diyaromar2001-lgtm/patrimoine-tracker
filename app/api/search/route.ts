@@ -16,6 +16,35 @@ function mapType(type?: string) {
   return "stock"
 }
 
+// Actions suisses SIX Exchange — toujours disponibles même si Yahoo rate-limit
+const SWISS_STOCKS = [
+  { ticker: "ROG.SW",  name: "Roche Holding AG",         type: "stock", exchange: "SIX" },
+  { ticker: "NOVN.SW", name: "Novartis AG",               type: "stock", exchange: "SIX" },
+  { ticker: "NESN.SW", name: "Nestlé SA",                 type: "stock", exchange: "SIX" },
+  { ticker: "UBSG.SW", name: "UBS Group AG",              type: "stock", exchange: "SIX" },
+  { ticker: "ABBN.SW", name: "ABB Ltd",                   type: "stock", exchange: "SIX" },
+  { ticker: "SREN.SW", name: "Swiss Re AG",               type: "stock", exchange: "SIX" },
+  { ticker: "SCMN.SW", name: "Swisscom AG",               type: "stock", exchange: "SIX" },
+  { ticker: "ZURN.SW", name: "Zurich Insurance Group AG", type: "stock", exchange: "SIX" },
+  { ticker: "GIVN.SW", name: "Givaudan SA",               type: "stock", exchange: "SIX" },
+  { ticker: "CFR.SW",  name: "Compagnie Financière Richemont SA", type: "stock", exchange: "SIX" },
+  { ticker: "SIKA.SW", name: "Sika AG",                   type: "stock", exchange: "SIX" },
+  { ticker: "LONN.SW", name: "Lonza Group AG",            type: "stock", exchange: "SIX" },
+  { ticker: "PGHN.SW", name: "Partners Group Holding AG", type: "stock", exchange: "SIX" },
+  { ticker: "KNIN.SW", name: "Kühne + Nagel International AG", type: "stock", exchange: "SIX" },
+  { ticker: "GEBN.SW", name: "Geberit AG",                type: "stock", exchange: "SIX" },
+  { ticker: "BALN.SW", name: "Baloise Holding AG",        type: "stock", exchange: "SIX" },
+  { ticker: "SLHN.SW", name: "Swiss Life Holding AG",     type: "stock", exchange: "SIX" },
+  { ticker: "STMN.SW", name: "Straumann Holding AG",      type: "stock", exchange: "SIX" },
+  { ticker: "ALC.SW",  name: "Alcon AG",                  type: "stock", exchange: "SIX" },
+  { ticker: "LISN.SW", name: "Chocoladefabriken Lindt & Sprüngli AG", type: "stock", exchange: "SIX" },
+  { ticker: "SMH.SW",  name: "The Swatch Group AG",       type: "stock", exchange: "SIX" },
+  { ticker: "CSGN.SW", name: "Credit Suisse Group AG",    type: "stock", exchange: "SIX" },
+  { ticker: "TEMN.SW", name: "Temenos AG",                type: "stock", exchange: "SIX" },
+  { ticker: "VACN.SW", name: "VAT Group AG",              type: "stock", exchange: "SIX" },
+  { ticker: "HELN.SW", name: "Helvetia Holding AG",       type: "stock", exchange: "SIX" },
+]
+
 const POPULAR_CRYPTO = [
   { ticker: "BTC",  name: "Bitcoin",   type: "crypto", exchange: "CoinGecko" },
   { ticker: "ETH",  name: "Ethereum",  type: "crypto", exchange: "CoinGecko" },
@@ -39,6 +68,14 @@ export async function GET(req: NextRequest) {
   if (!q) return NextResponse.json([])
 
   const ql = q.toLowerCase()
+
+  // Correspondances sur actions suisses (ticker sans .SW, nom, ou mot-clé "six"/"sw")
+  const qNoSuffix = ql.replace(/\.sw$/, "").replace(/\s*(six|sw|swiss|swx)\s*/g, "").trim()
+  const swissHits = SWISS_STOCKS.filter(s =>
+    s.ticker.toLowerCase().replace(".sw", "").includes(qNoSuffix) ||
+    s.name.toLowerCase().includes(qNoSuffix) ||
+    s.ticker.toLowerCase().includes(ql.replace(/\s+/g, ""))
+  ).slice(0, 5)
 
   const cryptoHits = POPULAR_CRYPTO.filter(
     c => c.ticker.toLowerCase().includes(ql) || c.name.toLowerCase().includes(ql)
@@ -68,8 +105,8 @@ export async function GET(req: NextRequest) {
 
   const seen = new Set<string>()
   return NextResponse.json(
-    [...cryptoHits, ...yahooHits]
+    [...swissHits, ...cryptoHits, ...yahooHits]
       .filter(r => { if (seen.has(r.ticker)) return false; seen.add(r.ticker); return true })
-      .slice(0, 10)
+      .slice(0, 12)
   )
 }
