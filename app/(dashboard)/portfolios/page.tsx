@@ -780,6 +780,28 @@ export default function PortfoliosPage() {
                     <p className="mt-1 text-sm text-zinc-500">
                       {totalPnl >= 0 ? "+" : ""}{format(totalPnl)} depuis le début
                     </p>
+                    {/* Cash balances summary across all portfolios */}
+                    {(() => {
+                      const totals: Record<string, number> = {}
+                      portfolios.forEach(p => {
+                        Object.entries(p.cashBalances ?? {}).forEach(([cur, val]) => {
+                          if (val > 0) totals[cur] = (totals[cur] ?? 0) + (val as number)
+                        })
+                      })
+                      const nonZero = Object.entries(totals).filter(([, v]) => v > 0)
+                      if (!nonZero.length) return null
+                      return (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {nonZero.map(([cur, val]) => (
+                            <span key={cur}
+                              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums"
+                              style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
+                              💵 {val.toFixed(2)} {cur} en liquidité
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    })()}
                     {/* CTA button */}
                     <button
                       onClick={() => openTxModal()}
@@ -1091,6 +1113,27 @@ export default function PortfoliosPage() {
                     {activePortfolio.description && (
                       <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{activePortfolio.description}</p>
                     )}
+                    {/* ── Cash balance row ─────────────────────────────── */}
+                    {(() => {
+                      const cash = activePortfolio.cashBalances ?? { CHF: 0, USD: 0, EUR: 0 }
+                      const nonZero = Object.entries(cash).filter(([, v]) => v > 0)
+                      if (!nonZero.length) return (
+                        <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: "var(--text-tertiary)" }}>
+                          💵 Aucune liquidité — déposez du cash pour acheter
+                        </p>
+                      )
+                      return (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {nonZero.map(([cur, val]) => (
+                            <span key={cur}
+                              className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                              style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
+                              💵 {(val as number).toFixed(2)} {cur} disponible
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">

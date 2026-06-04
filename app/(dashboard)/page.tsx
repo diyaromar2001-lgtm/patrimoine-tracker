@@ -349,7 +349,35 @@ export default function DashboardPage() {
             <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
             <StatCard label="Plus-value réalisée" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
             <StatCard label="Nb. actifs" value={String(allAssets.length)} icon={BarChart2} iconColor="#f59e0b" index={4} />
-            {/* 5th card: Revenus Annexes */}
+            {/* Cash disponible — toutes devises converties */}
+            {(() => {
+              const cashTotals: Record<string, number> = {}
+              portfolios.forEach(p => {
+                Object.entries(p.cashBalances ?? {}).forEach(([cur, val]) => {
+                  if ((val as number) > 0) {
+                    cashTotals[cur] = (cashTotals[cur] ?? 0) + (val as number)
+                  }
+                })
+              })
+              const totalCashConverted = Object.entries(cashTotals).reduce(
+                (s, [cur, val]) => s + convert(val as number, cur as AppCurrency), 0
+              )
+              const cashLines = Object.entries(cashTotals)
+                .filter(([, v]) => v > 0)
+                .map(([cur, val]) => `${(val as number).toFixed(0)} ${cur}`)
+                .join(" · ")
+              return (
+                <StatCard
+                  label="Liquidités"
+                  value={format(totalCashConverted)}
+                  changeLabel={cashLines || "Aucun dépôt"}
+                  icon={Wallet}
+                  iconColor="#0ea5e9"
+                  index={5}
+                />
+              )
+            })()}
+            {/* Revenus annexes */}
             {(() => {
               const revTotal = revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
               const thisMonthRevs = revenus.filter(r => new Date(r.date).getMonth() === new Date().getMonth())
@@ -361,7 +389,7 @@ export default function DashboardPage() {
                   changeLabel={`ce mois: +${format(monthTotal)}`}
                   icon={Zap}
                   iconColor="#a855f7"
-                  index={5}
+                  index={6}
                 />
               )
             })()}
