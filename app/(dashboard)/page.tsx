@@ -99,6 +99,12 @@ export default function DashboardPage() {
     [realizedPnLEvents, convert]
   )
 
+  // Frais totaux payés (achat + vente) — utilisés dans les KPI secondaires
+  const totalFeesPaid = useMemo(() => {
+    const ur = (fxRates as Record<string,number>)[currency] ?? 1
+    return transactions.reduce((s, t) => s + ((t.feesChf ?? 0) * ur), 0)
+  }, [transactions, fxRates, currency])
+
   // Allocation par classe
   const allocationEntries = useMemo(() => {
     const byClass: Record<string, number> = {}
@@ -285,7 +291,7 @@ export default function DashboardPage() {
             {
               label: "P&L réalisé",
               value: (realizedPnl >= 0 ? "+" : "") + format(realizedPnl),
-              sub:   "ventes clôturées",
+              sub:   totalFeesPaid > 0 ? `net de frais · −${format(totalFeesPaid)} frais` : "ventes clôturées",
               icon:  BadgeCheck,
               color: realizedPnl >= 0 ? "var(--gain)" : "var(--loss)",
             },

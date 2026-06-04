@@ -295,12 +295,39 @@ export default function TransactionsPage() {
                     </span>
                   </div>
                   <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{tx.quantity}</p>
-                  <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                    {format(tx.price)}
-                  </p>
-                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-tertiary)" }}>
-                    {format(tx.fees)}
-                  </p>
+                  {/* Prix unit. + total net */}
+                  <div className="text-right">
+                    <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                      {format(tx.price)}
+                    </p>
+                    {(() => {
+                      const ur = (fxRates as Record<string,number>)[currency] ?? 1
+                      const net = tx.type === "buy"
+                        ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price + tx.fees))
+                        : tx.type === "sell"
+                        ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price - tx.fees))
+                        : null
+                      if (!net) return null
+                      return (
+                        <p className="text-[10px] tabular-nums mt-0.5"
+                          style={{ color: tx.type === "sell" ? "var(--gain)" : "var(--text-tertiary)" }}>
+                          {tx.type === "sell" ? "+" : "−"}{format(net)}
+                        </p>
+                      )
+                    })()}
+                  </div>
+                  {/* Frais */}
+                  <div className="text-right">
+                    <p className="text-xs tabular-nums" style={{ color: tx.fees > 0 ? "#f59e0b" : "var(--text-tertiary)" }}>
+                      {tx.fees > 0 ? `−${format(toUser(tx.feesChf ?? tx.fees))}` : "—"}
+                    </p>
+                    {tx.type === "sell" && tx.realizedPnlChf != null && tx.realizedPnlChf !== 0 && (
+                      <p className="text-[10px] tabular-nums mt-0.5 font-semibold"
+                        style={{ color: tx.realizedPnlChf >= 0 ? "var(--gain)" : "var(--loss)" }}>
+                        P&L {tx.realizedPnlChf >= 0 ? "+" : ""}{format(toUser(tx.realizedPnlChf))}
+                      </p>
+                    )}
+                  </div>
                   <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
                     {new Date(tx.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
                   </p>

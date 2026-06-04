@@ -424,9 +424,10 @@ function HoldingsTable({
       <div className="grid px-5 py-2.5 border-b"
         style={{ borderColor: "var(--border)", minWidth: "980px", gridTemplateColumns: COL }}>
         <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Actif</span>
-        {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L latent","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
+        {([ ["Qté","qty"], ["Px moy.*","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L latent","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
           <SortHeader key={k} label={l} sortKey={k} current={sortKey} dir={sortDir} onSort={handleSort} />
         ))}
+        {/* * = frais inclus dans le prix moyen */}
         <span />
       </div>
 
@@ -526,9 +527,10 @@ function HoldingsTable({
               <p className="text-center text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                 {asset.quantity}
               </p>
-              {/* Avg buy price — stacked dual price */}
-              <div className="flex justify-end">
+              {/* Avg buy price — frais inclus dans avgBuyPrice */}
+              <div className="flex flex-col items-end gap-0.5">
                 <DualPrice price={avgPriceUserCurr} originalPrice={nativeAvg} originalCurrency={origCurrency} size="xs" />
+                <span className="text-[9px]" style={{ color: "var(--text-tertiary)" }} title="Le prix moyen inclut les frais d'achat">frais inclus</span>
               </div>
               {/* Current price — stacked dual price + live dot */}
               <div className="flex items-center justify-end gap-1.5">
@@ -1059,7 +1061,7 @@ export default function PortfoliosPage() {
                       rows: [
                         { k: "Rendement", v: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + "%", c: totalPnlPct >= 0 ? "#22c55e" : "#ef4444" },
                         { k: "P&L latent", v: (totalPnl >= 0 ? "+" : "") + format(totalPnl), c: totalPnl >= 0 ? "#22c55e" : "#ef4444" },
-                        { k: "Capital", v: format(totalCost), c: "var(--text-primary)" },
+                        { k: "Frais payés", v: "−" + format(transactions.reduce((s,t) => s + ((t.feesChf ?? 0) * userRate), 0)), c: "#f59e0b" },
                       ],
                     },
                     {
@@ -1430,6 +1432,12 @@ export default function PortfoliosPage() {
                 const feesUser     = transactions
                   .filter(t => t.portfolioId === activePortfolio.id)
                   .reduce((s,t) => s + ((t.feesChf ?? 0) * ur), 0)
+                const feesBuyUser  = transactions
+                  .filter(t => t.portfolioId === activePortfolio.id && t.type === "buy")
+                  .reduce((s,t) => s + ((t.feesChf ?? 0) * ur), 0)
+                const feesSellUser = transactions
+                  .filter(t => t.portfolioId === activePortfolio.id && t.type === "sell")
+                  .reduce((s,t) => s + ((t.feesChf ?? 0) * ur), 0)
                 const divUser = transactions
                   .filter(t => t.portfolioId === activePortfolio.id && t.type === "dividend")
                   .reduce((s,t) => s + ((t.netAmountChf ?? 0) * ur), 0)
@@ -1461,7 +1469,7 @@ export default function PortfoliosPage() {
                         { label: "Liquidités (cash)", value: format(cashUser), note: "Cash disponible dans ce portefeuille", color: "#0ea5e9" },
                         { label: "Dividendes encaissés", value: "+" + format(divUser), note: "Transactions type dividende", color: "#22c55e" },
                         { label: "Revenus annexes", value: "+" + format(revUser), note: "Parrainage, cashback, bonus…", color: "#a855f7" },
-                        { label: "Frais payés", value: "−" + format(feesUser), note: "Frais sur toutes les transactions", color: "#ef4444" },
+                        { label: "Frais totaux payés", value: "−" + format(feesUser), note: `Achat: −${format(feesBuyUser)}  ·  Vente: −${format(feesSellUser)}  ·  Inclus dans P&L réalisé et P&L latent`, color: "#f59e0b" },
                         { label: "Taux FX (BCE)", value: fxLine || "CHF uniquement", note: "Source: Banque Centrale Européenne", color: "var(--text-secondary)" },
                         { label: "Source des prix", value: "Yahoo Finance", note: "Délai possible 15 min — différent du broker", color: "var(--text-tertiary)" },
                         { label: "Écart broker possible", value: "±0.5–2%", note: "FX broker ≠ FX BCE · prix temps réel ≠ Yahoo", color: "#f59e0b" },
