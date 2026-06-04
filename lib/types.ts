@@ -4,6 +4,7 @@ export type AssetClass = "stock" | "etf" | "crypto" | "real_estate" | "bond" | "
 export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu" | "deposit"
 export type Currency = "CHF" | "EUR" | "USD" | "GBP"
 export type CryptoCustodyType = "cold_wallet" | "hot_wallet" | "exchange"
+export type CostBasisSource = "computed" | "manual" | "backfill"
 
 // ─── Cash / Liquidités ────────────────────────────────────────────────────────
 
@@ -79,6 +80,11 @@ export interface Asset {
   avgBuyPrice: number
   currentPrice: number
   currency: Currency
+  /** Historical invested capital in CHF. Static: never recomputed with live FX. */
+  costBasisChf?: number
+  /** Marks whether costBasisChf came from transaction logic, manual correction, or migration. */
+  costBasisSource?: CostBasisSource
+  costBasisUpdatedAt?: string
   logoUrl?: string
   sector?: string
   country?: string
@@ -98,6 +104,16 @@ export interface Transaction {
   price: number
   fees: number
   currency: Currency
+  /** CHF value for 1 unit of transaction currency at transaction date. */
+  fxRateToChf?: number
+  /** quantity * price converted with the historical transaction FX rate. */
+  grossAmountChf?: number
+  /** fees converted with the historical transaction FX rate. */
+  feesChf?: number
+  /** Buy cost / sell proceeds in CHF after fees according to transaction type. */
+  netAmountChf?: number
+  /** Realized PnL in CHF for SELL transactions. */
+  realizedPnlChf?: number
   date: string
   notes?: string
   cryptoCustody?: CryptoCustodyType
@@ -147,6 +163,15 @@ export function assetValue(a: Asset) {
 
 export function assetCost(a: Asset) {
   return a.quantity * a.avgBuyPrice
+}
+
+export function assetCostBasisChf(a: Asset) {
+  return a.costBasisChf ?? assetCost(a)
+}
+
+export function assetAvgCostChf(a: Asset) {
+  if (a.quantity <= 0) return 0
+  return assetCostBasisChf(a) / a.quantity
 }
 
 export function assetPnl(a: Asset) {

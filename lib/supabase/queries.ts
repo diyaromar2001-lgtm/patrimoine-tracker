@@ -39,6 +39,9 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
         avgBuyPrice:    Number(a.avg_buy_price),
         currentPrice:   Number(a.avg_buy_price),
         currency:       a.currency,
+        costBasisChf:   Number(a.cost_basis_chf ?? Number(a.quantity) * Number(a.avg_buy_price)),
+        costBasisSource: a.cost_basis_source ?? "backfill",
+        costBasisUpdatedAt: a.cost_basis_updated_at ?? undefined,
         sector:         a.sector ?? undefined,
         country:        a.country ?? undefined,
         cryptoCustody:  a.crypto_custody ?? undefined,
@@ -98,6 +101,9 @@ export async function createAsset(asset: Omit<Asset, "currentPrice">) {
     quantity:      asset.quantity,
     avg_buy_price: asset.avgBuyPrice,
     currency:      asset.currency,
+    cost_basis_chf: asset.costBasisChf ?? asset.quantity * asset.avgBuyPrice,
+    cost_basis_source: asset.costBasisSource ?? "computed",
+    cost_basis_updated_at: asset.costBasisUpdatedAt ?? new Date().toISOString(),
     sector:        asset.sector,
     country:       asset.country,
     crypto_custody: asset.cryptoCustody,
@@ -138,6 +144,11 @@ export async function fetchTransactions(): Promise<Transaction[] | null> {
     price:       Number(t.price),
     fees:        Number(t.fees),
     currency:    t.currency,
+    fxRateToChf: Number(t.fx_rate_to_chf ?? 1),
+    grossAmountChf: Number(t.gross_amount_chf ?? 0),
+    feesChf: Number(t.fees_chf ?? 0),
+    netAmountChf: Number(t.net_amount_chf ?? 0),
+    realizedPnlChf: Number(t.realized_pnl_chf ?? 0),
     date:        t.date,
     notes:       t.notes ?? undefined,
   }))
@@ -157,6 +168,11 @@ export async function createTransaction(tx: Omit<Transaction, "id">) {
     price:        tx.price,
     fees:         tx.fees,
     currency:     tx.currency ?? "CHF",
+    fx_rate_to_chf: tx.fxRateToChf ?? 1,
+    gross_amount_chf: tx.grossAmountChf ?? 0,
+    fees_chf: tx.feesChf ?? 0,
+    net_amount_chf: tx.netAmountChf ?? 0,
+    realized_pnl_chf: tx.realizedPnlChf ?? 0,
     date:         tx.date,
     notes:        tx.notes ?? null,
   }).select().single()
@@ -187,6 +203,12 @@ export async function updateTransaction(id: string, tx: Partial<Omit<Transaction
     quantity:    tx.quantity,
     price:       tx.price,
     fees:        tx.fees,
+    currency:    tx.currency,
+    fx_rate_to_chf: tx.fxRateToChf,
+    gross_amount_chf: tx.grossAmountChf,
+    fees_chf: tx.feesChf,
+    net_amount_chf: tx.netAmountChf,
+    realized_pnl_chf: tx.realizedPnlChf,
     date:        tx.date,
     notes:       tx.notes,
   }).eq("id", id)
@@ -216,6 +238,7 @@ export async function upsertAssetFromBuy(tx: {
   price:       number
   fees?:       number
   currency:    string
+  costBasisChf?: number
   cryptoCustody?: string
   stakingEnabled?: boolean
 }) {
@@ -225,7 +248,7 @@ export async function upsertAssetFromBuy(tx: {
   // Check if asset already exists in this portfolio
   const { data: existing } = await sb
     .from("assets")
-    .select("id, quantity, avg_buy_price")
+    .select("id, quantity, avg_buy_price, cost_basis_chf")
     .eq("portfolio_id", tx.portfolioId)
     .eq("ticker", tx.ticker)
     .maybeSingle()
@@ -234,10 +257,18 @@ export async function upsertAssetFromBuy(tx: {
     // Recalculate: weighted avg price
     const oldQty  = Number(existing.quantity)
     const oldAvg  = Number(existing.avg_buy_price)
+    const oldCostBasisChf = Number(existing.cost_basis_chf ?? 0)
     const newQty  = oldQty + tx.quantity
     const newAvg  = (oldQty * oldAvg + tx.quantity * tx.price + (tx.fees ?? 0)) / newQty
+    const buyCostBasisChf = tx.costBasisChf ?? (tx.quantity * tx.price + (tx.fees ?? 0))
 
-    const update: Record<string, unknown> = { quantity: newQty, avg_buy_price: Number(newAvg.toFixed(4)) }
+    const update: Record<string, unknown> = {
+      quantity: newQty,
+      avg_buy_price: Number(newAvg.toFixed(4)),
+      cost_basis_chf: Number((oldCostBasisChf + buyCostBasisChf).toFixed(8)),
+      cost_basis_source: "computed",
+      cost_basis_updated_at: new Date().toISOString(),
+    }
     if (tx.assetClass === "crypto") {
       if (tx.cryptoCustody) update.crypto_custody = tx.cryptoCustody
       if (tx.stakingEnabled !== undefined) update.staking_enabled = tx.stakingEnabled
@@ -258,6 +289,9 @@ export async function upsertAssetFromBuy(tx: {
       quantity:      tx.quantity,
       avg_buy_price: tx.quantity > 0 ? tx.price + ((tx.fees ?? 0) / tx.quantity) : tx.price,
       currency:      tx.currency ?? "CHF",
+      cost_basis_chf: tx.costBasisChf ?? (tx.quantity * tx.price + (tx.fees ?? 0)),
+      cost_basis_source: "computed",
+      cost_basis_updated_at: new Date().toISOString(),
       crypto_custody: tx.assetClass === "crypto" ? tx.cryptoCustody : undefined,
       staking_enabled: tx.assetClass === "crypto" ? Boolean(tx.stakingEnabled) : undefined,
     })
@@ -274,13 +308,14 @@ export async function reduceAssetFromSell(tx: {
   portfolioId: string
   ticker:      string
   quantity:    number
+  soldCostBasisChf?: number
 }) {
   const sb = createClient()
   if (!sb) return
 
   const { data: existing } = await sb
     .from("assets")
-    .select("id, quantity")
+    .select("id, quantity, cost_basis_chf")
     .eq("portfolio_id", tx.portfolioId)
     .eq("ticker", tx.ticker)
     .maybeSingle()
@@ -288,12 +323,38 @@ export async function reduceAssetFromSell(tx: {
   if (!existing) return
 
   const newQty = Number(existing.quantity) - tx.quantity
+  const oldQty = Number(existing.quantity)
+  const oldCostBasisChf = Number(existing.cost_basis_chf ?? 0)
+  const proportionalCost = oldQty > 0 ? oldCostBasisChf * (tx.quantity / oldQty) : 0
+  const soldCostBasisChf = tx.soldCostBasisChf ?? proportionalCost
 
   if (newQty <= 0) {
     await sb.from("assets").delete().eq("id", existing.id)
   } else {
-    await sb.from("assets").update({ quantity: Number(newQty.toFixed(8)) }).eq("id", existing.id)
+    await sb.from("assets").update({
+      quantity: Number(newQty.toFixed(8)),
+      cost_basis_chf: Number(Math.max(0, oldCostBasisChf - soldCostBasisChf).toFixed(8)),
+      cost_basis_source: "computed",
+      cost_basis_updated_at: new Date().toISOString(),
+    }).eq("id", existing.id)
   }
+}
+
+export async function updateAssetCostBasisChf(assetId: string, costBasisChf: number) {
+  const sb = createClient()
+  if (!sb) return false
+
+  const { error } = await sb
+    .from("assets")
+    .update({
+      cost_basis_chf: costBasisChf,
+      cost_basis_source: "manual",
+      cost_basis_updated_at: new Date().toISOString(),
+    })
+    .eq("id", assetId)
+
+  if (error) console.error("[updateAssetCostBasisChf]", error.message)
+  return !error
 }
 
 // ─── Revenus Annexes ──────────────────────────────────────────────────────────

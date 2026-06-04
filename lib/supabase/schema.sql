@@ -27,6 +27,10 @@ create table if not exists assets (
   quantity       numeric not null,
   avg_buy_price  numeric not null,
   currency       text    not null default 'CHF',
+  cost_basis_chf numeric not null default 0,
+  cost_basis_source text not null default 'computed'
+    check (cost_basis_source in ('computed', 'manual', 'backfill')),
+  cost_basis_updated_at timestamptz not null default now(),
   sector         text,
   country        text,
   crypto_custody text,   -- cold_wallet | hot_wallet | exchange
@@ -46,6 +50,11 @@ create table if not exists transactions (
   price        numeric not null,
   fees         numeric not null default 0,
   currency     text    not null default 'CHF',
+  fx_rate_to_chf numeric not null default 1,
+  gross_amount_chf numeric not null default 0,
+  fees_chf numeric not null default 0,
+  net_amount_chf numeric not null default 0,
+  realized_pnl_chf numeric not null default 0,
   date         date    not null,
   notes        text,
   created_at   timestamptz not null default now()

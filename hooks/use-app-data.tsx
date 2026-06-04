@@ -25,6 +25,7 @@ interface AppData {
   removePortfolio: (id: string) => Promise<void>
   addAsset:        (portfolioId: string, asset: Omit<Asset, "currentPrice">) => Promise<void>
   removeAsset:     (portfolioId: string, assetId: string) => Promise<void>
+  updateAssetCostBasis: (portfolioId: string, assetId: string, costBasisChf: number) => Promise<void>
   // Transaction mutations
   addTransaction:    (tx: Omit<Transaction, "id">) => Promise<{ ok: boolean; error?: string }>
   editTransaction:   (id: string, updates: Partial<Omit<Transaction, "id">>) => Promise<void>
@@ -46,6 +47,7 @@ const DEFAULT: AppData = {
   removePortfolio: async () => {},
   addAsset:        async () => {},
   removeAsset:     async () => {},
+  updateAssetCostBasis: async () => {},
   addTransaction:    async () => ({ ok: true }),
   editTransaction:   async () => {},
   removeTransaction: async () => {},
@@ -111,7 +113,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   async function addAsset(portfolioId: string, asset: Omit<Asset, "currentPrice">) {
     // Optimistic
-    const local: Asset = { ...asset, currentPrice: asset.avgBuyPrice }
+    const local: Asset = {
+      ...asset,
+      currentPrice: asset.avgBuyPrice,
+      costBasisChf: asset.costBasisChf ?? asset.quantity * asset.avgBuyPrice,
+      costBasisSource: asset.costBasisSource ?? "computed",
+      costBasisUpdatedAt: asset.costBasisUpdatedAt ?? new Date().toISOString(),
+    }
     setPortfolios(prev => prev.map(p =>
       p.id === portfolioId ? { ...p, assets: [...p.assets, local] } : p
     ))
@@ -128,6 +136,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured) {
       try { await Q.deleteAsset(assetId) }
       catch (e) { console.error("[AppData] removeAsset failed:", e); await refresh() }
+    }
+  }
+
+  async function updateAssetCostBasis(portfolioId: string, assetId: string, costBasisChf: number) {
+    const updatedAt = new Date().toISOString()
+    setPortfolios(prev => prev.map(p =>
+      p.id === portfolioId
+        ? {
+            ...p,
+            assets: p.assets.map(a =>
+              a.id === assetId
+                ? { ...a, costBasisChf, costBasisSource: "manual", costBasisUpdatedAt: updatedAt }
+                : a
+            ),
+          }
+        : p
+    ))
+
+    if (isSupabaseConfigured) {
+      try { await Q.updateAssetCostBasisChf(assetId, costBasisChf) }
+      catch (e) { console.error("[AppData] updateAssetCostBasis failed:", e); await refresh() }
     }
   }
 
@@ -402,7 +431,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     <AppDataContext.Provider value={{
       portfolios, transactions, revenus, loading,
       realizedPnLEvents, totalRealizedPnL,
-      addPortfolio, removePortfolio, addAsset, removeAsset,
+      addPortfolio, removePortfolio, addAsset, removeAsset, updateAssetCostBasis,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,
       depositCash, getAvailableCash,
