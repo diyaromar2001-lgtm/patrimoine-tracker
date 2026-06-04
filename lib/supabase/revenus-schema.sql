@@ -30,3 +30,10 @@ create policy "users_own_revenus"
 -- Also add 'revenu' to transactions type constraint (if you have one)
 -- If not, just run this to confirm:
 select 'REVENUS ANNEXES TABLE CREATED' as status;
+
+-- ─── Cash / Liquidités ────────────────────────────────────────────────────────
+-- Ajouter la colonne cash_balances aux portfolios (JSON)
+ALTER TABLE portfolios
+  ADD COLUMN IF NOT EXISTS cash_balances jsonb NOT NULL DEFAULT '{"CHF":0,"USD":0,"EUR":0}';
+
+SELECT 'CASH BALANCES COLUMN ADDED' AS status;

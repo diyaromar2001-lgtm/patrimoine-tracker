@@ -1,5 +1,7 @@
 import { createClient } from "./client"
-import type { Portfolio, Asset, Transaction } from "@/lib/types"
+import type { Portfolio, Asset, Transaction, CashBalance } from "@/lib/types"
+
+const EMPTY_CASH: CashBalance = { CHF: 0, USD: 0, EUR: 0 }
 
 // ─── Portfolios ───────────────────────────────────────────────────────────────
 
@@ -18,27 +20,28 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
   const { data: assetsData } = await sb.from("assets").select("*")
 
   return portfoliosData.map(p => ({
-    id:          p.id,
-    name:        p.name,
-    description: p.description ?? undefined,
-    color:       p.color,
-    currency:    p.currency,
-    createdAt:   p.created_at,
-    assets:      (assetsData ?? [])
+    id:           p.id,
+    name:         p.name,
+    description:  p.description ?? undefined,
+    color:        p.color,
+    currency:     p.currency,
+    createdAt:    p.created_at,
+    cashBalances: { ...EMPTY_CASH, ...(p.cash_balances ?? {}) } as CashBalance,
+    assets: (assetsData ?? [])
       .filter(a => a.portfolio_id === p.id)
       .map(a => ({
-        id:           a.id,
-        portfolioId:  a.portfolio_id,
-        ticker:       a.ticker,
-        name:         a.name,
-        assetClass:   a.asset_class as Asset["assetClass"],
-        quantity:     Number(a.quantity),
-        avgBuyPrice:  Number(a.avg_buy_price),
-        currentPrice: Number(a.avg_buy_price),  // will be overridden by live price
-        currency:     a.currency,
-        sector:       a.sector ?? undefined,
-        country:      a.country ?? undefined,
-        cryptoCustody: a.crypto_custody ?? undefined,
+        id:             a.id,
+        portfolioId:    a.portfolio_id,
+        ticker:         a.ticker,
+        name:           a.name,
+        assetClass:     a.asset_class as Asset["assetClass"],
+        quantity:       Number(a.quantity),
+        avgBuyPrice:    Number(a.avg_buy_price),
+        currentPrice:   Number(a.avg_buy_price),
+        currency:       a.currency,
+        sector:         a.sector ?? undefined,
+        country:        a.country ?? undefined,
+        cryptoCustody:  a.crypto_custody ?? undefined,
         stakingEnabled: Boolean(a.staking_enabled),
       })),
   }))
@@ -60,6 +63,18 @@ export async function createPortfolio(portfolio: Omit<Portfolio, "id" | "assets"
   }).select().single()
 
   return error ? null : data
+}
+
+/** Update the cash_balances JSON column for a portfolio */
+export async function updateCashBalance(portfolioId: string, cash: CashBalance) {
+  const sb = createClient()
+  if (!sb) return false
+  const { error } = await sb
+    .from("portfolios")
+    .update({ cash_balances: cash })
+    .eq("id", portfolioId)
+  if (error) console.error("[updateCashBalance]", error.message)
+  return !error
 }
 
 export async function deletePortfolio(id: string) {

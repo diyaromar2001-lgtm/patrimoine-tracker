@@ -16,6 +16,7 @@ export const MOCK_PORTFOLIOS: Portfolio[] = [
     color: "#3b82f6",
     currency: "CHF",
     createdAt: "2023-01-15",
+  cashBalances: { CHF: 0, USD: 0, EUR: 0 },
     assets: [
       {
         id: "a1", portfolioId: "p1", ticker: "MSFT", name: "Microsoft",
@@ -56,6 +57,7 @@ export const MOCK_PORTFOLIOS: Portfolio[] = [
     color: "#a78bfa",
     currency: "CHF",
     createdAt: "2023-06-01",
+  cashBalances: { CHF: 0, USD: 0, EUR: 0 },
     assets: [
       {
         id: "a7", portfolioId: "p2", ticker: "BTC", name: "Bitcoin",

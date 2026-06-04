@@ -539,14 +539,13 @@ export default function PortfoliosPage() {
         assetName: asset.name,
         assetClass: asset.assetClass,
         type: "sell",
+        selectedClass: "stock" as const,
         quantity: String(asset.quantity),
         price: String(Number(price || asset.currentPrice || asset.avgBuyPrice || 0).toFixed(4)),
         nativeCurrency: currency || asset.currency || "CHF",
         fees: "1",
         date: new Date().toISOString().slice(0, 10),
         notes: "",
-        cryptoCustody: asset.cryptoCustody ?? "",
-        stakingEnabled: asset.stakingEnabled ?? false,
       },
     })
   }
@@ -564,8 +563,6 @@ export default function PortfoliosPage() {
       currency:    (form.nativeCurrency || "CHF") as "CHF" | "EUR" | "USD" | "GBP",
       date:        form.date,
       notes:       form.notes || undefined,
-      cryptoCustody: form.cryptoCustody || undefined,
-      stakingEnabled: form.stakingEnabled,
     })
     if (!res.ok) throw new Error(res.error ?? "Erreur Supabase")
     setTxModal(null)
@@ -648,7 +645,7 @@ export default function PortfoliosPage() {
     if (!newName.trim()) return
     const id = await dbAddPortfolio({
       name: newName.trim(), description: newDesc.trim(),
-      color: newColor, currency: "CHF", createdAt: new Date().toISOString().slice(0, 10),
+      color: newColor, currency: "CHF", cashBalances: { CHF: 0, USD: 0, EUR: 0 }, createdAt: new Date().toISOString().slice(0, 10),
     })
     if (id) setActiveTab(id)
     setNewName(""); setNewDesc(""); setShowNewPortfolio(false)
@@ -1182,8 +1179,9 @@ export default function PortfoliosPage() {
             mode="add"
             initial={txModal.initial ?? {
               portfolioId: txModal.defaultPortfolioId ?? portfolios[0]?.id ?? "",
-              ticker: "", assetName: "", assetClass: "stock", type: "buy",
-              quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
+              ticker: "", assetName: "", assetClass: "stock",
+              selectedClass: "stock" as const,
+              type: "buy", quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
               date: new Date().toISOString().slice(0, 10), notes: "",
             }}
             portfolios={portfolios}

@@ -346,6 +346,7 @@ export default function RevenusPage() {
             mode="add"
             initial={{
               portfolioId:    portfolios[0]?.id ?? "",
+              selectedClass:  "stock" as const,
               ticker:         "", assetName:      "",
               assetClass:     "stock", type:     "revenu",
               revenuType:     undefined, platform:  "",

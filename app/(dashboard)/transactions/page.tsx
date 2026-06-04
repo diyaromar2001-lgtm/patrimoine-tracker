@@ -13,17 +13,17 @@ import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import type { AppCurrency } from "@/lib/utils"
 import {
   Plus, Search, X, Check, ArrowUpRight, ArrowDownLeft,
-  Gift, ArrowLeftRight, Pencil, Zap,
+  Gift, ArrowLeftRight, Pencil, Zap, Wallet,
 } from "lucide-react"
 
 const TX_COLORS: Record<TransactionType, string> = {
-  buy: "#3b82f6", sell: "#a78bfa", dividend: "#22c55e", transfer: "#64748b", revenu: "#a855f7",
+  buy: "#3b82f6", sell: "#a78bfa", dividend: "#22c55e", transfer: "#64748b", revenu: "#a855f7", deposit: "#0ea5e9",
 }
 const TX_LABELS: Record<TransactionType, string> = {
-  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert", revenu: "Revenu",
+  buy: "Achat", sell: "Vente", dividend: "Dividende", transfer: "Transfert", revenu: "Revenu", deposit: "Dépôt",
 }
 const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
-  buy: ArrowDownLeft, sell: ArrowUpRight, dividend: Gift, transfer: ArrowLeftRight, revenu: Zap,
+  buy: ArrowDownLeft, sell: ArrowUpRight, dividend: Gift, transfer: ArrowLeftRight, revenu: Zap, deposit: Wallet,
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -68,10 +68,9 @@ export default function TransactionsPage() {
       initial: {
         portfolioId: portfolios[0]?.id ?? "",
         ticker: "", assetName: "", assetClass: "stock",
-        type: "buy", quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
+        type: "buy", quantity: "", price: "", nativeCurrency: "CHF", selectedClass: "stock", fees: "1",
         date: new Date().toISOString().slice(0, 10), notes: "",
-        cryptoCustody: "", stakingEnabled: false,
-      },
+              },
     })
   }
 
@@ -79,21 +78,20 @@ export default function TransactionsPage() {
     setModal({
       mode: "edit",
       initial: {
-        id:          tx.id,
-        portfolioId: tx.portfolioId,
-        ticker:      tx.ticker,
-        assetName:   tx.assetName,
-        assetClass:  tx.assetClass,
-        type:        tx.type,
-        quantity:    String(tx.quantity),
-        price:       String(tx.price),
+        id:            tx.id,
+        portfolioId:   tx.portfolioId,
+        selectedClass: "stock" as const,
+        ticker:        tx.ticker,
+        assetName:     tx.assetName,
+        assetClass:    tx.assetClass,
+        type:          tx.type,
+        quantity:      String(tx.quantity),
+        price:         String(tx.price),
         nativeCurrency: tx.currency ?? 'CHF',
-        fees:        String(tx.fees),
-        date:        tx.date,
+        fees:          String(tx.fees),
+        date:          tx.date,
         notes:       tx.notes ?? "",
-        cryptoCustody: tx.cryptoCustody ?? "",
-        stakingEnabled: tx.stakingEnabled ?? false,
-      },
+              },
     })
   }
 
@@ -110,8 +108,6 @@ export default function TransactionsPage() {
         fees:       parseFloat(form.fees) || 0,
         date:       form.date,
         notes:      form.notes || undefined,
-        cryptoCustody: form.cryptoCustody || undefined,
-        stakingEnabled: form.stakingEnabled,
       })
     } else {
       const res = await addTransaction({
@@ -126,8 +122,6 @@ export default function TransactionsPage() {
         currency:    "CHF",
         date:        form.date,
         notes:       form.notes || undefined,
-        cryptoCustody: form.cryptoCustody || undefined,
-        stakingEnabled: form.stakingEnabled,
       })
       if (!res.ok) throw new Error(res.error ?? "Erreur Supabase")
     }

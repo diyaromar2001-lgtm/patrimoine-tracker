@@ -1,9 +1,26 @@
 // ─── Core domain types ───────────────────────────────────────────────────────
 
 export type AssetClass = "stock" | "etf" | "crypto" | "real_estate" | "bond" | "cash"
-export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu"
+export type TransactionType = "buy" | "sell" | "dividend" | "transfer" | "revenu" | "deposit"
 export type Currency = "CHF" | "EUR" | "USD" | "GBP"
 export type CryptoCustodyType = "cold_wallet" | "hot_wallet" | "exchange"
+
+// ─── Cash / Liquidités ────────────────────────────────────────────────────────
+
+/** Soldes de liquidité par devise pour un portefeuille */
+export interface CashBalance {
+  CHF: number
+  USD: number
+  EUR: number
+}
+
+export const EMPTY_CASH_BALANCE: CashBalance = { CHF: 0, USD: 0, EUR: 0 }
+
+/**
+ * Classe d'actif sélectionnable dans la modale transaction
+ * (pour filtrer la recherche et adapter l'UI)
+ */
+export type ModalAssetClass = "stock" | "etf" | "crypto" | "cash"
 
 // ─── Revenus Annexes ─────────────────────────────────────────────────────────
 
@@ -41,13 +58,15 @@ export const REVENU_TYPE_META: Record<RevenuType, { label: string; icon: string;
 }
 
 export interface Portfolio {
-  id: string
-  name: string
+  id:           string
+  name:         string
   description?: string
-  color: string
-  currency: Currency
-  createdAt: string
-  assets: Asset[]
+  color:        string
+  currency:     Currency
+  createdAt:    string
+  assets:       Asset[]
+  /** Poche de liquidité disponible par devise */
+  cashBalances: CashBalance
 }
 
 export interface Asset {

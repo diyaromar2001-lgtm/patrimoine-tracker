@@ -6,7 +6,8 @@ import {
 } from "react"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import * as Q from "@/lib/supabase/queries"
-import type { Portfolio, Transaction, Asset, RevenuAnnexe } from "@/lib/types"
+import type { Portfolio, Transaction, Asset, RevenuAnnexe, CashBalance } from "@/lib/types"
+import { EMPTY_CASH_BALANCE } from "@/lib/types"
 import { calculateRealizedPnLEvents, type RealizedPnLEvent } from "@/lib/finance"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +32,9 @@ interface AppData {
   // Revenus Annexes mutations
   addRevenu:    (rev: Omit<RevenuAnnexe, "id" | "createdAt" | "userId">) => Promise<void>
   removeRevenu: (id: string) => Promise<void>
+  // Cash / Liquidité mutations
+  depositCash:   (portfolioId: string, amount: number, currency: keyof CashBalance) => Promise<void>
+  getAvailableCash: (portfolioId: string, currency: keyof CashBalance) => number
   // Refresh
   refresh: () => Promise<void>
 }
@@ -47,6 +51,8 @@ const DEFAULT: AppData = {
   removeTransaction: async () => {},
   addRevenu:    async () => {},
   removeRevenu: async () => {},
+  depositCash:  async () => {},
+  getAvailableCash: () => 0,
   refresh: async () => {},
 }
 
@@ -128,15 +134,29 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // ── Transaction mutations ────────────────────────────────────────────────────
 
   async function addTransaction(tx: Omit<Transaction, "id">): Promise<{ ok: boolean; error?: string }> {
+    // ── Validations métier ───────────────────────────────────────────────────
     if (tx.type === "sell") {
       const asset = portfolios
         .find(p => p.id === tx.portfolioId)
         ?.assets.find(a => a.ticker === tx.ticker)
-
       if (!asset) return { ok: false, error: "Position introuvable pour cette vente." }
       if (tx.quantity <= 0) return { ok: false, error: "La quantité vendue doit être positive." }
       if (tx.quantity > asset.quantity) {
         return { ok: false, error: `Quantité vendue trop élevée. Disponible: ${asset.quantity}.` }
+      }
+    }
+
+    if (tx.type === "buy" && tx.assetClass !== "cash") {
+      // Validation du solde de cash
+      const nativeCurr = (tx.currency ?? "CHF") as keyof CashBalance
+      const portfolio  = portfolios.find(p => p.id === tx.portfolioId)
+      const cash       = portfolio?.cashBalances?.[nativeCurr] ?? 0
+      const totalCost  = tx.quantity * tx.price + (tx.fees ?? 0)
+      if (cash > 0 && totalCost > cash) {
+        return {
+          ok: false,
+          error: `Solde de liquidité insuffisant. Disponible: ${cash.toFixed(2)} ${nativeCurr} — Requis: ${totalCost.toFixed(2)} ${nativeCurr}.`,
+        }
       }
     }
 
@@ -233,7 +253,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         })
       }
 
-      // ── 5. Reload to get consistent state (real IDs, current prices) ──────
+      // ── 5. Update cash balance ────────────────────────────────────────────
+      const nativeCurr = (tx.currency ?? "CHF") as keyof CashBalance
+      if (tx.type === "buy" && tx.assetClass !== "cash") {
+        // Déduit le coût total de la poche de cash
+        const totalCost = tx.quantity * tx.price + (tx.fees ?? 0)
+        await updateCash(tx.portfolioId, nativeCurr, -totalCost)
+      } else if (tx.type === "sell") {
+        // Crédite le produit net dans la poche de cash
+        const netProceeds = tx.quantity * tx.price - (tx.fees ?? 0)
+        await updateCash(tx.portfolioId, nativeCurr, netProceeds)
+      }
+
+      // ── 6. Reload to get consistent state ─────────────────────────────────
       await refresh()
       return { ok: true }
 
@@ -295,6 +327,50 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ── Cash / Liquidité ─────────────────────────────────────────────────────────
+
+  /** Lit le solde de cash disponible d'un portfolio dans une devise donnée */
+  function getAvailableCash(portfolioId: string, currency: keyof CashBalance): number {
+    const p = portfolios.find(p => p.id === portfolioId)
+    return p?.cashBalances?.[currency] ?? 0
+  }
+
+  /** Met à jour le solde cash d'un portfolio (delta positif = dépôt, négatif = déduction) */
+  async function updateCash(portfolioId: string, currency: keyof CashBalance, delta: number) {
+    setPortfolios(prev => prev.map(p => {
+      if (p.id !== portfolioId) return p
+      const current  = p.cashBalances ?? { CHF: 0, USD: 0, EUR: 0 }
+      const updated  = { ...current, [currency]: Math.max(0, (current[currency] ?? 0) + delta) }
+      return { ...p, cashBalances: updated }
+    }))
+    if (isSupabaseConfigured) {
+      const p = portfolios.find(p => p.id === portfolioId)
+      if (p) {
+        const current = p.cashBalances ?? { CHF: 0, USD: 0, EUR: 0 }
+        const updated = { ...current, [currency]: Math.max(0, (current[currency] ?? 0) + delta) }
+        await Q.updateCashBalance(portfolioId, updated)
+      }
+    }
+  }
+
+  /** Dépôt de liquidité : incrémente le solde */
+  async function depositCash(portfolioId: string, amount: number, currency: keyof CashBalance) {
+    await updateCash(portfolioId, currency, amount)
+    // Enregistre aussi comme transaction de type "deposit" pour l'historique
+    await addTransaction({
+      portfolioId,
+      ticker:     currency,
+      assetName:  `Dépôt ${currency}`,
+      assetClass: "cash",
+      type:       "deposit",
+      quantity:   1,
+      price:      amount,
+      fees:       0,
+      currency,
+      date:       new Date().toISOString().slice(0, 10),
+    })
+  }
+
   return (
     <AppDataContext.Provider value={{
       portfolios, transactions, revenus, loading,
@@ -302,6 +378,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       addPortfolio, removePortfolio, addAsset, removeAsset,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,
+      depositCash, getAvailableCash,
       refresh,
     }}>
       {children}
