@@ -13,6 +13,7 @@ import { InsightsWidget } from "@/components/ui/insights-widget"
 import { useAppData } from "@/hooks/use-app-data"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
+import { calculatePortfolioPnL, convertPnL } from "@/lib/pnl"
 import type { AppCurrency } from "@/lib/utils"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
@@ -68,7 +69,7 @@ function normalizeGeography(country?: string) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { portfolios, transactions, revenus, loading, realizedPnLEvents } = useAppData()
-  const { format, convert } = useCurrency()
+  const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
 
@@ -95,30 +96,25 @@ export default function DashboardPage() {
   const { history: portfolioHistory, loading: historyLoading, isReal } =
     usePortfolioHistory(portfolioAssets, API_PERIOD[period] ?? "1Y")
 
-  // Cost base: avgBuyPrice is in native currency — convert to user's currency
-  const totalCost = useMemo(
-    () => allAssets.reduce((s, a) => {
-      const nativeCurr = livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
-      const costConverted = convert(a.avgBuyPrice, nativeCurr as AppCurrency)
-      return s + costConverted * a.quantity
-    }, 0),
-    [allAssets, livePrices, convert] // eslint-disable-line
-  )
+  // ── P&L avec formule stricte (standardisation en CHF) ───────────────────────
+  // Règle: tout en CHF, prix natifs pour coût ET valeur, même taux FX
+  const pnlResult = useMemo(() => {
+    const assets = allAssets
+      .filter(a => a.assetClass !== "cash")
+      .map(a => ({
+        ticker:               a.ticker,
+        quantity:             a.quantity,
+        avgBuyPrice:          a.avgBuyPrice,
+        nativeCurrency:       livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
+        currentPriceNative:   livePrices[a.ticker]?.originalPrice,
+        currentPriceConverted: livePrices[a.ticker]?.price ?? a.currentPrice,
+      }))
+    return calculatePortfolioPnL(assets, fxRates)
+  }, [allAssets, livePrices, fxRates]) // eslint-disable-line
 
-  // Total value using live prices where available
-  const totalValue = useMemo(
-    () => allAssets.reduce((s, a) => {
-      if (a.assetClass === "cash") {
-        return s + convert(a.quantity * (a.currentPrice || a.avgBuyPrice || 1), a.currency as AppCurrency)
-      }
-      const lp = livePrices[a.ticker]?.price
-      return s + (lp ?? a.currentPrice) * a.quantity
-    }, 0),
-    [allAssets, livePrices, convert]
-  )
-
-  const totalPnl    = totalValue - totalCost
-  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+  // Convertir résultat CHF → devise utilisateur
+  const { cost: totalCost, value: totalValue, pnl: totalPnl, pct: totalPnlPct } =
+    convertPnL(pnlResult, currency, fxRates)
 
   // Today P&L: sum of each asset's day change
   const todayPnl = useMemo(

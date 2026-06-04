@@ -147,15 +147,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (tx.type === "buy" && tx.assetClass !== "cash") {
-      // Validation du solde de cash
+      // ── Validation du solde GLOBAL de cash ─────────────────────────────────
+      // Le cash est global : agréger tous les portefeuilles dans la devise native
       const nativeCurr = (tx.currency ?? "CHF") as keyof CashBalance
-      const portfolio  = portfolios.find(p => p.id === tx.portfolioId)
-      const cash       = portfolio?.cashBalances?.[nativeCurr] ?? 0
-      const totalCost  = tx.quantity * tx.price + (tx.fees ?? 0)
-      if (cash > 0 && totalCost > cash) {
+      const globalCash = portfolios.reduce(
+        (sum, p) => sum + ((p.cashBalances?.[nativeCurr] as number | undefined) ?? 0),
+        0
+      )
+      const totalCost = tx.quantity * tx.price + (tx.fees ?? 0)
+
+      // Bloquer SEULEMENT si du cash a été déposé ET que le coût dépasse le solde
+      if (globalCash > 0 && totalCost > globalCash) {
         return {
           ok: false,
-          error: `Solde de liquidité insuffisant. Disponible: ${cash.toFixed(2)} ${nativeCurr} — Requis: ${totalCost.toFixed(2)} ${nativeCurr}.`,
+          error: `Solde insuffisant : ${totalCost.toFixed(2)} ${nativeCurr} requis, mais seulement ${globalCash.toFixed(2)} ${nativeCurr} disponible. Déposez des liquidités d'abord.`,
         }
       }
     }
@@ -253,16 +258,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         })
       }
 
-      // ── 5. Update cash balance ────────────────────────────────────────────
-      const nativeCurr = (tx.currency ?? "CHF") as keyof CashBalance
-      if (tx.type === "buy" && tx.assetClass !== "cash") {
-        // Déduit le coût total de la poche de cash
-        const totalCost = tx.quantity * tx.price + (tx.fees ?? 0)
-        await updateCash(tx.portfolioId, nativeCurr, -totalCost)
-      } else if (tx.type === "sell") {
-        // Crédite le produit net dans la poche de cash
-        const netProceeds = tx.quantity * tx.price - (tx.fees ?? 0)
-        await updateCash(tx.portfolioId, nativeCurr, netProceeds)
+      // ── 5. Update cash balance (réservoir global = portfolios[0]) ────────────
+      const nativeCurr   = (tx.currency ?? "CHF") as keyof CashBalance
+      const globalPid    = portfolios[0]?.id  // poche de cash globale
+      if (globalPid && tx.assetClass !== "cash") {
+        if (tx.type === "buy") {
+          const totalCost = tx.quantity * tx.price + (tx.fees ?? 0)
+          await updateCash(globalPid, nativeCurr, -totalCost)
+        } else if (tx.type === "sell") {
+          const netProceeds = tx.quantity * tx.price - (tx.fees ?? 0)
+          await updateCash(globalPid, nativeCurr, netProceeds)
+        }
       }
 
       // ── 6. Reload to get consistent state ─────────────────────────────────

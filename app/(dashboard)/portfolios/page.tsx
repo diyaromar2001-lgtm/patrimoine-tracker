@@ -230,7 +230,7 @@ function HoldingsTable({
   onSellAsset: (asset: Asset, price: number, currency: string) => void
   totalValue:  number
 }) {
-  const { format, convert } = useCurrency()
+  const { format, convert, fxRates, currency } = useCurrency()
   const [sortKey, setSortKey] = useState<SortKey>("value")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   // JS-based responsive — avoids Tailwind v4 hidden/md:grid issues
@@ -403,19 +403,19 @@ function HoldingsTable({
         // ─ Value in user's currency ─────────────────────────────────────────
         const val = livePriceUserCurr * asset.quantity
 
-        // ─ P&L% ALWAYS native-to-native (currency-independent) ─────────────
-        //   Both prices in native currency → % is the same regardless of display
+        // ─ P&L : formule stricte CHF (spec) ─────────────────────────────────
+        //   cost_chf  = qty × avgBuyPrice_native / (fxRates as Record<string,number>)[native]
+        //   value_chf = qty × currentPrice_native / (fxRates as Record<string,number>)[native]
+        //   pnlPct    = (value_chf - cost_chf) / cost_chf × 100  (currency-independent)
         const nativeCurrent = origPrice ?? asset.currentPrice
-        const nativeAvg     = asset.avgBuyPrice  // stored in native currency
+        const nativeAvg     = asset.avgBuyPrice  // in native currency
 
-        const pnlPct = nativeAvg > 0
-          ? ((nativeCurrent - nativeAvg) / nativeAvg) * 100
-          : 0
+        const rateToChf = ((fxRates as Record<string,number>)[origCurrency] ?? 1)
+        const costCHF   = nativeAvg * asset.quantity / rateToChf
+        const valueCHF  = nativeCurrent * asset.quantity / rateToChf
 
-        // ─ P&L amount in user's currency ────────────────────────────────────
-        // Convert native P&L to user's preferred currency
-        const nativePnl        = (nativeCurrent - nativeAvg) * asset.quantity
-        const pnlUserCurr      = convert(nativePnl, origCurrency as AppCurrency)
+        const pnlPct      = costCHF > 0 ? ((valueCHF - costCHF) / costCHF) * 100 : 0
+        const pnlUserCurr = (valueCHF - costCHF) * ((fxRates as Record<string,number>)[currency] ?? 1)
 
         // ─ Avg price converted to user's currency (for display) ────────────
         const avgPriceUserCurr = convert(nativeAvg, origCurrency as AppCurrency)
@@ -512,7 +512,7 @@ function HoldingsTable({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PortfoliosPage() {
-  const { format, convert } = useCurrency()
+  const { format, convert, fxRates, currency } = useCurrency()
   const {
     portfolios, loading: dbLoading,
     addPortfolio: dbAddPortfolio,
@@ -603,29 +603,38 @@ export default function PortfoliosPage() {
     return out
   }, [livePrices])
 
-  // Global totals
-  // totalValue: sum of (live_price_in_user_currency × qty)
-  const totalValue = portfolios.reduce((s, p) => {
-    return s + p.assets.reduce((ss, a) => {
-      if (a.assetClass === "cash") {
-        return ss + convert(a.quantity * (a.currentPrice || a.avgBuyPrice || 1), a.currency as AppCurrency)
-      }
-      const lp = liveEnriched[a.ticker]?.price  // already in user's currency
-      return ss + (lp ?? a.currentPrice) * a.quantity
-    }, 0)
+  // ── Global totals — formule stricte CHF (spec) ───────────────────────────
+  // Étape 1: tout en CHF via prix natifs, Étape 2: convertir vers devise user
+
+  // cost_chf = Σ qty × avgBuyPrice_native / (fxRates as Record<string,number>)[native]
+  const totalCostCHF = portfolios.reduce((s, p) => {
+    return s + p.assets
+      .filter(a => a.assetClass !== "cash")
+      .reduce((ss, a) => {
+        const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
+        const rate = (fxRates as Record<string,number>)[nativeCurr] ?? 1
+        return ss + (a.avgBuyPrice * a.quantity) / rate
+      }, 0)
   }, 0)
 
-  // totalCost: avgBuyPrice is in native currency → convert to user's currency
-  const totalCost = portfolios.reduce((s, p) => {
-    return s + p.assets.reduce((ss, a) => {
-      const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
-      const costUserCurr = convert(a.avgBuyPrice, nativeCurr as AppCurrency)
-      return ss + costUserCurr * a.quantity
-    }, 0)
+  // value_chf = Σ qty × currentPrice_native / (fxRates as Record<string,number>)[native]
+  const totalValueCHF = portfolios.reduce((s, p) => {
+    return s + p.assets
+      .filter(a => a.assetClass !== "cash")
+      .reduce((ss, a) => {
+        const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
+        const rate = (fxRates as Record<string,number>)[nativeCurr] ?? 1
+        const nativePrice = liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice
+        return ss + (nativePrice * a.quantity) / rate
+      }, 0)
   }, 0)
 
+  // Convertir CHF → devise user
+  const userRate    = (fxRates as Record<string,number>)[currency] ?? 1
+  const totalCost   = totalCostCHF  * userRate
+  const totalValue  = totalValueCHF * userRate
   const totalPnl    = totalValue - totalCost
-  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+  const totalPnlPct = totalCostCHF > 0 ? ((totalValueCHF - totalCostCHF) / totalCostCHF) * 100 : 0
 
   const allAssets = portfolios.flatMap(p => p.assets)
   const allAssetsEnriched = allAssets.map(a => ({
@@ -1043,10 +1052,21 @@ export default function PortfoliosPage() {
                     <span className="text-right">Actions</span>
                   </div>
                   {portfolios.map((p, i) => {
-                    const val  = p.assets.reduce((s, a) => s + (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity, 0)
-                    const cost = portfolioTotalCost(p)
-                    const pnl  = val - cost
-                    const pct  = cost > 0 ? (pnl / cost) * 100 : 0
+                    // Formule stricte CHF
+                    const costC = p.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
+                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
+                      return s + (a.avgBuyPrice * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1)
+                    }, 0)
+                    const valC = p.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
+                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
+                      const np = liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice
+                      return s + (np * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1)
+                    }, 0)
+                    const ur  = (fxRates as Record<string,number>)[currency] ?? 1
+                    const val = valC * ur
+                    const cost = costC * ur
+                    const pnl = val - cost
+                    const pct = costC > 0 ? ((valC - costC) / costC) * 100 : 0
                     const dayPnl = p.assets.reduce((s, a) => s + (liveEnriched[a.ticker]?.changePct ?? 0) * (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity / 100, 0)
                     const dayPct = val > 0 ? (dayPnl / val) * 100 : 0
                     const exp   = expandedRows.has(p.id)
@@ -1143,10 +1163,20 @@ export default function PortfoliosPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   {(() => {
-                    const val  = activePortfolio.assets.reduce((s, a) => s + (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity, 0)
-                    const cost = portfolioTotalCost(activePortfolio)
+                    const costC2 = activePortfolio.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
+                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
+                      return s + (a.avgBuyPrice * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1)
+                    }, 0)
+                    const valC2 = activePortfolio.assets.filter(a=>a.assetClass!=='cash').reduce((s,a)=>{
+                      const nc = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? 'USD'
+                      const np = liveEnriched[a.ticker]?.originalPrice ?? a.currentPrice
+                      return s + (np * a.quantity) / ((fxRates as Record<string,number>)[nc] ?? 1)
+                    }, 0)
+                    const ur2  = (fxRates as Record<string,number>)[currency] ?? 1
+                    const val  = valC2 * ur2
+                    const cost = costC2 * ur2
                     const pnl  = val - cost
-                    const pct  = cost > 0 ? (pnl / cost) * 100 : 0
+                    const pct  = costC2 > 0 ? ((valC2 - costC2) / costC2) * 100 : 0
                     return (
                       <>
                         <div className="text-right">
