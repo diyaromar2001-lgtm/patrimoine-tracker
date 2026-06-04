@@ -424,7 +424,7 @@ function HoldingsTable({
       <div className="grid px-5 py-2.5 border-b"
         style={{ borderColor: "var(--border)", minWidth: "980px", gridTemplateColumns: COL }}>
         <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Actif</span>
-        {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L total","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
+        {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L latent","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
           <SortHeader key={k} label={l} sortKey={k} current={sortKey} dir={sortDir} onSort={handleSort} />
         ))}
         <span />
@@ -537,10 +537,25 @@ function HoldingsTable({
               <p className="text-right text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                 {format(val)}
               </p>
-              {/* Day P&L % (from live API, already native) */}
-              <div className="flex justify-end"><ChangeBadge value={dayChangePct} showIcon={false} /></div>
-              {/* Total P&L % — native/native = currency-independent ✓ */}
-              <div className="flex justify-end" title={`+${format(pnlUserCurr)}`}>
+              {/* Day P&L — % + montant journalier */}
+              {(() => {
+                const dayPnlAmt = dayChangePct / 100 * val
+                return (
+                  <div className="flex flex-col items-end gap-0.5">
+                    <ChangeBadge value={dayChangePct} showIcon={false} />
+                    {Math.abs(dayPnlAmt) > 0.005 && (
+                      <span className="text-[10px] tabular-nums" style={{ color: dayPnlAmt >= 0 ? "var(--gain)" : "var(--loss)" }}>
+                        {dayPnlAmt >= 0 ? "+" : ""}{format(dayPnlAmt)}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
+              {/* P&L latent — montant EN DEVISE USER + % (formule: valeurCHF - costCHF × userRate) */}
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-xs font-bold tabular-nums" style={{ color: pnlPct > 0 ? "var(--gain)" : pnlPct < 0 ? "var(--loss)" : "var(--text-secondary)" }}>
+                  {pnlUserCurr >= 0 ? "+" : ""}{format(pnlUserCurr)}
+                </span>
                 <ChangeBadge value={pnlPct} showIcon={false} />
               </div>
               {/* Weight bar */}
