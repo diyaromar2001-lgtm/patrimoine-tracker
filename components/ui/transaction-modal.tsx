@@ -222,8 +222,7 @@ function AssetSelector({
           <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.1 }}
             className="absolute left-0 right-0 top-full z-[60] mt-1 overflow-y-auto rounded-xl border shadow-2xl"
-            style={{ maxHeight: "280px" }}
-            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
+            style={{ maxHeight: "280px", backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
             {filtered.slice(0, 20).map((r, i) => {
               const color = ASSET_CLASS_COLORS[r.type as AssetClass] ?? "#6b7280"
               return (
