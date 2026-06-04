@@ -219,8 +219,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // ── Transaction mutations ────────────────────────────────────────────────────
 
   async function addTransaction(tx: Omit<Transaction, "id">): Promise<{ ok: boolean; error?: string }> {
+    // ── Taux FX historique au moment de la transaction ──────────────────────
+    // Si la devise est différente du CHF ET qu'on a une date → on fetch
+    // le taux BCE historique pour cette date exacte.
+    // Cela garantit que costBasisChf = vrai CHF sorti du compte le jour de l'achat.
+    let txFxRates = { ...fxRates }
+    if (tx.type === "buy" && tx.currency && tx.currency !== "CHF" && tx.date) {
+      try {
+        const res = await fetch(
+          `/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`
+        )
+        if (res.ok) {
+          const hist = await res.json() as { rate: number; source: string }
+          if (hist.rate && hist.rate > 0) {
+            txFxRates = { ...fxRates, [tx.currency]: hist.rate }
+          }
+        }
+      } catch { /* fallback to current */ }
+    }
+
     const rateToChf = (curr: string | undefined) => {
-      return chfPerCurrencyUnit(curr, fxRates)
+      return chfPerCurrencyUnit(curr, txFxRates)
     }
 
     const existingAsset = portfolios
@@ -235,7 +254,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       price: tx.price,
       fees: tx.fees,
       currency: tx.currency,
-      fxRates,
+      fxRates: txFxRates,   // ← taux historique
       assetQuantity: existingAsset?.quantity,
       assetCostBasisChf,
     })

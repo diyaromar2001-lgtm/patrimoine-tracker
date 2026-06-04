@@ -1560,7 +1560,46 @@ export default function PortfoliosPage() {
                     <summary className="flex cursor-pointer items-center justify-between px-5 py-3 text-xs font-semibold uppercase tracking-wide select-none hover:bg-zinc-800/40 transition-colors"
                       style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-elevated)" }}>
                       <span>🔍 Détail du calcul</span>
-                      <span style={{ color: "var(--text-tertiary)" }}>cliquer pour afficher / masquer</span>
+                      <div className="flex items-center gap-3">
+                        {/* Bouton recalibrer — corrige costBasisChf avec taux historiques BCE */}
+                        <button
+                          onClick={async e => {
+                            e.preventDefault(); e.stopPropagation()
+                            const buys = transactions.filter(t =>
+                              t.portfolioId === activePortfolio.id &&
+                              t.type === "buy" && t.currency && t.currency !== "CHF"
+                            )
+                            if (!buys.length) { alert("Aucune transaction EUR/USD à recalibrer."); return }
+
+                            // Calcul cost basis agrégé par ticker via taux historiques
+                            const costByTicker: Record<string, number> = {}
+                            for (const tx of buys) {
+                              try {
+                                const res  = await fetch(`/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`)
+                                const hist = res.ok ? await res.json() as { rate: number } : { rate: (fxRates as Record<string,number>)[tx.currency as string] ?? 1 }
+                                const rate = hist.rate ?? 1
+                                const cost = (tx.quantity * tx.price + (tx.fees ?? 0)) / rate
+                                costByTicker[tx.ticker] = (costByTicker[tx.ticker] ?? 0) + cost
+                              } catch { /* skip */ }
+                            }
+
+                            // Mise à jour chaque asset
+                            for (const [ticker, costChf] of Object.entries(costByTicker)) {
+                              const asset = activePortfolio.assets.find(a => a.ticker === ticker)
+                              if (asset) {
+                                await doEditAsset(activePortfolio.id, asset.id, asset.quantity, asset.avgBuyPrice, costChf)
+                              }
+                            }
+                            alert(`✅ ${Object.keys(costByTicker).length} position(s) recalibrée(s) avec taux BCE historiques.`)
+                          }}
+                          className="rounded-lg border px-3 py-1.5 text-[10px] font-semibold hover:bg-zinc-700 transition-colors"
+                          style={{ borderColor: "#0ea5e940", color: "#0ea5e9", backgroundColor: "#0ea5e908" }}
+                          title="Recalcule le coût CHF de chaque position avec le vrai taux BCE à la date d'achat"
+                        >
+                          ↻ Recalibrer taux historiques
+                        </button>
+                        <span style={{ color: "var(--text-tertiary)" }}>cliquer pour afficher / masquer</span>
+                      </div>
                     </summary>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-zinc-800" style={{ backgroundColor: "var(--border)" }}>
                       {[
