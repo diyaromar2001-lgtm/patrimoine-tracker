@@ -88,15 +88,23 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
   const sb = createClient()
   if (!sb) return null
 
-  // RLS handles user_id filtering — no need for explicit filter
+  // Double protection: RLS + filtre explicite user_id
+  const { data: user } = await sb.auth.getUser()
+  if (!user.user) return []
+
   const { data: portfoliosData, error: pErr } = await sb
     .from("portfolios")
     .select("*")
+    .eq("user_id", user.user.id)
     .order("created_at", { ascending: true })
 
   if (pErr || !portfoliosData) return null
 
-  const { data: assetsData } = await sb.from("assets").select("*")
+  // Assets filtrés via les portfolio_ids de l'user
+  const portfolioIds = portfoliosData.map(p => p.id)
+  const { data: assetsData } = portfolioIds.length > 0
+    ? await sb.from("assets").select("*").in("portfolio_id", portfolioIds)
+    : { data: [] }
 
   return portfoliosData.map(p => ({
     id:           p.id,
@@ -205,9 +213,15 @@ export async function fetchTransactions(): Promise<Transaction[] | null> {
   const sb = createClient()
   if (!sb) return null
 
+  // Filtre explicite : uniquement les transactions des portfolios de l'user
+  const { data: userPortfolios } = await sb.from("portfolios").select("id")
+  const pIds = (userPortfolios ?? []).map((p: { id: string }) => p.id)
+  if (pIds.length === 0) return []
+
   const { data, error } = await sb
     .from("transactions")
     .select("*")
+    .in("portfolio_id", pIds)
     .order("date", { ascending: false })
 
   if (error || !data) return null
@@ -452,6 +466,7 @@ export async function fetchRevenus(): Promise<RevenuAnnexe[] | null> {
   const { data, error } = await sb
     .from("revenus_annexes")
     .select("*")
+    .eq("user_id", user.id)
     .order("date", { ascending: false })
   if (error || !data) return null
   return data.map(r => ({
