@@ -15,13 +15,12 @@ import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
 import type { AppCurrency } from "@/lib/utils"
 import {
-  portfolioTotalCost,
-  assetPnlPct,
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
+import { calculateAllocationByField, maxDrawdown, type AllocationEntry } from "@/lib/finance"
 import {
   Wallet, TrendingUp, BarChart2, Activity,
-  Calendar, ArrowUpRight, Layers, Plus, Zap,
+  ArrowUpRight, Plus, Zap, ShieldAlert, Building2, Globe2, type LucideIcon,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -30,6 +29,40 @@ const PERIODS = ["1S","1M","3M","6M","1A","Max"] as const
 type Period = (typeof PERIODS)[number]
 
 interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | null }
+
+const DIVERSIFICATION_COLORS = [
+  "#3b82f6", "#22c55e", "#f59e0b", "#a78bfa", "#ef4444",
+  "#14b8a6", "#f97316", "#64748b", "#eab308", "#06b6d4",
+]
+
+function normalizeGeography(country?: string) {
+  const value = country?.trim()
+  if (!value || value === "-" || value === "—") return "Global / Crypto"
+
+  const upper = value.toUpperCase()
+  const europe = new Set([
+    "CH","CHE","SWITZERLAND","SUISSE","FR","FRA","FRANCE","DE","DEU","GERMANY","ALLEMAGNE",
+    "NL","NLD","NETHERLANDS","PAYS-BAS","IE","IRL","IRELAND","IRLANDE","GB","UK","GBR",
+    "UNITED KINGDOM","ROYAUME-UNI","ES","ESP","SPAIN","ESPAGNE","IT","ITA","ITALY","ITALIE",
+    "BE","BEL","BELGIUM","BELGIQUE","SE","SWE","SWEDEN","SUEDE","DK","DNK","NO","NOR",
+  ])
+  const emerging = new Set([
+    "CN","CHN","CHINA","CHINE","IN","IND","INDIA","INDE","BR","BRA","BRAZIL","BRESIL",
+    "MX","MEX","MEXICO","ZA","ZAF","SOUTH AFRICA","AFRIQUE DU SUD","ID","IDN","INDONESIA",
+    "VN","VNM","VIETNAM","TH","THA","THAILAND","THAILANDE",
+  ])
+  const asiaPacific = new Set([
+    "JP","JPN","JAPAN","JAPON","KR","KOR","SOUTH KOREA","COREE DU SUD","AU","AUS",
+    "AUSTRALIA","AUSTRALIE","SG","SGP","SINGAPORE","SINGAPOUR","HK","HKG","HONG KONG",
+  ])
+
+  if (["US","USA","UNITED STATES","ETATS-UNIS"].includes(upper)) return "US"
+  if (europe.has(upper)) return "Europe"
+  if (emerging.has(upper)) return "Emergents"
+  if (asiaPacific.has(upper)) return "Asie-Pacifique"
+  if (["WORLD","MONDE","GLOBAL"].includes(upper)) return "Global"
+  return value
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -109,6 +142,34 @@ export default function DashboardPage() {
         pct: totalValue > 0 ? (val / totalValue) * 100 : 0,
       }))
   }, [allAssets, livePrices, totalValue])
+
+  const assetsForAnalytics = useMemo(() =>
+    allAssets.map(a => ({
+      ticker:       a.ticker,
+      quantity:     a.quantity,
+      avgBuyPrice:  a.avgBuyPrice,
+      currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice,
+      assetClass:   a.assetClass,
+      sector:       a.sector,
+      country:      normalizeGeography(a.country),
+    })),
+    [allAssets, livePrices]
+  )
+
+  const sectorEntries = useMemo(
+    () => calculateAllocationByField(assetsForAnalytics, "sector", "Non renseigne", totalValue),
+    [assetsForAnalytics, totalValue]
+  )
+
+  const geoEntries = useMemo(
+    () => calculateAllocationByField(assetsForAnalytics, "country", "Non renseigne", totalValue),
+    [assetsForAnalytics, totalValue]
+  )
+
+  const portfolioMaxDrawdown = useMemo(
+    () => maxDrawdown(portfolioHistory),
+    [portfolioHistory]
+  )
 
   // Top 5 holdings
   const top5 = useMemo(() =>
@@ -266,7 +327,7 @@ export default function DashboardPage() {
 
         {/* ─── KPIs ─── */}
         <section>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-6">
             <StatCard label="Valeur nette totale" value={format(totalValue)} change={totalPnlPct} changeLabel="depuis le début" icon={Wallet} iconColor="var(--accent)" index={0} />
             <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
             <StatCard label="Plus-value latente" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="depuis l'achat" icon={TrendingUp} iconColor="var(--gain)" index={2} />
@@ -287,6 +348,14 @@ export default function DashboardPage() {
                 />
               )
             })()}
+            <StatCard
+              label="Max Drawdown"
+              value={historyLoading ? "..." : `${portfolioMaxDrawdown.toFixed(2)} %`}
+              changeLabel="historique"
+              icon={ShieldAlert}
+              iconColor="#ef4444"
+              index={5}
+            />
           </div>
         </section>
 
@@ -383,6 +452,23 @@ export default function DashboardPage() {
         </div>
 
         {/* ─── Top holdings + Recent transactions ─── */}
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
+          <AllocationBreakdown
+            title="Repartition sectorielle"
+            description="Poids par secteur economique"
+            entries={sectorEntries}
+            icon={Building2}
+            colors={DIVERSIFICATION_COLORS}
+          />
+          <AllocationBreakdown
+            title="Repartition geographique"
+            description="Exposition par zone"
+            entries={geoEntries}
+            icon={Globe2}
+            colors={DIVERSIFICATION_COLORS}
+          />
+        </div>
+
         <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
           {/* Top 5 */}
           <section className="space-y-3">
@@ -519,15 +605,7 @@ export default function DashboardPage() {
 
         {/* ─── Insights automatiques ─── */}
         {hasAssets && (
-          <InsightsWidget
-            assets={allAssets.map(a => ({
-              ticker:       a.ticker,
-              quantity:     a.quantity,
-              avgBuyPrice:  a.avgBuyPrice,
-              currentPrice: livePrices[a.ticker]?.price ?? a.currentPrice,
-              assetClass:   a.assetClass,
-            }))}
-          />
+          <InsightsWidget assets={assetsForAnalytics} />
         )}
       </div>
     </div>
@@ -535,6 +613,77 @@ export default function DashboardPage() {
 }
 
 // ─── Mini SVG Donut ───────────────────────────────────────────────────────────
+function AllocationBreakdown({
+  title,
+  description,
+  entries,
+  icon: Icon,
+  colors,
+}: {
+  title: string
+  description: string
+  entries: AllocationEntry[]
+  icon: LucideIcon
+  colors: string[]
+}) {
+  const visible = entries.slice(0, 7)
+
+  return (
+    <section className="space-y-3">
+      <SectionHeader title={title} description={description} />
+      <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+        {visible.length === 0 ? (
+          <div className="flex items-center justify-center py-10">
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune donnee</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg"
+                style={{ backgroundColor: `${colors[0]}18`, border: `1px solid ${colors[0]}30` }}>
+                <Icon className="h-4.5 w-4.5" style={{ color: colors[0] }} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                  {visible[0]?.key}
+                </p>
+                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  Premiere exposition: {visible[0]?.pct.toFixed(1)} %
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {visible.map((entry, i) => {
+                const color = colors[i % colors.length]
+                return (
+                  <div key={entry.key} className="space-y-1.5">
+                    <div className="flex items-center gap-3">
+                      <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                      <span className="min-w-0 flex-1 truncate text-xs" style={{ color: "var(--text-secondary)" }}>
+                        {entry.key}
+                      </span>
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                        {entry.pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: "var(--bg-muted)" }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${Math.min(100, entry.pct)}%`, backgroundColor: color }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function DonutChart({ entries }: { entries: { cls: string; pct: number }[] }) {
   const r = 14, cx = 18, cy = 18, stroke = 3.5, circ = 2 * Math.PI * r
   let cumulative = 0

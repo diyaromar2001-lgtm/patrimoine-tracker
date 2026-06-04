@@ -24,6 +24,8 @@ export interface AssetInput {
   avgBuyPrice:  number   // in user's base currency
   currentPrice: number   // in user's base currency (may be overridden by live price)
   assetClass:   string
+  sector?:      string
+  country?:     string
 }
 
 export interface PortfolioSnapshot {
@@ -151,6 +153,31 @@ export function calculateAllocationByClass(
     }))
 }
 
+export function calculateAllocationByField(
+  assets:      AssetInput[],
+  field:       "sector" | "country",
+  fallback:    string = "Non renseigne",
+  totalValue?: number
+): AllocationEntry[] {
+  const tv  = totalValue ?? portfolioTotalValue(assets)
+  const map: Record<string, number> = {}
+
+  for (const a of assets) {
+    const raw = a[field]?.trim()
+    const key = raw && raw !== "-" && raw !== "—" ? raw : fallback
+    const v   = assetCurrentValue(a.quantity, a.currentPrice)
+    map[key] = (map[key] ?? 0) + v
+  }
+
+  return Object.entries(map)
+    .sort(([, a], [, b]) => b - a)
+    .map(([key, value]) => ({
+      key,
+      value,
+      pct: tv > 0 ? (value / tv) * 100 : 0,
+    }))
+}
+
 export function calculateAssetWeight(
   assetValue: number,
   totalValue: number
@@ -227,6 +254,21 @@ export function ytdReturn(snapshots: PortfolioSnapshot[]): number {
  * Format monétaire suisse : 4 408.09 CHF
  * Utilise le séparateur d'espace (fr-CH) et 2 décimales.
  */
+export function maxDrawdown(snapshots: PortfolioSnapshot[]): number {
+  let peak = 0
+  let maxDd = 0
+
+  for (const s of snapshots) {
+    if (s.value > peak) peak = s.value
+    if (peak <= 0) continue
+
+    const drawdown = ((s.value - peak) / peak) * 100
+    if (drawdown < maxDd) maxDd = drawdown
+  }
+
+  return maxDd
+}
+
 export function formatAmount(
   value:    number,
   currency: string = "CHF",
@@ -280,12 +322,23 @@ export function generateInsights(
   // Concentration par actif
   for (const a of assets) {
     const weight = calculateAssetWeight(assetCurrentValue(a.quantity, a.currentPrice), totalValue)
-    if (weight >= 40) {
+    if (weight >= 15) {
       insights.push({
         type: "warning",
         title: "Concentration élevée",
         message: `${a.ticker} représente ${weight.toFixed(1)} % du portefeuille — risque de concentration.`,
         ticker: a.ticker,
+      })
+    }
+  }
+
+  const sectorAllocations = calculateAllocationByField(assets, "sector", "Non renseigne", totalValue)
+  for (const sector of sectorAllocations) {
+    if (sector.pct >= 40) {
+      insights.push({
+        type: "warning",
+        title: "Concentration sectorielle",
+        message: `${sector.key} represente ${sector.pct.toFixed(1)} % du portefeuille. Le seuil d'alerte est fixe a 40 %.`,
       })
     }
   }

@@ -8,6 +8,7 @@ import {
   portfolioLatentPnL,
   portfolioLatentPnLPct,
   calculateAllocationByClass,
+  calculateAllocationByField,
   calculateAssetWeight,
   totalAnnualDividend,
   dividendYieldOnCost,
@@ -15,6 +16,7 @@ import {
   annualDividendPerShare,
   simpleReturn,
   cagr,
+  maxDrawdown,
   convertCurrency,
   formatPct,
   generateInsights,
@@ -151,6 +153,26 @@ describe("calculateAllocationByClass", () => {
   })
 })
 
+describe("calculateAllocationByField", () => {
+  it("repartit correctement par secteur", () => {
+    const assets = [
+      { ticker: "MSFT", quantity: 1, avgBuyPrice: 100, currentPrice: 200, assetClass: "stock", sector: "Tech" },
+      { ticker: "AAPL", quantity: 1, avgBuyPrice: 100, currentPrice: 100, assetClass: "stock", sector: "Tech" },
+      { ticker: "JNJ",  quantity: 1, avgBuyPrice: 100, currentPrice: 100, assetClass: "stock", sector: "Sante" },
+    ]
+    const alloc = calculateAllocationByField(assets, "sector")
+    expect(alloc.find(a => a.key === "Tech")?.value).toBe(300)
+    expect(alloc.find(a => a.key === "Tech")?.pct).toBeCloseTo(75, 5)
+  })
+
+  it("utilise le fallback quand le champ est vide", () => {
+    const alloc = calculateAllocationByField([
+      { ticker: "BTC", quantity: 1, avgBuyPrice: 100, currentPrice: 100, assetClass: "crypto" },
+    ], "country", "Global / Crypto")
+    expect(alloc[0]?.key).toBe("Global / Crypto")
+  })
+})
+
 describe("calculateAssetWeight", () => {
   it("poids correct", () => {
     expect(calculateAssetWeight(5000, 10000)).toBe(50)
@@ -220,6 +242,25 @@ describe("cagr", () => {
 })
 
 // ─── Formatage ────────────────────────────────────────────────────────────────
+
+describe("maxDrawdown", () => {
+  it("calcule la perte maximale depuis un sommet historique", () => {
+    const dd = maxDrawdown([
+      { date: "2026-01-01", value: 100 },
+      { date: "2026-01-08", value: 140 },
+      { date: "2026-01-15", value: 98 },
+      { date: "2026-01-22", value: 160 },
+    ])
+    expect(dd).toBeCloseTo(-30, 5)
+  })
+
+  it("retourne 0 quand la courbe ne baisse pas", () => {
+    expect(maxDrawdown([
+      { date: "2026-01-01", value: 100 },
+      { date: "2026-01-08", value: 120 },
+    ])).toBe(0)
+  })
+})
 
 describe("formatPct", () => {
   it("positif avec +", () => expect(formatPct(8.99)).toBe("+8.99 %"))
@@ -328,5 +369,25 @@ describe("convertCurrency avec taux BCE réels", () => {
   })
   it("même devise → inchangé", () => {
     expect(convertCurrency(100, "CHF", "CHF", BCE)).toBe(100)
+  })
+})
+describe("generateInsights thresholds", () => {
+  it("declenche une alerte actif au-dessus de 15 %", () => {
+    const assets = [
+      { ticker: "MSFT", quantity: 1, avgBuyPrice: 100, currentPrice: 16, assetClass: "stock", sector: "Tech" },
+      { ticker: "CASH", quantity: 1, avgBuyPrice: 84, currentPrice: 84, assetClass: "cash", sector: "Cash" },
+    ]
+    const ins = generateInsights(assets)
+    expect(ins.some(i => i.type === "warning" && i.ticker === "MSFT")).toBe(true)
+  })
+
+  it("declenche une alerte secteur au-dessus de 40 %", () => {
+    const assets = [
+      { ticker: "MSFT", quantity: 1, avgBuyPrice: 100, currentPrice: 25, assetClass: "stock", sector: "Tech" },
+      { ticker: "AAPL", quantity: 1, avgBuyPrice: 100, currentPrice: 20, assetClass: "stock", sector: "Tech" },
+      { ticker: "CASH", quantity: 1, avgBuyPrice: 55, currentPrice: 55, assetClass: "cash", sector: "Cash" },
+    ]
+    const ins = generateInsights(assets)
+    expect(ins.some(i => i.title === "Concentration sectorielle")).toBe(true)
   })
 })
