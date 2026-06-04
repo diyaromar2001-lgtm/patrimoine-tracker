@@ -16,10 +16,16 @@ CREATE TABLE IF NOT EXISTS global_cash (
 -- RLS
 ALTER TABLE global_cash ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "users_own_global_cash"
-  ON global_cash FOR ALL
-  USING  (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'global_cash' AND policyname = 'users_own_global_cash'
+  ) THEN
+    CREATE POLICY "users_own_global_cash"
+      ON global_cash FOR ALL
+      USING  (user_id = auth.uid())
+      WITH CHECK (user_id = auth.uid());
+  END IF;
+END $$;
 
 -- 2. Table cash_movements : historique des mouvements de cash
 CREATE TABLE IF NOT EXISTS cash_movements (
@@ -42,10 +48,16 @@ CREATE TABLE IF NOT EXISTS cash_movements (
 
 ALTER TABLE cash_movements ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "users_own_cash_movements"
-  ON cash_movements FOR ALL
-  USING  (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'cash_movements' AND policyname = 'users_own_cash_movements'
+  ) THEN
+    CREATE POLICY "users_own_cash_movements"
+      ON cash_movements FOR ALL
+      USING  (user_id = auth.uid())
+      WITH CHECK (user_id = auth.uid());
+  END IF;
+END $$;
 
 -- 3. Index
 CREATE INDEX IF NOT EXISTS cash_movements_user_date
