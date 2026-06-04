@@ -214,7 +214,9 @@ export async function fetchTransactions(): Promise<Transaction[] | null> {
   if (!sb) return null
 
   // Filtre explicite : uniquement les transactions des portfolios de l'user
-  const { data: userPortfolios } = await sb.from("portfolios").select("id")
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return []
+  const { data: userPortfolios } = await sb.from("portfolios").select("id").eq("user_id", user.id)
   const pIds = (userPortfolios ?? []).map((p: { id: string }) => p.id)
   if (pIds.length === 0) return []
 
