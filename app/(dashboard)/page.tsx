@@ -1,87 +1,43 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { motion } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
-import { StatCard } from "@/components/ui/stat-card"
-import { SectionHeader } from "@/components/ui/section-header"
 import { AreaChart } from "@/components/charts/area-chart"
 import { usePortfolioHistory } from "@/hooks/use-portfolio-history"
 import type { PortfolioAsset } from "@/app/api/portfolio-history/route"
 import { ChangeBadge, AssetClassBadge } from "@/components/ui/badge"
-import { DualPriceInline } from "@/components/ui/dual-price"
-import { InsightsWidget } from "@/components/ui/insights-widget"
 import { useAppData } from "@/hooks/use-app-data"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useCurrency } from "@/hooks/use-currency"
 import { calculatePortfolioPnL, convertPnL } from "@/lib/pnl"
 import type { AppCurrency } from "@/lib/utils"
+import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
+import { maxDrawdown } from "@/lib/finance"
 import {
-  ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
-} from "@/lib/types"
-import { calculateAllocationByField, maxDrawdown, type AllocationEntry } from "@/lib/finance"
-import {
-  Wallet, TrendingUp, BarChart2, Activity,
-  ArrowUpRight, Plus, Zap, ShieldAlert, Building2, Globe2, type LucideIcon,
-  BadgeCheck,
+  TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
+  TrendingDown, ArrowUpRight, BarChart2,
 } from "lucide-react"
 import Link from "next/link"
 
-// ─── Static helpers ───────────────────────────────────────────────────────────
 const PERIODS = ["1S","1M","3M","6M","1A","Max"] as const
 type Period = (typeof PERIODS)[number]
 
 interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | null }
 
-const DIVERSIFICATION_COLORS = [
-  "#3b82f6", "#22c55e", "#f59e0b", "#a78bfa", "#ef4444",
-  "#14b8a6", "#f97316", "#64748b", "#eab308", "#06b6d4",
-]
-
-function normalizeGeography(country?: string) {
-  const value = country?.trim()
-  if (!value || value === "-" || value === "—") return "Global / Crypto"
-
-  const upper = value.toUpperCase()
-  const europe = new Set([
-    "CH","CHE","SWITZERLAND","SUISSE","FR","FRA","FRANCE","DE","DEU","GERMANY","ALLEMAGNE",
-    "NL","NLD","NETHERLANDS","PAYS-BAS","IE","IRL","IRELAND","IRLANDE","GB","UK","GBR",
-    "UNITED KINGDOM","ROYAUME-UNI","ES","ESP","SPAIN","ESPAGNE","IT","ITA","ITALY","ITALIE",
-    "BE","BEL","BELGIUM","BELGIQUE","SE","SWE","SWEDEN","SUEDE","DK","DNK","NO","NOR",
-  ])
-  const emerging = new Set([
-    "CN","CHN","CHINA","CHINE","IN","IND","INDIA","INDE","BR","BRA","BRAZIL","BRESIL",
-    "MX","MEX","MEXICO","ZA","ZAF","SOUTH AFRICA","AFRIQUE DU SUD","ID","IDN","INDONESIA",
-    "VN","VNM","VIETNAM","TH","THA","THAILAND","THAILANDE",
-  ])
-  const asiaPacific = new Set([
-    "JP","JPN","JAPAN","JAPON","KR","KOR","SOUTH KOREA","COREE DU SUD","AU","AUS",
-    "AUSTRALIA","AUSTRALIE","SG","SGP","SINGAPORE","SINGAPOUR","HK","HKG","HONG KONG",
-  ])
-
-  if (["US","USA","UNITED STATES","ETATS-UNIS"].includes(upper)) return "US"
-  if (europe.has(upper)) return "Europe"
-  if (emerging.has(upper)) return "Emergents"
-  if (asiaPacific.has(upper)) return "Asie-Pacifique"
-  if (["WORLD","MONDE","GLOBAL"].includes(upper)) return "Global"
-  return value
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, revenus, globalCash, loading, realizedPnLEvents } = useAppData()
+  const { portfolios, transactions, globalCash, loading, realizedPnLEvents } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
 
-  // All assets from all portfolios
   const allAssets  = useMemo(() => portfolios.flatMap(p => p.assets), [portfolios])
   const allTickers = useMemo(() => allAssets.filter(a => a.assetClass !== "cash").map(a => a.ticker), [allAssets])
-  const hasAssets  = allAssets.length > 0
+  const hasAssets  = allAssets.filter(a => a.assetClass !== "cash").length > 0
 
-  // Live prices
   const { prices: livePrices } = useLivePrices(allTickers, 30_000)
 
-  // Map PERIODS to API codes + real portfolio history
   const API_PERIOD: Record<Period, string> = {
     "1S": "1W", "1M": "1M", "3M": "3M", "6M": "6M", "1A": "1Y", "Max": "MAX"
   }
@@ -96,8 +52,7 @@ export default function DashboardPage() {
   const { history: portfolioHistory, loading: historyLoading, isReal } =
     usePortfolioHistory(portfolioAssets, API_PERIOD[period] ?? "1Y")
 
-  // ── P&L avec formule stricte (standardisation en CHF) ───────────────────────
-  // Règle: tout en CHF, prix natifs pour coût ET valeur, même taux FX
+  // ── P&L standardisé CHF ─────────────────────────────────────────────────────
   const pnlResult = useMemo(() => {
     const assets = allAssets
       .filter(a => a.assetClass !== "cash")
@@ -113,11 +68,9 @@ export default function DashboardPage() {
     return calculatePortfolioPnL(assets, fxRates)
   }, [allAssets, livePrices, fxRates]) // eslint-disable-line
 
-  // Convertir résultat CHF → devise utilisateur
   const { cost: totalCost, value: totalValue, pnl: totalPnl, pct: totalPnlPct } =
     convertPnL(pnlResult, currency, fxRates)
 
-  // Liquidité globale — depuis AppData.globalCash (source unique)
   const totalCashConverted = useMemo(() =>
     Object.entries(globalCash).reduce((sum, [cur, val]) =>
       sum + convert(Number(val ?? 0), cur as AppCurrency), 0
@@ -125,13 +78,9 @@ export default function DashboardPage() {
     [globalCash, convert]
   )
 
-  // Patrimoine net = positions + cash global
-  // ⚠️ NE PAS ajouter totalRevenus — les revenus annexes et dividendes
-  //    sont déjà crédités dans globalCash lors de leur enregistrement.
-  //    Ajouter totalRevenus ici créerait un double comptage.
+  // Patrimoine = positions + cash (PAS + revenus → déjà dans le cash)
   const netWorthValue = totalValue + totalCashConverted
 
-  // Today P&L: sum of each asset's day change
   const todayPnl = useMemo(
     () => allAssets.reduce((s, a) => {
       const p = livePrices[a.ticker]
@@ -142,7 +91,15 @@ export default function DashboardPage() {
   )
   const todayPnlPct = totalValue > 0 ? (todayPnl / totalValue) * 100 : 0
 
-  // Allocation by class
+  const realizedPnl = useMemo(() =>
+    realizedPnLEvents.reduce(
+      (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),
+      0
+    ),
+    [realizedPnLEvents, convert]
+  )
+
+  // Allocation par classe
   const allocationEntries = useMemo(() => {
     const byClass: Record<string, number> = {}
     allAssets.forEach(a => {
@@ -155,272 +112,235 @@ export default function DashboardPage() {
     return Object.entries(byClass)
       .sort(([, a], [, b]) => b - a)
       .map(([cls, val]) => ({
-        cls: cls as keyof typeof ASSET_CLASS_LABELS,
-        val,
+        cls, val,
         pct: netWorthValue > 0 ? (val / netWorthValue) * 100 : 0,
       }))
   }, [allAssets, livePrices, totalCashConverted, netWorthValue])
 
-  const assetsForAnalytics = useMemo(() =>
-    allAssets.map(a => ({
-      ticker:       a.ticker,
-      quantity:     a.quantity,
-      avgBuyPrice:  a.avgBuyPrice,
-      currentPrice: a.assetClass === "cash"
-        ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency)
-        : livePrices[a.ticker]?.price ?? a.currentPrice,
-      assetClass:   a.assetClass,
-      sector:       a.sector,
-      country:      normalizeGeography(a.country),
-    })),
-    [allAssets, livePrices]
-  )
-
-  const sectorEntries = useMemo(
-    () => calculateAllocationByField(assetsForAnalytics, "sector", "Non renseigne", totalValue),
-    [assetsForAnalytics, totalValue]
-  )
-
-  const geoEntries = useMemo(
-    () => calculateAllocationByField(assetsForAnalytics, "country", "Non renseigne", totalValue),
-    [assetsForAnalytics, totalValue]
-  )
-
-  const portfolioMaxDrawdown = useMemo(
-    () => maxDrawdown(portfolioHistory),
-    [portfolioHistory]
-  )
-
-  const realizedPnl = useMemo(() =>
-    realizedPnLEvents.reduce(
-      (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),
-      0
-    ),
-    [realizedPnLEvents, convert]
-  )
-
-  // Top 5 holdings
+  // Top 5 positions (par valeur)
   const top5 = useMemo(() =>
-    [...allAssets]
-      .map(a => ({ ...a, currentPrice: a.assetClass === "cash" ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency) : livePrices[a.ticker]?.price ?? a.currentPrice }))
-      .sort((a, b) => (b.currentPrice * b.quantity) - (a.currentPrice * a.quantity))
+    allAssets
+      .filter(a => a.assetClass !== "cash")
+      .map(a => {
+        const origPrice    = livePrices[a.ticker]?.originalPrice
+        const origCurrency = livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
+        const livePrice    = livePrices[a.ticker]?.price ?? a.currentPrice
+        const nativeAvg    = a.avgBuyPrice
+        const pnlPct = (origPrice != null && nativeAvg > 0)
+          ? ((origPrice - nativeAvg) / nativeAvg) * 100
+          : 0
+        return { ...a, livePrice, origPrice, origCurrency, nativeAvg, pnlPct }
+      })
+      .sort((a, b) => (b.livePrice * b.quantity) - (a.livePrice * a.quantity))
       .slice(0, 5),
     [allAssets, livePrices]
   )
 
-  // Recent transactions
-  const recentTx = useMemo(() =>
+  // Activité récente (achats/ventes/dividendes en priorité, dépôts discrets)
+  const recentInvestments = useMemo(() =>
     [...transactions]
+      .filter(t => ["buy","sell","dividend"].includes(t.type))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 5),
+      .slice(0, 6),
     [transactions]
   )
 
-  // Earnings calendar (only when we have stocks)
+  // Max drawdown
+  const portfolioMaxDrawdown = useMemo(() => maxDrawdown(portfolioHistory), [portfolioHistory])
+
+  // Earnings
   useEffect(() => {
     if (!hasAssets) { setEarnings([]); return }
-    const stockTickers = allAssets
-      .filter(a => a.assetClass === "stock")
-      .map(a => a.ticker)
-      .filter((t, i, arr) => arr.indexOf(t) === i)
-      .slice(0, 8)
-    if (!stockTickers.length) return
-    fetch(`/api/earnings?tickers=${stockTickers.join(",")}`)
-      .then(r => r.json())
-      .then(setEarnings)
-      .catch(() => {})
+    const tickers = allAssets.filter(a => a.assetClass === "stock")
+      .map(a => a.ticker).filter((t, i, arr) => arr.indexOf(t) === i).slice(0, 8)
+    if (!tickers.length) return
+    fetch(`/api/earnings?tickers=${tickers.join(",")}`).then(r => r.json()).then(setEarnings).catch(() => {})
   }, [hasAssets, allAssets])
 
-  // ─── Loading skeleton ───────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="flex flex-col">
-        <Topbar title="Dashboard" subtitle="Chargement…" />
-        <div className="flex-1 p-4 sm:p-6 space-y-4">
-          {[1,2,3].map(i => (
-            <div key={i} className="h-20 rounded-xl animate-pulse" style={{ backgroundColor: "var(--bg-elevated)" }} />
-          ))}
-        </div>
+  // ─── Loading ────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div className="flex flex-col">
+      <Topbar title="Dashboard" subtitle="Chargement…" />
+      <div className="flex-1 p-6 space-y-4">
+        {[1,2,3].map(i => (
+          <div key={i} className="h-24 rounded-2xl animate-pulse" style={{ backgroundColor: "var(--bg-elevated)" }} />
+        ))}
       </div>
-    )
-  }
+    </div>
+  )
 
-  // ─── Empty onboarding state ───────────────────────────────────────────────
-  if (!loading && !hasAssets) {
-    return (
-      <div className="flex flex-col">
-        <Topbar title="Dashboard" subtitle="Vue d'ensemble de votre patrimoine" />
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 p-8 text-center">
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl"
-            style={{ background: "linear-gradient(135deg,#3b82f615,#6366f115)", border: "1px solid #3b82f630" }}>
-            <Wallet className="h-10 w-10" style={{ color: "#3b82f6" }} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
-              Commencez à suivre votre patrimoine
-            </h2>
-            <p className="text-sm max-w-sm" style={{ color: "var(--text-secondary)" }}>
-              Ajoutez vos premiers actifs pour voir votre valeur nette, P&amp;L et graphiques en temps réel.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3 justify-center">
-            <Link href="/portfolios"
-              className="flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white transition-all hover:opacity-90"
-              style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)", boxShadow: "0 0 20px #3b82f630" }}>
-              <Plus className="h-4 w-4" />
-              Ajouter un actif
-            </Link>
-            <Link href="/transactions"
-              className="flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium transition-colors hover:bg-zinc-800"
-              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-              Saisir une transaction
-            </Link>
-          </div>
+  // ─── Empty state ────────────────────────────────────────────────────────────
+  if (!hasAssets) return (
+    <div className="flex flex-col">
+      <Topbar title="Dashboard" subtitle="Votre patrimoine" />
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 p-8 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-2xl"
+          style={{ background: "linear-gradient(135deg,#3b82f615,#6366f115)", border: "1px solid #3b82f630" }}>
+          <Wallet className="h-10 w-10" style={{ color: "#3b82f6" }} />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>Commencez à suivre votre patrimoine</h2>
+          <p className="text-sm max-w-sm" style={{ color: "var(--text-secondary)" }}>
+            Ajoutez vos premiers actifs pour voir votre valeur nette, P&L et graphiques en temps réel.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3 justify-center">
+          <Link href="/portfolios"
+            className="flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white"
+            style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}>
+            <Plus className="h-4 w-4" /> Ajouter un actif
+          </Link>
+          <Link href="/revenus"
+            className="flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium hover:bg-zinc-800 transition-colors"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+            Déposer des liquidités
+          </Link>
         </div>
       </div>
-    )
-  }
+    </div>
+  )
+
+  const isUp = totalPnlPct >= 0
+  const isToday = todayPnl >= 0
 
   return (
     <div className="flex flex-col">
       <Topbar title="Dashboard" subtitle="Vue d'ensemble de votre patrimoine" />
 
-      <div className="flex-1 space-y-5 sm:space-y-8 p-4 sm:p-6">
+      <div className="flex-1 space-y-6 p-4 sm:p-6 max-w-7xl mx-auto w-full">
 
-        {/* ─── Hero ─── */}
-        <section>
-          <div className="relative overflow-hidden rounded-[18px] p-6 sm:p-8"
-            style={{
-              background: "linear-gradient(135deg, #0c0c14 0%, #0d0d12 50%, #0a0e0a 100%)",
-              border: "1px solid var(--border)",
-              boxShadow: "var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.03)",
-            }}>
-            {/* Mesh glows */}
-            <div className="pointer-events-none absolute -top-20 -left-10 h-72 w-72 rounded-full opacity-30 blur-3xl"
-              style={{ background: "radial-gradient(circle, #6366f1 0%, transparent 70%)" }} />
-            <div className="pointer-events-none absolute -bottom-8 right-10 h-48 w-48 rounded-full opacity-15 blur-3xl"
-              style={{ background: "radial-gradient(circle, #22c55e 0%, transparent 70%)" }} />
-            {/* Top shimmer */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px"
-              style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)" }} />
+        {/* ══ HERO ════════════════════════════════════════════════════════════ */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+          className="relative overflow-hidden rounded-2xl border px-6 pt-7 pb-6"
+          style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+          {/* Ambient glow */}
+          <div className="pointer-events-none absolute inset-0" style={{
+            background: `radial-gradient(ellipse 60% 50% at 80% 50%, ${isUp ? "#22c55e" : "#ef4444"}08, transparent)`,
+          }} />
 
-            <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  style={{ color: "var(--text-tertiary)" }}>
-                  Patrimoine net total
-                </p>
-                <div className="mt-3 flex items-baseline gap-3 flex-wrap">
-                  <span
-                    className="font-bold tabular-nums"
-                    style={{
-                      color: "var(--text-primary)",
-                      fontSize: "clamp(28px, 5vw, 44px)",
-                      letterSpacing: "-0.03em",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {format(netWorthValue)}
-                  </span>
-                  <ChangeBadge value={todayPnlPct} size="md" />
-                </div>
-                <div className="mt-2.5 flex flex-wrap items-center gap-3">
-                  <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                    <span style={{ color: todayPnl >= 0 ? "var(--gain)" : "var(--loss)", fontWeight: 600 }}>
-                      {todayPnl >= 0 ? "+" : ""}{format(todayPnl)}
-                    </span>{" "}
-                    aujourd&apos;hui
-                  </span>
-                  <span className="h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-tertiary)" }} />
-                  <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                    {portfolios.length} portefeuille{portfolios.length > 1 ? "s" : ""}
-                  </span>
-                </div>
+          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            {/* Left: value + P&L */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
+                Patrimoine net total
+              </p>
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <span className="text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--text-primary)" }}>
+                  {format(netWorthValue)}
+                </span>
+                <ChangeBadge value={totalPnlPct} size="md" />
               </div>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span style={{ color: "var(--text-secondary)" }}>
+                  <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>P&L total</span>
+                  <span className="font-semibold tabular-nums" style={{ color: isUp ? "var(--gain)" : "var(--loss)" }}>
+                    {totalPnl >= 0 ? "+" : ""}{format(totalPnl)}
+                  </span>
+                </span>
+                <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
+                <span style={{ color: "var(--text-secondary)" }}>
+                  <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>Aujourd'hui</span>
+                  <span className="font-semibold tabular-nums" style={{ color: isToday ? "var(--gain)" : "var(--loss)" }}>
+                    {todayPnl >= 0 ? "+" : ""}{format(todayPnl)}
+                  </span>
+                </span>
+                {totalCashConverted > 0 && (
+                  <>
+                    <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>Liquidités</span>
+                      <span className="font-semibold tabular-nums" style={{ color: "#0ea5e9" }}>{format(totalCashConverted)}</span>
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
 
+            {/* Right: actions */}
+            <div className="flex gap-2 shrink-0">
               <Link href="/portfolios"
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200"
-                style={{
-                  background:  "linear-gradient(135deg, #6366f1, #818cf8)",
-                  boxShadow:   "0 0 0 1px rgba(99,102,241,0.3), 0 4px 16px rgba(99,102,241,0.25)",
-                }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = "translateY(0)"}
-              >
-                Voir les portefeuilles <ArrowUpRight className="h-3.5 w-3.5" />
+                className="flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                Portefeuilles <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+              <Link href="/portfolios"
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
+                style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
+                <Plus className="h-3.5 w-3.5" /> Transaction
               </Link>
             </div>
           </div>
-        </section>
+        </motion.div>
 
-        {/* ─── KPIs ─── */}
-        <section>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-7">
-            {/* Patrimoine = positions + cash + revenus. % = marché uniquement (hors dépôts) */}
-            <StatCard label="Patrimoine net total" value={format(netWorthValue)} change={totalPnlPct} changeLabel="Perf. marché hors dépôts" icon={Wallet} iconColor="var(--accent)" index={0} />
-            <StatCard label="P&L du jour" value={(todayPnl >= 0 ? "+" : "") + format(todayPnl)} change={todayPnlPct} changeLabel="variation aujourd'hui" icon={Activity} iconColor="#a78bfa" index={1} />
-            {/* P&L latent = gains sur positions ouvertes uniquement */}
-            <StatCard label="P&L marché (latent)" value={(totalPnl >= 0 ? "+" : "") + format(totalPnl)} change={totalPnlPct} changeLabel="positions ouvertes" icon={TrendingUp} iconColor="var(--gain)" index={2} />
-            {/* P&L réalisé = somme des gains/pertes sur ventes clôturées */}
-            <StatCard label="P&L réalisé (ventes)" value={(realizedPnl >= 0 ? "+" : "") + format(realizedPnl)} changeLabel="gains ventes clôturées" icon={BadgeCheck} iconColor="#22c55e" index={3} />
-            <StatCard label="Nb. positions" value={String(allAssets.filter(a => a.assetClass !== "cash").length)} changeLabel="lignes ouvertes" icon={BarChart2} iconColor="#f59e0b" index={4} />
-            {/* Liquidités globales — depuis globalCash (source unique) */}
-            {(() => {
-              const cashLines = Object.entries(globalCash)
-                .filter(([, v]) => (v as number) > 0)
-                .map(([cur, val]) => `${(val as number).toFixed(0)} ${cur}`)
-                .join(" · ")
-              return (
-                <StatCard
-                  label="Liquidités globales"
-                  value={format(totalCashConverted)}
-                  changeLabel={cashLines || "Aucun dépôt"}
-                  icon={Wallet}
-                  iconColor="#0ea5e9"
-                  index={5}
-                />
-              )
-            })()}
-            {/* Revenus annexes */}
-            {(() => {
-              const revTotal = revenus.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
-              const thisMonthRevs = revenus.filter(r => new Date(r.date).getMonth() === new Date().getMonth())
-              const monthTotal    = thisMonthRevs.reduce((s, r) => s + convert(r.amount, (r.currency || "CHF") as AppCurrency), 0)
-              return (
-                <StatCard
-                  label="Revenus annexes"
-                  value={format(revTotal)}
-                  changeLabel={`ce mois: +${format(monthTotal)}`}
-                  icon={Zap}
-                  iconColor="#a855f7"
-                  index={6}
-                />
-              )
-            })()}
-            <StatCard
-              label="Max Drawdown"
-              value={historyLoading ? "..." : `${portfolioMaxDrawdown.toFixed(2)} %`}
-              changeLabel="historique"
-              icon={ShieldAlert}
-              iconColor="#ef4444"
-              index={6}
-            />
-          </div>
-        </section>
+        {/* ══ KPI STRIP ═══════════════════════════════════════════════════════ */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
+          {[
+            {
+              label: "P&L marché",
+              value: (totalPnl >= 0 ? "+" : "") + format(totalPnl),
+              sub:   (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + "% positions ouvertes",
+              icon:  TrendingUp,
+              color: isUp ? "var(--gain)" : "var(--loss)",
+            },
+            {
+              label: "P&L réalisé",
+              value: (realizedPnl >= 0 ? "+" : "") + format(realizedPnl),
+              sub:   "ventes clôturées",
+              icon:  BadgeCheck,
+              color: realizedPnl >= 0 ? "var(--gain)" : "var(--loss)",
+            },
+            {
+              label: "Capital investi",
+              value: format(totalCost),
+              sub:   `${allAssets.filter(a => a.assetClass !== "cash").length} position${allAssets.length !== 1 ? "s" : ""}`,
+              icon:  BarChart2,
+              color: "#6366f1",
+            },
+            {
+              label: "P&L du jour",
+              value: (todayPnl >= 0 ? "+" : "") + format(todayPnl),
+              sub:   (todayPnlPct >= 0 ? "+" : "") + todayPnlPct.toFixed(2) + "%",
+              icon:  Activity,
+              color: isToday ? "var(--gain)" : "var(--loss)",
+            },
+          ].map((kpi, i) => (
+            <motion.div key={kpi.label}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05, duration: 0.3 }}
+              className="rounded-xl border p-4 space-y-2"
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium" style={{ color: "var(--text-tertiary)" }}>{kpi.label}</p>
+                <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: kpi.color + "18" }}>
+                  <kpi.icon className="h-3.5 w-3.5" style={{ color: kpi.color }} />
+                </div>
+              </div>
+              <p className="text-lg font-bold tabular-nums" style={{ color: kpi.color }}>{kpi.value}</p>
+              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{kpi.sub}</p>
+            </motion.div>
+          ))}
+        </div>
 
-        {/* ─── Chart + Allocation ─── */}
-        <div className="grid gap-4 sm:gap-6 lg:grid-cols-5">
+        {/* ══ CHART + ALLOCATION ══════════════════════════════════════════════ */}
+        <div className="grid gap-6 lg:grid-cols-5">
+
           {/* Chart */}
-          <section className="lg:col-span-3 space-y-3">
-            <div className="flex items-center justify-between">
-              {/* Ce graphique affiche la VALEUR des positions (qty actuelle × prix historique)
-                PAS la performance. Les dépôts cash et revenus annexes ne sont pas inclus.
-                Pour la performance hors cashflows, voir l'onglet "Portefeuilles" → benchmark. */}
-            <SectionHeader title="Valeur du patrimoine" description="Positions uniquement · hors dépôts et revenus" />
-              <div className="flex gap-1">
+          <div className="lg:col-span-3 rounded-2xl border overflow-hidden"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b px-5 py-4"
+              style={{ borderColor: "var(--border)" }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Valeur du patrimoine</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                  Positions uniquement · hors dépôts et revenus · prix Yahoo Finance
+                </p>
+              </div>
+              <div className="flex gap-1 rounded-lg border p-0.5" style={{ borderColor: "var(--border)" }}>
                 {PERIODS.map(p => (
                   <button key={p} onClick={() => setPeriod(p)}
-                    className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                    className="rounded-md px-2.5 py-1 text-xs font-medium transition-all"
                     style={{
                       backgroundColor: period === p ? "var(--accent)" : "transparent",
                       color: period === p ? "white" : "var(--text-tertiary)",
@@ -430,330 +350,256 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              {/* Source indicator */}
-              <div className="flex items-center gap-2 px-4 py-2 border-b"
-                style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-overlay)" }}>
-                <span className="h-1.5 w-1.5 rounded-full animate-pulse"
-                  style={{ backgroundColor: isReal && !historyLoading ? "#22c55e" : "var(--text-tertiary)" }} />
-                <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                  {historyLoading
-                    ? "Calcul de l'historique réel…"
-                    : isReal
-                    ? "Valeur des positions (hors dépôts/retraits) · prix Yahoo Finance · base = valeur actuelle des quantités détenues"
-                    : "Ajoutez des actifs pour voir la valeur de vos positions"
-                  }
-                </span>
-              </div>
 
-              {hasAssets ? (
-                historyLoading ? (
-                  <div className="flex items-center justify-center py-12 gap-2">
-                    <div className="h-4 w-4 rounded-full border-2 border-t-blue-500 border-r-blue-500/30 border-b-blue-500/10 border-l-blue-500/30 animate-spin" />
-                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                      Chargement des prix historiques…
-                    </span>
-                  </div>
-                ) : isReal ? (
-                  <div className="p-3">
-                    <AreaChart data={portfolioHistory} height={200} />
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 gap-2">
-                    <BarChart2 className="h-7 w-7" style={{ color: "var(--text-tertiary)" }} />
-                    <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                      Impossible de récupérer l&apos;historique des prix
-                    </p>
-                  </div>
-                )
+            {/* Source dot */}
+            <div className="flex items-center gap-2 px-5 py-2 border-b"
+              style={{ borderColor: "var(--border-subtle)", backgroundColor: "var(--bg-overlay)" }}>
+              <span className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: isReal && !historyLoading ? "#22c55e" : "var(--text-tertiary)" }} />
+              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                {historyLoading ? "Calcul…" : isReal ? "Données réelles" : "Aucune donnée"}
+              </span>
+              {!historyLoading && isReal && (
+                <>
+                  <span className="h-3 w-px mx-1" style={{ backgroundColor: "var(--border-subtle)" }} />
+                  <span className="text-[10px] tabular-nums" style={{ color: totalPnlPct >= 0 ? "var(--gain)" : "var(--loss)" }}>
+                    {totalPnlPct >= 0 ? "+" : ""}{totalPnlPct.toFixed(2)}% sur la période
+                  </span>
+                  {portfolioMaxDrawdown !== 0 && (
+                    <>
+                      <span className="h-3 w-px mx-1" style={{ backgroundColor: "var(--border-subtle)" }} />
+                      <span className="text-[10px] tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+                        Max drawdown {portfolioMaxDrawdown.toFixed(1)}%
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Chart body */}
+            <div className="p-4 pb-3">
+              {historyLoading ? (
+                <div className="h-44 flex items-center justify-center gap-2">
+                  <div className="h-3.5 w-3.5 rounded-full border-2 border-t-blue-500 animate-spin" />
+                  <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Chargement historique…</span>
+                </div>
+              ) : isReal ? (
+                <AreaChart data={portfolioHistory} height={176} />
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 gap-2 p-3">
-                  <BarChart2 className="h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
-                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                    Ajoutez des actifs pour voir l&apos;évolution de votre portefeuille
-                  </p>
+                <div className="h-44 flex flex-col items-center justify-center gap-2">
+                  <BarChart2 className="h-6 w-6" style={{ color: "var(--text-tertiary)" }} />
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Historique indisponible</p>
                 </div>
               )}
             </div>
-          </section>
+          </div>
 
-          {/* Allocation donut */}
-          <section className="lg:col-span-2 space-y-3">
-            <SectionHeader title="Répartition" description="Par classe d'actifs" />
-            <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <div className="mb-5 flex justify-center">
-                <div className="relative h-28 w-28">
-                  <DonutChart entries={allocationEntries} />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{allocationEntries.length}</span>
-                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>classes</span>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2.5">
-                {allocationEntries.map(({ cls, pct }) => (
-                  <div key={cls} className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ASSET_CLASS_COLORS[cls] }} />
-                    <span className="flex-1 text-xs" style={{ color: "var(--text-secondary)" }}>{ASSET_CLASS_LABELS[cls]}</span>
-                    <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{pct.toFixed(1)}%</span>
-                  </div>
-                ))}
-              </div>
+          {/* Allocation */}
+          <div className="lg:col-span-2 rounded-2xl border"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Répartition</p>
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Par classe d'actifs</p>
             </div>
-          </section>
+            <div className="p-5 space-y-3">
+              {allocationEntries.length === 0 ? (
+                <p className="text-sm text-center py-8" style={{ color: "var(--text-secondary)" }}>Aucune position</p>
+              ) : allocationEntries.map(({ cls, val, pct }) => {
+                const color = ASSET_CLASS_COLORS[cls as keyof typeof ASSET_CLASS_COLORS] ?? "#6b7280"
+                const label = ASSET_CLASS_LABELS[cls as keyof typeof ASSET_CLASS_LABELS] ?? cls
+                return (
+                  <div key={cls} className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{label}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+                          {format(val)}
+                        </span>
+                        <span className="text-xs font-semibold tabular-nums w-12 text-right" style={{ color: "var(--text-primary)" }}>
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--bg-muted)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
-        {/* ─── Top holdings + Recent transactions ─── */}
-        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-          <AllocationBreakdown
-            title="Repartition sectorielle"
-            description="Poids par secteur economique"
-            entries={sectorEntries}
-            icon={Building2}
-            colors={DIVERSIFICATION_COLORS}
-          />
-          <AllocationBreakdown
-            title="Repartition geographique"
-            description="Exposition par zone"
-            entries={geoEntries}
-            icon={Globe2}
-            colors={DIVERSIFICATION_COLORS}
-          />
-        </div>
+        {/* ══ TOP POSITIONS + ACTIVITÉ ════════════════════════════════════════ */}
+        <div className="grid gap-6 lg:grid-cols-2">
 
-        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-          {/* Top 5 */}
-          <section className="space-y-3">
-            <SectionHeader title="Top positions" description="5 plus grandes positions"
-              action={<Link href="/portfolios" className="text-xs hover:text-white transition-colors" style={{ color: "var(--text-secondary)" }}>Tout voir →</Link>}
-            />
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+          {/* Top positions */}
+          <div className="rounded-2xl border overflow-hidden"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top positions</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Par valeur actuelle</p>
+              </div>
+              <Link href="/portfolios"
+                className="text-[11px] flex items-center gap-1 hover:opacity-80 transition-opacity"
+                style={{ color: "var(--accent)" }}>
+                Tout voir <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <div>
               {top5.length === 0 ? (
-                <div className="flex items-center justify-center py-10">
+                <div className="flex items-center justify-center py-12">
                   <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune position</p>
                 </div>
-              ) : top5.map((asset, i) => {
-                const userRate = (fxRates as Record<string, number>)[currency] ?? 1
-                const valueChf = (asset.currentPrice * asset.quantity) / userRate
-                const costChf = asset.costBasisChf ?? valueChf
-                const pnlPct = costChf > 0 ? ((valueChf - costChf) / costChf) * 100 : 0
-                const color = ASSET_CLASS_COLORS[asset.assetClass]
+              ) : top5.map((a, i) => {
+                const value  = a.livePrice * a.quantity
+                const isGain = a.pnlPct >= 0
+                const color  = ASSET_CLASS_COLORS[a.assetClass as keyof typeof ASSET_CLASS_COLORS] ?? "#6b7280"
                 return (
-                  <div key={asset.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
+                  <div key={a.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-zinc-800/30 transition-colors"
                     style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                    <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold text-white"
-                      style={{ backgroundColor: `${color}18`, color }}>
-                      {asset.ticker.slice(0, 2)}
+                    {/* Rank + ticker chip */}
+                    <div className="flex items-center gap-2.5 w-8 flex-shrink-0">
+                      <span className="text-[11px] font-bold tabular-nums w-4" style={{ color: "var(--text-tertiary)" }}>{i + 1}</span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
-                      <p className="text-[11px] flex items-center gap-1" style={{ color: "var(--text-tertiary)" }}>
-                        <span>{asset.quantity} ×</span>
-                        <DualPriceInline
-                          price={asset.currentPrice}
-                          originalPrice={livePrices[asset.ticker]?.originalPrice}
-                          originalCurrency={livePrices[asset.ticker]?.originalCurrency}
-                        />
+                    <div className="h-9 w-9 flex-shrink-0 rounded-xl flex items-center justify-center text-[11px] font-bold"
+                      style={{ backgroundColor: color + "18", color }}>
+                      {a.ticker.slice(0, 3)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.ticker}</p>
+                      <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                        {a.quantity} × {a.livePrice.toFixed(2)}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                        {format(asset.currentPrice * asset.quantity)}
-                      </p>
-                      <ChangeBadge value={pnlPct} showIcon={false} />
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(value)}</p>
+                      <div className="flex items-center justify-end gap-1 mt-0.5">
+                        {isGain
+                          ? <ArrowUpRight className="h-3 w-3" style={{ color: "var(--gain)" }} />
+                          : <TrendingDown className="h-3 w-3" style={{ color: "var(--loss)" }} />
+                        }
+                        <span className="text-[11px] font-semibold tabular-nums"
+                          style={{ color: isGain ? "var(--gain)" : "var(--loss)" }}>
+                          {isGain ? "+" : ""}{a.pnlPct.toFixed(2)}%
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )
               })}
             </div>
-          </section>
+          </div>
 
-          {/* Recent transactions */}
-          <section className="space-y-3">
-            <SectionHeader title="Dernières transactions" description="Activité récente"
-              action={<Link href="/transactions" className="text-xs hover:text-white transition-colors" style={{ color: "var(--text-secondary)" }}>Tout voir →</Link>}
-            />
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              {recentTx.length === 0 ? (
-                <div className="flex flex-col items-center py-10 gap-2">
-                  <Activity className="h-7 w-7" style={{ color: "var(--text-tertiary)" }} />
+          {/* Activité récente */}
+          <div className="rounded-2xl border overflow-hidden"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Activité récente</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Achats · ventes · dividendes</p>
+              </div>
+              <Link href="/transactions"
+                className="text-[11px] flex items-center gap-1 hover:opacity-80 transition-opacity"
+                style={{ color: "var(--accent)" }}>
+                Tout voir <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <div>
+              {recentInvestments.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
                   <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune transaction</p>
                 </div>
-              ) : recentTx.map((tx, i) => {
-                const isBuy   = tx.type === "buy"
-                const isDiv   = tx.type === "dividend"
-                const isSell  = tx.type === "sell"
-                // Achat = bleu neutre (pas une perte), dividende = vert, vente = violet
-                const color   = isBuy ? "#6366f1" : isDiv ? "#22c55e" : isSell ? "#a78bfa" : "#64748b"
-                const label   = isBuy ? "Investi" : isDiv ? "Dividende" : isSell ? "Vente" : "Transfert"
+              ) : recentInvestments.map((tx, i) => {
+                const TYPE = {
+                  buy:      { label: "Achat",     color: "#6366f1", sign: "" },
+                  sell:     { label: "Vente",     color: "#a78bfa", sign: "+" },
+                  dividend: { label: "Dividende", color: "#22c55e", sign: "+" },
+                } as Record<string, { label: string; color: string; sign: string }>
+                const meta  = TYPE[tx.type] ?? { label: tx.type, color: "#64748b", sign: "" }
+                const fxR   = (fxRates as Record<string,number>)[tx.currency ?? "CHF"] ?? 1
+                const userRate = (fxRates as Record<string,number>)[currency] ?? 1
+                const amtUser  = (tx.netAmountChf ?? tx.quantity * tx.price / fxR) * userRate
                 return (
-                  <div key={tx.id} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/30 transition-colors"
+                  <div key={tx.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-zinc-800/30 transition-colors"
                     style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                    <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-xs font-bold"
-                      style={{ backgroundColor: `${color}18`, color }}>
-                      {tx.ticker.slice(0, 2)}
+                    <div className="h-9 w-9 flex-shrink-0 rounded-xl flex items-center justify-center text-[11px] font-bold"
+                      style={{ backgroundColor: meta.color + "18", color: meta.color }}>
+                      {tx.ticker.slice(0, 3)}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{tx.assetName}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                          {tx.assetName.length > 22 ? tx.ticker : tx.assetName}
+                        </p>
+                        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ backgroundColor: meta.color + "18", color: meta.color }}>
+                          {meta.label}
+                        </span>
+                      </div>
                       <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                        {label} · {new Date(tx.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })}
+                        {new Date(tx.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })}
+                        {tx.quantity > 0 && ` · ${tx.quantity} × ${tx.price.toFixed(2)}`}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-semibold tabular-nums" style={{ color: isBuy ? "var(--text-secondary)" : color }}>
-                        {isBuy ? "" : isDiv ? "+" : isSell ? "+" : ""}{format(tx.quantity * tx.price)}
-                      </p>
-                      {isBuy && (
-                        <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>capital investi</p>
-                      )}
-                    </div>
+                    <p className="text-sm font-bold tabular-nums flex-shrink-0" style={{ color: meta.color }}>
+                      {meta.sign}{format(amtUser)}
+                    </p>
                   </div>
                 )
               })}
             </div>
-          </section>
+          </div>
         </div>
 
-        {/* ─── Earnings calendar ─── */}
-        {earnings.length > 0 && (
-          <section className="space-y-3">
-            <SectionHeader title="Prochains résultats" description="Dates de publication pour vos positions" />
-            <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              {earnings.slice(0, 6).map((e, i) => {
+        {/* ══ PROCHAINS RÉSULTATS ════════════════════════════════════════════ */}
+        {earnings.filter(e => new Date(e.earningsDate).getTime() > Date.now() - 7 * 86400000).length > 0 && (
+          <div className="rounded-2xl border overflow-hidden"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Prochains résultats</p>
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Publications de résultats pour vos positions</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-zinc-800" style={{ backgroundColor: "var(--border)" }}>
+              {earnings.filter(e => new Date(e.earningsDate).getTime() > Date.now() - 7 * 86400000)
+                .slice(0, 6).map(e => {
                 const daysLeft = Math.ceil((new Date(e.earningsDate).getTime() - Date.now()) / 86400000)
                 const isPast   = daysLeft < 0
+                const isClose  = daysLeft >= 0 && daysLeft <= 7
                 return (
-                  <div key={e.ticker} className="flex items-center gap-4 px-4 py-3 hover:bg-zinc-800/20 transition-colors"
-                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                    <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
-                      style={{ backgroundColor: "#3b82f622", color: "#3b82f6" }}>
-                      {e.ticker.slice(0, 4)}
+                  <div key={e.ticker} className="flex flex-col gap-1 px-4 py-4"
+                    style={{ backgroundColor: "var(--bg-elevated)" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>{e.ticker}</span>
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        style={{
+                          backgroundColor: isPast ? "var(--bg-muted)" : isClose ? "#f59e0b18" : "#6366f118",
+                          color: isPast ? "var(--text-tertiary)" : isClose ? "#f59e0b" : "var(--accent)",
+                        }}>
+                        {isPast ? `−${Math.abs(daysLeft)}j` : daysLeft === 0 ? "Auj." : `+${daysLeft}j`}
+                      </span>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{e.ticker}</p>
-                      <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                        {new Date(e.earningsDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })}
-                      </p>
-                    </div>
+                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                      {new Date(e.earningsDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
+                    </p>
                     {e.epsAvg != null && (
-                      <p className="text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
-                        EPS {e.epsAvg > 0 ? "+" : ""}{e.epsAvg.toFixed(2)}$
+                      <p className="text-[11px] tabular-nums font-medium" style={{ color: e.epsAvg >= 0 ? "var(--gain)" : "var(--loss)" }}>
+                        EPS {e.epsAvg >= 0 ? "+" : ""}{e.epsAvg.toFixed(2)}$
                       </p>
                     )}
-                    <span className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                      style={{
-                        backgroundColor: isPast ? "var(--bg-muted)" : "#f59e0b18",
-                        color: isPast ? "var(--text-tertiary)" : "#f59e0b",
-                      }}>
-                      {isPast ? `il y a ${Math.abs(daysLeft)}j` : daysLeft === 0 ? "Aujourd'hui" : `dans ${daysLeft}j`}
-                    </span>
                   </div>
                 )
               })}
             </div>
-          </section>
+          </div>
         )}
 
-        {/* ─── Insights automatiques ─── */}
-        {hasAssets && (
-          <InsightsWidget assets={assetsForAnalytics} />
-        )}
       </div>
     </div>
-  )
-}
-
-// ─── Mini SVG Donut ───────────────────────────────────────────────────────────
-function AllocationBreakdown({
-  title,
-  description,
-  entries,
-  icon: Icon,
-  colors,
-}: {
-  title: string
-  description: string
-  entries: AllocationEntry[]
-  icon: LucideIcon
-  colors: string[]
-}) {
-  const visible = entries.slice(0, 7)
-
-  return (
-    <section className="space-y-3">
-      <SectionHeader title={title} description={description} />
-      <div className="rounded-xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-        {visible.length === 0 ? (
-          <div className="flex items-center justify-center py-10">
-            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Aucune donnee</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg"
-                style={{ backgroundColor: `${colors[0]}18`, border: `1px solid ${colors[0]}30` }}>
-                <Icon className="h-4.5 w-4.5" style={{ color: colors[0] }} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
-                  {visible[0]?.key}
-                </p>
-                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                  Premiere exposition: {visible[0]?.pct.toFixed(1)} %
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {visible.map((entry, i) => {
-                const color = colors[i % colors.length]
-                return (
-                  <div key={entry.key} className="space-y-1.5">
-                    <div className="flex items-center gap-3">
-                      <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                      <span className="min-w-0 flex-1 truncate text-xs" style={{ color: "var(--text-secondary)" }}>
-                        {entry.key}
-                      </span>
-                      <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                        {entry.pct.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: "var(--bg-muted)" }}>
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{ width: `${Math.min(100, entry.pct)}%`, backgroundColor: color }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
-
-function DonutChart({ entries }: { entries: { cls: string; pct: number }[] }) {
-  const r = 14, cx = 18, cy = 18, stroke = 3.5, circ = 2 * Math.PI * r
-  let cumulative = 0
-  return (
-    <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke} />
-      {entries.map(({ cls, pct }) => {
-        const dash   = (pct / 100) * circ
-        const offset = (1 - cumulative / 100) * circ
-        cumulative  += pct
-        return (
-          <circle key={cls} cx={cx} cy={cy} r={r} fill="none"
-            stroke={ASSET_CLASS_COLORS[cls as keyof typeof ASSET_CLASS_COLORS] ?? "#6b7280"}
-            strokeWidth={stroke}
-            strokeDasharray={`${dash} ${circ - dash}`}
-            strokeDashoffset={-circ + offset}
-          />
-        )
-      })}
-    </svg>
   )
 }
