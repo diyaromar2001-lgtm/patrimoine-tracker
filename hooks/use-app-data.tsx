@@ -145,11 +145,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         const native = a.currency
         if (!native || native === "CHF") continue
 
+        // ── RÈGLE: coût CHF de la position résiduelle ──────────────────────
+        // newCostChf = quantité_actuelle × avgBuyPrice_natif × tauxBCE_pondéré
+        // Où tauxBCE_pondéré = moyenne des taux historiques de TOUS les buys
+        // pondérée par le montant natif de chaque achat.
+        //
+        // Cela évite le bug de "somme des transactions" si l'utilisateur a fait
+        // plusieurs achats puis des sells (qty réduite mais somme des buys gonflée).
+
         const buys = transactions.filter(t => t.portfolioId === p.id && t.ticker === a.ticker && t.type === "buy")
         if (!buys.length) continue
 
-        let totalCostChf = 0
-        let allFetched   = true
+        let totalNative   = 0  // somme native pour pondération
+        let weightedRate  = 0  // Σ (montant_natif × rate)
+        let allFetched    = true
+
         for (const tx of buys) {
           try {
             const res = await fetch(`/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`)
@@ -157,17 +167,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             const hist = await res.json() as { rate: number }
             const rate = hist.rate ?? 1
             if (rate <= 0) { allFetched = false; break }
-            totalCostChf += (tx.quantity * tx.price + (tx.fees ?? 0)) / rate
+            const nativeAmount = tx.quantity * tx.price
+            totalNative  += nativeAmount
+            weightedRate += nativeAmount * rate  // attention: rate = native/CHF
           } catch { allFetched = false; break }
         }
 
-        if (!allFetched || totalCostChf <= 0) continue
+        if (!allFetched || totalNative <= 0) continue
 
-        // Compare au costBasisChf actuel — n'applique le fix QUE si différent (>1 CHF)
+        // Taux pondéré = Σ(nativeAmount × rate) / Σ(nativeAmount)
+        // Coût CHF = qty_actuelle × avgBuyPrice / tauxPondéré
+        const avgRate     = weightedRate / totalNative
+        const nativeCurrentTotal = a.quantity * a.avgBuyPrice
+        const newCostChf  = nativeCurrentTotal / avgRate
+
+        if (newCostChf <= 0) continue
+
         const current = a.costBasisChf ?? 0
-        if (Math.abs(current - totalCostChf) < 1) continue
+        if (Math.abs(current - newCostChf) < 1) continue
 
-        fixes.push({ assetId: a.id, portfolioId: p.id, qty: a.quantity, avg: a.avgBuyPrice, newCostChf: totalCostChf })
+        fixes.push({ assetId: a.id, portfolioId: p.id, qty: a.quantity, avg: a.avgBuyPrice, newCostChf })
       }
     }
 
