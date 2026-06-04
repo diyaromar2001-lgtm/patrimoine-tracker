@@ -96,12 +96,14 @@ export default function TransactionsPage() {
   }
 
   async function handleSave(form: TransactionFormData) {
-    // ── Dépôt de liquidité ───────────────────────────────────────────────────
+    // ── Dépôt de liquidité globale ───────────────────────────────────────────
     if (form.selectedClass === "cash" || form.type === "deposit") {
       const amount   = parseFloat(form.depositAmount || "0")
       const currency = (form.depositCurrency || "CHF") as "CHF" | "USD" | "EUR"
       if (!amount || amount <= 0) throw new Error("Montant invalide")
-      await depositCash(form.portfolioId, amount, currency)
+      const globalPid = portfolios[0]?.id
+      if (!globalPid) throw new Error("Aucun portefeuille disponible")
+      await depositCash(globalPid, amount, currency)
       setModal(null)
       return
     }

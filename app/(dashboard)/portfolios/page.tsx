@@ -553,12 +553,17 @@ export default function PortfoliosPage() {
   }
 
   async function handleSaveTx(form: TransactionFormData) {
-    // ── Dépôt de liquidité (cash mode) ──────────────────────────────────────
+    // ── Dépôt de liquidité globale ───────────────────────────────────────────
+    // La liquidité est globale : elle va dans le 1er portefeuille
+    // mais l'affichage agrège tous les portefeuilles (poche commune).
     if (form.selectedClass === "cash" || form.type === "deposit") {
       const amount   = parseFloat(form.depositAmount || "0")
       const currency = (form.depositCurrency || "CHF") as "CHF" | "USD" | "EUR"
       if (!amount || amount <= 0) throw new Error("Montant invalide")
-      await depositCash(form.portfolioId, amount, currency)
+      // Utilise le 1er portefeuille comme réservoir de cash global
+      const globalPid = portfolios[0]?.id
+      if (!globalPid) throw new Error("Aucun portefeuille disponible")
+      await depositCash(globalPid, amount, currency)
       setTxModal(null)
       return
     }

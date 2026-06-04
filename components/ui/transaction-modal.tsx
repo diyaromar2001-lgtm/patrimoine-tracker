@@ -340,9 +340,11 @@ export function TransactionModal({
 
   // ── Validation ──────────────────────────────────────────────────────────────
   const valid = (() => {
-    if (!form.portfolioId) return false
+    // En mode Liquidité: pas besoin de portefeuille, juste montant + date
     if (isCashMode) return !!(parseFloat(form.depositAmount || "0") > 0 && form.date)
-    if (isRevenu)   return !!(form.revenuType && form.ticker && price > 0 && form.date)
+    // Autres modes: portefeuille obligatoire
+    if (!form.portfolioId) return false
+    if (isRevenu) return !!(form.revenuType && form.ticker && price > 0 && form.date)
     return !!(form.ticker && form.assetName && qty > 0 && price > 0 && form.date && !insufficientCash)
   })()
 
@@ -412,38 +414,53 @@ export function TransactionModal({
             </div>
           </div>
 
-          {/* ── Portfolio selector ─────────────────────────────────────── */}
-          <div>
-            <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-              Portefeuille *
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {portfolios.map(p => {
-                const cash = cashAvailable?.[p.id]?.[nativeCurr]
-                return (
-                  <button key={p.id} onClick={() => set("portfolioId", p.id)}
-                    className="flex flex-col items-start rounded-xl border px-3 py-2 text-xs font-medium transition-all"
-                    style={{
-                      backgroundColor: form.portfolioId === p.id ? p.color + "15" : "var(--bg-base)",
-                      borderColor:     form.portfolioId === p.id ? p.color : "var(--border)",
-                      color:           form.portfolioId === p.id ? "white" : "var(--text-secondary)",
-                    }}>
-                    <div className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                      {p.name}
-                      {form.portfolioId === p.id && <Check className="h-3 w-3" style={{ color: p.color }} />}
-                    </div>
-                    {/* Show cash balance inline */}
-                    {cash !== undefined && cash > 0 && (
-                      <span className="mt-0.5 text-[10px]" style={{ color: "#0ea5e9" }}>
-                        💵 {cash.toFixed(2)} {nativeCurr}
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
+          {/* ── Portfolio selector — caché en mode Liquidité ────────────── */}
+          {!isCashMode && (
+            <div>
+              <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                Portefeuille *
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {portfolios.map(p => {
+                  const cash = cashAvailable?.[p.id]?.[nativeCurr]
+                  return (
+                    <button key={p.id} onClick={() => set("portfolioId", p.id)}
+                      className="flex flex-col items-start rounded-xl border px-3 py-2 text-xs font-medium transition-all"
+                      style={{
+                        backgroundColor: form.portfolioId === p.id ? p.color + "15" : "var(--bg-base)",
+                        borderColor:     form.portfolioId === p.id ? p.color : "var(--border)",
+                        color:           form.portfolioId === p.id ? "white" : "var(--text-secondary)",
+                      }}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                        {p.name}
+                        {form.portfolioId === p.id && <Check className="h-3 w-3" style={{ color: p.color }} />}
+                      </div>
+                      {cash !== undefined && cash > 0 && (
+                        <span className="mt-0.5 text-[10px]" style={{ color: "#0ea5e9" }}>
+                          💵 {cash.toFixed(2)} {nativeCurr}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* ── En mode Liquidité: label "Liquidités globales" ─────────── */}
+          {isCashMode && (
+            <div className="flex items-center gap-3 rounded-xl border px-4 py-3"
+              style={{ backgroundColor: "#0ea5e908", borderColor: "#0ea5e930" }}>
+              <Wallet className="h-5 w-5 flex-shrink-0" style={{ color: "#0ea5e9" }} />
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "#0ea5e9" }}>Liquidités globales</p>
+                <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                  Le cash déposé est partagé entre tous vos portefeuilles
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ══ CASH MODE ═══════════════════════════════════════════════ */}
           {isCashMode ? (
