@@ -10,7 +10,6 @@ import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
-import { calculateRealizedPnLEvents } from "@/lib/finance"
 import type { AppCurrency } from "@/lib/utils"
 import {
   Plus, Search, X, Check, ArrowUpRight, ArrowDownLeft,
@@ -29,7 +28,7 @@ const TX_ICONS: Record<TransactionType, typeof ArrowUpRight> = {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TransactionsPage() {
-  const { transactions, portfolios, addTransaction, editTransaction, removeTransaction } = useAppData()
+  const { transactions, portfolios, realizedPnLEvents, addTransaction, editTransaction, removeTransaction } = useAppData()
   const { format, convert } = useCurrency()
 
   const [search,     setSearch]     = useState("")
@@ -56,11 +55,11 @@ export default function TransactionsPage() {
     return sum + convert(pnl, asset.currency as AppCurrency)
   }, 0)
   const realizedPnl = useMemo(() =>
-    calculateRealizedPnLEvents(transactions).reduce(
+    realizedPnLEvents.reduce(
       (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),
       0
     ),
-    [transactions, convert]
+    [realizedPnLEvents, convert]
   )
 
   function openAdd() {

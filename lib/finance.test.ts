@@ -281,6 +281,16 @@ describe("calculateRealizedPnL", () => {
   it("somme les evenements realises", () => {
     expect(calculateRealizedPnL(txs)).toBe(198)
   })
+
+  it("inclut les frais d'achat dans le PRU et les frais de vente dans le gain net", () => {
+    const events = calculateRealizedPnLEvents([
+      { portfolioId: "p1", ticker: "NVDA", type: "buy", quantity: 1, price: 200, fees: 1, currency: "CHF", date: "2026-01-01" },
+      { portfolioId: "p1", ticker: "NVDA", type: "sell", quantity: 1, price: 210, fees: 1, currency: "CHF", date: "2026-02-01" },
+    ])
+
+    expect(events[0].costBasis).toBe(201)
+    expect(events[0].pnl).toBe(8)
+  })
 })
 
 describe("formatPct", () => {

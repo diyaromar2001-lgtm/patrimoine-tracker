@@ -1,12 +1,13 @@
 "use client"
 
 import {
-  createContext, useContext, useState,
+  createContext, useContext, useState, useMemo,
   useEffect, useCallback, type ReactNode,
 } from "react"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import * as Q from "@/lib/supabase/queries"
 import type { Portfolio, Transaction, Asset, RevenuAnnexe } from "@/lib/types"
+import { calculateRealizedPnLEvents, type RealizedPnLEvent } from "@/lib/finance"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ interface AppData {
   transactions:  Transaction[]
   revenus:       RevenuAnnexe[]
   loading:       boolean
+  realizedPnLEvents: RealizedPnLEvent[]
+  totalRealizedPnL: number
   // Portfolio mutations
   addPortfolio:    (p: Omit<Portfolio, "id" | "assets">) => Promise<string | null>
   removePortfolio: (id: string) => Promise<void>
@@ -34,6 +37,7 @@ interface AppData {
 
 const DEFAULT: AppData = {
   portfolios: [], transactions: [], revenus: [], loading: true,
+  realizedPnLEvents: [], totalRealizedPnL: 0,
   addPortfolio:    async () => null,
   removePortfolio: async () => {},
   addAsset:        async () => {},
@@ -55,6 +59,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [revenus,      setRevenus]      = useState<RevenuAnnexe[]>([])
   const [loading,      setLoading]      = useState(isSupabaseConfigured)
+  const realizedPnLEvents = useMemo(() => calculateRealizedPnLEvents(transactions), [transactions])
+  const totalRealizedPnL = useMemo(
+    () => realizedPnLEvents.reduce((sum, event) => sum + event.pnl, 0),
+    [realizedPnLEvents]
+  )
 
   const refresh = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return }
@@ -119,6 +128,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // ── Transaction mutations ────────────────────────────────────────────────────
 
   async function addTransaction(tx: Omit<Transaction, "id">): Promise<{ ok: boolean; error?: string }> {
+    if (tx.type === "sell") {
+      const asset = portfolios
+        .find(p => p.id === tx.portfolioId)
+        ?.assets.find(a => a.ticker === tx.ticker)
+
+      if (!asset) return { ok: false, error: "Position introuvable pour cette vente." }
+      if (tx.quantity <= 0) return { ok: false, error: "La quantité vendue doit être positive." }
+      if (tx.quantity > asset.quantity) {
+        return { ok: false, error: `Quantité vendue trop élevée. Disponible: ${asset.quantity}.` }
+      }
+    }
+
     const tempId = `local-${Date.now()}`
 
     // ── 1. Optimistic update: add transaction ────────────────────────────────
@@ -132,7 +153,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (existing) {
           // Update qty + weighted avg price
           const newQty = existing.quantity + tx.quantity
-          const newAvg = (existing.quantity * existing.avgBuyPrice + tx.quantity * tx.price) / newQty
+          const newAvg = (existing.quantity * existing.avgBuyPrice + tx.quantity * tx.price + tx.fees) / newQty
           return {
             ...p,
             assets: p.assets.map(a =>
@@ -150,7 +171,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             name:         tx.assetName,
             assetClass:   tx.assetClass,
             quantity:     tx.quantity,
-            avgBuyPrice:  tx.price,
+            avgBuyPrice:  tx.quantity > 0 ? tx.price + (tx.fees / tx.quantity) : tx.price,
             currentPrice: tx.price,
             currency:     tx.currency ?? "CHF",
             cryptoCustody: tx.cryptoCustody,
@@ -199,6 +220,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           assetClass:  tx.assetClass,
           quantity:    tx.quantity,
           price:       tx.price,
+          fees:        tx.fees,
           currency:    tx.currency ?? "CHF",
           cryptoCustody: tx.cryptoCustody,
           stakingEnabled: tx.stakingEnabled,
@@ -276,6 +298,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   return (
     <AppDataContext.Provider value={{
       portfolios, transactions, revenus, loading,
+      realizedPnLEvents, totalRealizedPnL,
       addPortfolio, removePortfolio, addAsset, removeAsset,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,

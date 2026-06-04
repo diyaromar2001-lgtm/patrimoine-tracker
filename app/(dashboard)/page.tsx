@@ -17,7 +17,7 @@ import type { AppCurrency } from "@/lib/utils"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
-import { calculateAllocationByField, calculateRealizedPnLEvents, maxDrawdown, type AllocationEntry } from "@/lib/finance"
+import { calculateAllocationByField, maxDrawdown, type AllocationEntry } from "@/lib/finance"
 import {
   Wallet, TrendingUp, BarChart2, Activity,
   ArrowUpRight, Plus, Zap, ShieldAlert, Building2, Globe2, type LucideIcon,
@@ -67,7 +67,7 @@ function normalizeGeography(country?: string) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, revenus, loading } = useAppData()
+  const { portfolios, transactions, revenus, loading, realizedPnLEvents } = useAppData()
   const { format, convert } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
@@ -180,11 +180,11 @@ export default function DashboardPage() {
   )
 
   const realizedPnl = useMemo(() =>
-    calculateRealizedPnLEvents(transactions).reduce(
+    realizedPnLEvents.reduce(
       (sum, event) => sum + convert(event.pnl, event.currency as AppCurrency),
       0
     ),
-    [transactions, convert]
+    [realizedPnLEvents, convert]
   )
 
   // Top 5 holdings

@@ -288,7 +288,8 @@ export function calculateRealizedPnLEvents(transactions: RealizedPnLInput[]): Re
 
     if (tx.type === "buy") {
       const nextQty = pos.qty + tx.quantity
-      pos.avg = nextQty > 0 ? ((pos.qty * pos.avg) + (tx.quantity * tx.price)) / nextQty : 0
+      const buyCost = tx.quantity * tx.price + (tx.fees ?? 0)
+      pos.avg = nextQty > 0 ? ((pos.qty * pos.avg) + buyCost) / nextQty : 0
       pos.qty = nextQty
       positions[key] = pos
       continue

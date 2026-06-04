@@ -192,6 +192,7 @@ export async function upsertAssetFromBuy(tx: {
   assetClass:  string
   quantity:    number
   price:       number
+  fees?:       number
   currency:    string
   cryptoCustody?: string
   stakingEnabled?: boolean
@@ -212,7 +213,7 @@ export async function upsertAssetFromBuy(tx: {
     const oldQty  = Number(existing.quantity)
     const oldAvg  = Number(existing.avg_buy_price)
     const newQty  = oldQty + tx.quantity
-    const newAvg  = (oldQty * oldAvg + tx.quantity * tx.price) / newQty
+    const newAvg  = (oldQty * oldAvg + tx.quantity * tx.price + (tx.fees ?? 0)) / newQty
 
     const update: Record<string, unknown> = { quantity: newQty, avg_buy_price: Number(newAvg.toFixed(4)) }
     if (tx.assetClass === "crypto") {
@@ -233,7 +234,7 @@ export async function upsertAssetFromBuy(tx: {
       name:          tx.assetName,
       asset_class:   tx.assetClass,
       quantity:      tx.quantity,
-      avg_buy_price: tx.price,
+      avg_buy_price: tx.quantity > 0 ? tx.price + ((tx.fees ?? 0) / tx.quantity) : tx.price,
       currency:      tx.currency ?? "CHF",
       crypto_custody: tx.assetClass === "crypto" ? tx.cryptoCustody : undefined,
       staking_enabled: tx.assetClass === "crypto" ? Boolean(tx.stakingEnabled) : undefined,

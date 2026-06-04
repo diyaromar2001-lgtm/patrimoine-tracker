@@ -221,11 +221,13 @@ function HoldingsTable({
   portfolio,
   livePrices,
   onDeleteAsset,
+  onSellAsset,
   totalValue,
 }: {
   portfolio:   Portfolio
   livePrices:  Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }>
   onDeleteAsset: (assetId: string) => void
+  onSellAsset: (asset: Asset, price: number, currency: string) => void
   totalValue:  number
 }) {
   const { format, convert } = useCurrency()
@@ -267,7 +269,7 @@ function HoldingsTable({
     })
   }, [portfolio.assets, sortKey, sortDir, livePrices])
 
-  const COL = "minmax(160px,1fr) 44px 124px 134px 110px 72px 80px 96px 30px"
+  const COL = "minmax(160px,1fr) 44px 124px 134px 110px 72px 80px 96px 96px"
 
   // ── MOBILE layout: compact card per asset ─────────────────────────────────
   if (isMobile) {
@@ -334,6 +336,12 @@ function HoldingsTable({
                 </div>
 
                 {/* Delete */}
+                <button onClick={() => onSellAsset(asset, origPrice ?? livePrice, origCurrency)}
+                  className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-green-500/20 transition-colors"
+                  style={{ color: "var(--gain)" }}
+                  title="Vendre">
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
                 <button onClick={() => onDeleteAsset(asset.id)}
                   className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-500/20 transition-colors"
                   style={{ color: "var(--text-tertiary)" }}>
@@ -366,7 +374,7 @@ function HoldingsTable({
       <div className="overflow-x-auto">
       {/* Desktop header */}
       <div className="grid px-5 py-2.5 border-b"
-        style={{ borderColor: "var(--border)", minWidth: "900px", gridTemplateColumns: COL }}>
+        style={{ borderColor: "var(--border)", minWidth: "980px", gridTemplateColumns: COL }}>
         <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Actif</span>
         {([ ["Qté","qty"], ["Px moy.","avgPrice"], ["Prix actuel","currentPrice"], ["Valeur","value"], ["J. P&L","dayPnl"], ["P&L total","totalPnlPct"], ["Poids","weight"] ] as [string, SortKey][]).map(([l, k]) => (
           <SortHeader key={k} label={l} sortKey={k} current={sortKey} dir={sortDir} onSort={handleSort} />
@@ -420,7 +428,7 @@ function HoldingsTable({
             {/* Mobile card */}
             {/* Desktop-only row (isMobile handled above, returns early) */}
             <div className="portfolio-table-row grid items-center px-5 py-3 transition-colors"
-              style={{ minWidth: "900px", gridTemplateColumns: COL }}>
+              style={{ minWidth: "980px", gridTemplateColumns: COL }}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold"
                   style={{ backgroundColor: color + "22", color }}>
@@ -479,9 +487,20 @@ function HoldingsTable({
                   {weight.toFixed(0)}%
                 </span>
               </div>
-              <button onClick={() => onDeleteAsset(asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-500/20 transition-colors" style={{ color: "var(--text-tertiary)" }}>
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center justify-end gap-1">
+                <button
+                  onClick={() => onSellAsset(asset, nativeCurrent, origCurrency)}
+                  className="flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium hover:bg-green-500/20 transition-colors"
+                  style={{ color: "var(--gain)" }}
+                  title="Vendre"
+                >
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  Vendre
+                </button>
+                <button onClick={() => onDeleteAsset(asset.id)} className="flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-500/20 transition-colors" style={{ color: "var(--text-tertiary)" }} title="Supprimer">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         )
@@ -505,10 +524,31 @@ export default function PortfoliosPage() {
   // setPortfolios not available in AppData — mutations are reflected automatically
   const setPortfolios = (_: unknown) => {} // noop placeholder
   const [activeTab, setActiveTab] = useState("global")
-  const [txModal, setTxModal]     = useState<{ defaultPortfolioId?: string } | null>(null)
+  const [txModal, setTxModal]     = useState<{ defaultPortfolioId?: string; initial?: TransactionFormData } | null>(null)
 
   function openTxModal(portfolioId?: string) {
     setTxModal({ defaultPortfolioId: portfolioId ?? portfolios[0]?.id ?? "" })
+  }
+
+  function openSellModal(asset: Asset, price: number, currency: string) {
+    setTxModal({
+      defaultPortfolioId: asset.portfolioId,
+      initial: {
+        portfolioId: asset.portfolioId,
+        ticker: asset.ticker,
+        assetName: asset.name,
+        assetClass: asset.assetClass,
+        type: "sell",
+        quantity: String(asset.quantity),
+        price: String(Number(price || asset.currentPrice || asset.avgBuyPrice || 0).toFixed(4)),
+        nativeCurrency: currency || asset.currency || "CHF",
+        fees: "1",
+        date: new Date().toISOString().slice(0, 10),
+        notes: "",
+        cryptoCustody: asset.cryptoCustody ?? "",
+        stakingEnabled: asset.stakingEnabled ?? false,
+      },
+    })
   }
 
   async function handleSaveTx(form: TransactionFormData) {
@@ -1002,6 +1042,7 @@ export default function PortfoliosPage() {
                               portfolio={p}
                               livePrices={liveEnriched}
                               onDeleteAsset={id => handleDeleteAsset(p.id, id)}
+                              onSellAsset={openSellModal}
                               totalValue={val}
                             />
                           </div>
@@ -1116,6 +1157,7 @@ export default function PortfoliosPage() {
                   portfolio={activePortfolio}
                   livePrices={liveEnriched}
                   onDeleteAsset={id => handleDeleteAsset(activePortfolio.id, id)}
+                  onSellAsset={openSellModal}
                   totalValue={activePortfolio.assets.reduce((s, a) => s + (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity, 0)}
                 />
               </div>
@@ -1138,7 +1180,7 @@ export default function PortfoliosPage() {
         {txModal && (
           <TransactionModal
             mode="add"
-            initial={{
+            initial={txModal.initial ?? {
               portfolioId: txModal.defaultPortfolioId ?? portfolios[0]?.id ?? "",
               ticker: "", assetName: "", assetClass: "stock", type: "buy",
               quantity: "", price: "", nativeCurrency: "CHF", fees: "1",
