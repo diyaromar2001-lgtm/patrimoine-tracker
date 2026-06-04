@@ -336,7 +336,9 @@ export function TransactionModal({
   // Available cash for the selected portfolio
   const portfolioCash   = cashAvailable?.[form.portfolioId]?.[nativeCurr] ?? 0
   const hasCashSystem   = portfolioCash > 0
+  // En mode édition, ne jamais bloquer sur le cash — la transaction existe déjà
   const insufficientCash =
+    mode !== "edit" &&
     form.type === "buy" &&
     !isCashMode &&
     hasCashSystem &&
@@ -344,9 +346,7 @@ export function TransactionModal({
 
   // ── Validation ──────────────────────────────────────────────────────────────
   const valid = (() => {
-    // En mode Liquidité: pas besoin de portefeuille, juste montant + date
     if (isCashMode) return !!(parseFloat(form.depositAmount || "0") > 0 && form.date)
-    // Autres modes: portefeuille obligatoire
     if (!form.portfolioId) return false
     if (isRevenu) return !!(form.revenuType && form.ticker && price > 0 && form.date)
     return !!(form.ticker && form.assetName && qty > 0 && price > 0 && form.date && !insufficientCash)
