@@ -9,6 +9,7 @@ import { Tooltip, METRIC_TOOLTIPS } from "@/components/ui/tooltip"
 import { InsightsWidget } from "@/components/ui/insights-widget"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
+import { AreaChart } from "@/components/charts/area-chart"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { usePortfolioHistory } from "@/hooks/use-portfolio-history"
 import type { PortfolioAsset } from "@/app/api/portfolio-history/route"
@@ -188,14 +189,12 @@ function BenchmarkChart({
             <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>MSCI World</span>
           </div>
           {Math.abs(perf.alpha) > 0.5 && (
-            <div className="rounded-full px-3 py-1 text-xs font-semibold"
+            <div className="rounded-full px-2.5 py-1 text-[11px] font-medium"
               style={{
-                backgroundColor: perf.alpha > 0 ? "#22c55e18" : "#ef444418",
-                color: perf.alpha > 0 ? "#22c55e" : "#ef4444",
+                backgroundColor: perf.alpha > 0 ? "#22c55e12" : "#94a3b812",
+                color: perf.alpha > 0 ? "#22c55e" : "var(--text-tertiary)",
               }}>
-              {perf.alpha > 0
-                ? `Vous battez le S&P 500 de +${perf.alpha.toFixed(2)}%`
-                : `Vous sous-performez le S&P 500 de ${Math.abs(perf.alpha).toFixed(2)}%`}
+              Alpha {perf.alpha >= 0 ? "+" : ""}{perf.alpha.toFixed(2)}% vs S&P 500
             </div>
           )}
           <div className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px]"
@@ -731,6 +730,7 @@ export default function PortfoliosPage() {
     setTxModal(null)
   }
   const [period,     setPeriod]     = useState<Period>("1Y")
+  const [chartMode,  setChartMode]  = useState<"valeur" | "performance">("valeur")
   const [showNewPortfolio, setShowNewPortfolio] = useState(false)
   const [newName,    setNewName]    = useState("")
   const [newDesc,    setNewDesc]    = useState("")
@@ -1091,51 +1091,87 @@ export default function PortfoliosPage() {
                 </div>
               </div>
 
-              {/* Benchmark chart with period selector */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Performance vs Benchmarks</p>
-                    <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Normalisé à 100 · comparaison relative</p>
+              {/* Graphique dual-mode : Valeur / Performance */}
+              <div>
+                {/* ── Graphique dual-mode : Valeur / Performance ── */}
+                <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                  {/* Header avec switch + période */}
+                  <div className="flex items-center justify-between gap-3 px-5 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+                    {/* Switch Valeur / Performance */}
+                    <div className="flex rounded-lg border p-0.5" style={{ borderColor: "var(--border)" }}>
+                      {([["valeur", "Valeur"], ["performance", "Performance"]] as const).map(([mode, label]) => (
+                        <button key={mode} onClick={() => setChartMode(mode)}
+                          className="rounded-md px-3 py-1 text-xs font-medium transition-all"
+                          style={{
+                            backgroundColor: chartMode === mode ? "var(--accent)" : "transparent",
+                            color: chartMode === mode ? "white" : "var(--text-tertiary)",
+                          }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Période */}
+                    <div className="flex gap-0.5">
+                      {PERIODS.map(p => (
+                        <button key={p} onClick={() => setPeriod(p)}
+                          className="rounded-md px-2 py-1 text-xs font-medium transition-all"
+                          style={{
+                            backgroundColor: period === p ? "var(--bg-subtle)" : "transparent",
+                            color: period === p ? "var(--text-primary)" : "var(--text-tertiary)",
+                          }}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-                    {PERIODS.map(p => (
-                      <button key={p} onClick={() => setPeriod(p)}
-                        className="px-2.5 py-1 text-xs font-medium transition-colors"
-                        style={{ backgroundColor: period === p ? "var(--accent)" : "transparent", color: period === p ? "white" : "var(--text-tertiary)" }}>
-                        {p}
-                      </button>
-                    ))}
+
+                  {/* Subtitle */}
+                  <div className="px-5 py-2 border-b flex items-center gap-2" style={{ borderColor: "var(--border-subtle)", backgroundColor: "var(--bg-overlay)" }}>
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: globalHistoryLoading ? "var(--text-tertiary)" : "#22c55e" }} />
+                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                      {chartMode === "valeur"
+                        ? "Valeur des positions · hors dépôts/retraits · prix Yahoo Finance"
+                        : "Base 100 = début de période · cashflows exclus · S&P 500 et MSCI World en pointillés"}
+                    </span>
                   </div>
-                </div>
-                {/* Performance globale hors dépôts/retraits — base 100 vs SPY / MSCI World
-                    Données: qty_actuelle × prix_historique (cashflows exclus)
-                    Un dépôt de cash n'apparaît PAS ici — seules les positions comptent */}
-                {globalMetrics.positionLineCount > 0 ? (
-                  <div className="relative">
-                    {globalHistoryLoading && (
-                      <div className="absolute top-2 right-3 flex items-center gap-1.5 z-10">
-                        <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
-                        <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>chargement…</span>
+
+                  <div className="p-4">
+                    {globalMetrics.positionLineCount === 0 ? (
+                      <div className="flex items-center justify-center h-40">
+                        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Ajoutez des actifs pour voir le graphique</p>
+                      </div>
+                    ) : chartMode === "valeur" ? (
+                      globalHistoryLoading ? (
+                        <div className="flex items-center justify-center h-44 gap-2">
+                          <div className="h-3.5 w-3.5 rounded-full border-2 border-t-blue-500 animate-spin" />
+                          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Chargement…</span>
+                        </div>
+                      ) : globalPortfolioHistory.length > 1 ? (
+                        <AreaChart data={globalPortfolioHistory} height={200} />
+                      ) : (
+                        <div className="flex items-center justify-center h-44">
+                          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Historique indisponible pour cette période</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="relative">
+                        {globalHistoryLoading && (
+                          <div className="absolute top-1 right-1 flex items-center gap-1.5 z-10">
+                            <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                          </div>
+                        )}
+                        <BenchmarkChart
+                          ticker="__portfolio__"
+                          name="Mon Portefeuille"
+                          portfolioData={globalPortfolioHistory.length > 1 ? globalPortfolioHistory : undefined}
+                          portfolioReturnPct={totalPnlPct}
+                          height={220}
+                          period={period}
+                        />
                       </div>
                     )}
-                    <BenchmarkChart
-                      ticker="__portfolio__"
-                      name="Mon Portefeuille"
-                      portfolioData={globalPortfolioHistory.length > 1 ? globalPortfolioHistory : undefined}
-                      portfolioReturnPct={totalPnlPct}
-                      height={280}
-                      period={period}
-                    />
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-40 rounded-xl border"
-                    style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", borderStyle: "dashed" }}>
-                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      Ajoutez des actifs pour voir votre performance vs benchmarks
-                    </p>
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* Allocation + Top Movers */}
@@ -1378,38 +1414,76 @@ export default function PortfoliosPage() {
                 </div>
               </div>
 
-              {/* Chart with period selector */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Performance vs S&P 500</p>
-                  <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-                    {PERIODS.map(p => (
-                      <button key={p} onClick={() => setPeriod(p)}
-                        className="px-2.5 py-1 text-xs font-medium transition-colors"
-                        style={{ backgroundColor: period === p ? "var(--accent)" : "transparent", color: period === p ? "white" : "var(--text-tertiary)" }}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* Performance hors dépôts/retraits — base 100 normalisée
-                    Données: qty_actuelle × prix_historique (cashflows exclus)
-                    Comparaison: SPY et MSCI World (base 100 identique) */}
-                <div className="relative">
-                  {activeHistoryLoading && (
-                    <div className="absolute top-2 right-3 flex items-center gap-1.5 z-10">
-                      <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>chargement historique…</span>
+              {/* Dual-mode chart: Valeur / Performance */}
+              <div>
+                {/* Dual-mode chart: Valeur / Performance */}
+                <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                  <div className="flex items-center justify-between gap-3 px-5 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+                    <div className="flex rounded-lg border p-0.5" style={{ borderColor: "var(--border)" }}>
+                      {([["valeur", "Valeur"], ["performance", "Performance"]] as const).map(([mode, label]) => (
+                        <button key={mode} onClick={() => setChartMode(mode)}
+                          className="rounded-md px-3 py-1 text-xs font-medium transition-all"
+                          style={{
+                            backgroundColor: chartMode === mode ? "var(--accent)" : "transparent",
+                            color: chartMode === mode ? "white" : "var(--text-tertiary)",
+                          }}>
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  <BenchmarkChart
-                    ticker="__portfolio__"
-                    name={activePortfolio.name}
-                    portfolioData={activePortfolioHistory.length > 1 ? activePortfolioHistory : undefined}
-                    portfolioReturnPct={activePortfolioMetrics?.totalReturnPercent ?? 0}
-                    height={260}
-                    period={period}
-                  />
+                    <div className="flex gap-0.5">
+                      {PERIODS.map(p => (
+                        <button key={p} onClick={() => setPeriod(p)}
+                          className="rounded-md px-2 py-1 text-xs font-medium transition-all"
+                          style={{
+                            backgroundColor: period === p ? "var(--bg-subtle)" : "transparent",
+                            color: period === p ? "var(--text-primary)" : "var(--text-tertiary)",
+                          }}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="px-5 py-2 border-b flex items-center gap-2" style={{ borderColor: "var(--border-subtle)", backgroundColor: "var(--bg-overlay)" }}>
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: activeHistoryLoading ? "var(--text-tertiary)" : "#22c55e" }} />
+                    <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                      {chartMode === "valeur"
+                        ? "Valeur des positions · hors dépôts/retraits · prix Yahoo Finance"
+                        : "Base 100 = début de période · cashflows exclus · benchmarks en pointillés"}
+                    </span>
+                  </div>
+                  <div className="p-4">
+                    {chartMode === "valeur" ? (
+                      activeHistoryLoading ? (
+                        <div className="flex items-center justify-center h-44 gap-2">
+                          <div className="h-3.5 w-3.5 rounded-full border-2 border-t-blue-500 animate-spin" />
+                          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Chargement…</span>
+                        </div>
+                      ) : activePortfolioHistory.length > 1 ? (
+                        <AreaChart data={activePortfolioHistory} height={200} />
+                      ) : (
+                        <div className="flex items-center justify-center h-44">
+                          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Historique indisponible pour cette période</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="relative">
+                        {activeHistoryLoading && (
+                          <div className="absolute top-1 right-1 z-10">
+                            <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                          </div>
+                        )}
+                        <BenchmarkChart
+                          ticker="__portfolio__"
+                          name={activePortfolio.name}
+                          portfolioData={activePortfolioHistory.length > 1 ? activePortfolioHistory : undefined}
+                          portfolioReturnPct={activePortfolioMetrics?.totalReturnPercent ?? 0}
+                          height={220}
+                          period={period}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
