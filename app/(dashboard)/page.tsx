@@ -16,7 +16,7 @@ import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
 import { maxDrawdown } from "@/lib/finance"
 import {
   TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
-  TrendingDown, ArrowUpRight, BarChart2,
+  TrendingDown, ArrowUpRight, BarChart2, Eye, EyeOff,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -31,6 +31,17 @@ export default function DashboardPage() {
   const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
+  // Toggle pour cacher les graphiques (persiste en localStorage)
+  const [showCharts, setShowCharts] = useState(true)
+  useEffect(() => {
+    const saved = localStorage.getItem("dashboard-show-charts")
+    if (saved !== null) setShowCharts(saved === "true")
+  }, [])
+  function toggleCharts() {
+    const next = !showCharts
+    setShowCharts(next)
+    localStorage.setItem("dashboard-show-charts", String(next))
+  }
 
   const allAssets  = useMemo(() => portfolios.flatMap(p => p.assets), [portfolios])
   const allTickers = useMemo(() => allAssets.filter(a => a.assetClass !== "cash").map(a => a.ticker), [allAssets])
@@ -285,7 +296,13 @@ export default function DashboardPage() {
             </div>
 
             {/* Right: actions */}
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 items-center">
+              <button onClick={toggleCharts}
+                className="flex items-center justify-center h-10 w-10 rounded-xl border hover:bg-zinc-800 transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                title={showCharts ? "Cacher les graphiques" : "Afficher les graphiques"}>
+                {showCharts ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
               <Link href="/portfolios"
                 className="flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
                 style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
@@ -351,6 +368,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ══ CHART + ALLOCATION ══════════════════════════════════════════════ */}
+        {showCharts && (
         <div className="grid gap-6 lg:grid-cols-5">
 
           {/* Chart */}
@@ -461,6 +479,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* ══ TOP POSITIONS + ACTIVITÉ ════════════════════════════════════════ */}
         <div className="grid gap-6 lg:grid-cols-2">
