@@ -13,6 +13,7 @@
  */
 
 import type { FXRates } from "./finance"
+import { safeCostBasisChf } from "./finance"
 
 export interface AssetForPnL {
   ticker:           string
@@ -75,11 +76,10 @@ export function calculatePortfolioPnL(
 
     const nativeCurr = a.nativeCurrency || "CHF"
 
-    // ── Cost basis en CHF ────────────────────────────────────────────────────
-    // ✓ costBasisChf est stocké en DB = CHF réel dépensé au moment de l'achat (JAMAIS recalculé)
-    // → Fallback: recalculer SEULEMENT si costBasisChf manquant (legacy assets)
-    const legacyCostCHF = toCHF(a.avgBuyPrice * a.quantity, nativeCurr, rates)
-    const costCHF = a.costBasisChf != null && a.costBasisChf > 0 ? a.costBasisChf : legacyCostCHF
+    // ── Cost basis en CHF (avec détection auto de data corrompue) ────────────
+    // Si costBasisChf en DB ≈ qty × avgBuyPrice (ratio ~1.0) pour un actif non-CHF,
+    // c'est stocké en natif sans FX → fallback avec taux actuel.
+    const costCHF = safeCostBasisChf(a.costBasisChf, a.quantity, a.avgBuyPrice, nativeCurr, rates)
 
     // ── Valeur actuelle en CHF ───────────────────────────────────────────────
     // Priorité: prix natif (originalPrice) → déjà converti (price)

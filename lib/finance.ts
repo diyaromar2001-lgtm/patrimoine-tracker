@@ -164,6 +164,40 @@ export function chfPerCurrencyUnit(currency: string | undefined, rates: FXRates)
   return liveRate && liveRate > 0 ? 1 / liveRate : 1
 }
 
+/**
+ * Calcule le cost basis CHF d'une position en détectant automatiquement les données corrompues.
+ *
+ * RÈGLE: si costBasisChf en DB ≈ qty × avgBuyPrice (ratio ~1.0) pour un actif non-CHF,
+ * la valeur stockée est en réalité en devise native sans conversion FX → on recalcule
+ * avec le taux actuel comme fallback.
+ *
+ * @param costBasisChf  valeur brute en DB (peut être en CHF ou natif corrompu)
+ * @param quantity      quantité détenue
+ * @param avgBuyPrice   prix moyen natif
+ * @param nativeCurrency devise native de l'actif (USD/EUR/CHF)
+ * @param rates         taux FX actuels
+ */
+export function safeCostBasisChf(
+  costBasisChf: number | null | undefined,
+  quantity: number,
+  avgBuyPrice: number,
+  nativeCurrency: string | undefined,
+  rates: FXRates
+): number {
+  const nativeTotal = quantity * avgBuyPrice
+  const rate = rates[nativeCurrency ?? "CHF"] ?? 1
+  const isNonChf = (nativeCurrency ?? "CHF") !== "CHF" && rate !== 1
+
+  // Détection corruption : ratio ~1.0 signifie valeur stockée en natif sans FX
+  const looksLikeNative = costBasisChf != null && costBasisChf > 0 && isNonChf &&
+    Math.abs(costBasisChf / nativeTotal - 1.0) < 0.03
+
+  if (costBasisChf != null && costBasisChf > 0 && !looksLikeNative) {
+    return costBasisChf
+  }
+  return nativeTotal / rate
+}
+
 export function calculateTransactionChfAmounts(input: TransactionChfAmountsInput): TransactionChfAmounts {
   const fxRateToChf = chfPerCurrencyUnit(input.currency, input.fxRates)
   const fees = input.fees ?? 0
