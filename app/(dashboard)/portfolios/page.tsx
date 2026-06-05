@@ -463,16 +463,24 @@ function HoldingsTable({
         const nativeAvg = asset.avgBuyPrice  // en devise native (USD/EUR/CHF)
         const rateToChf = ((fxRates as Record<string,number>)[origCurrency] ?? 1)
 
-        // Source unique : costBasisChf (DB) = CHF historique enregistré au taux du jour d'achat.
-        // Le système garantit que cette valeur est toujours en CHF (jamais en devise native).
-        // Fallback rare = taux actuel si data manquante.
+        // valueCHF = prix natif × qty / rateToChf
         const valueCHF = origPrice != null
           ? origPrice * asset.quantity / rateToChf
           : livePriceUserCurr * asset.quantity
 
-        const costCHF = (asset.costBasisChf != null && asset.costBasisChf > 0)
-          ? asset.costBasisChf
-          : nativeAvg * asset.quantity / rateToChf
+        // costCHF : utiliser costBasisChf de la DB si valide, sinon fallback.
+        // DÉTECTION AUTO de data corrompue (valeur stockée en devise native sans conversion FX):
+        //   Si origCurrency != CHF ET ratio costBasisChf / (qty × avgBuyPrice) ≈ 1.0
+        //   → la valeur stockée est en réalité du natif (USD/EUR), pas du CHF
+        //   → on recalcule avec le taux FX actuel comme fallback
+        const nativeTotal = nativeAvg * asset.quantity
+        const rawCost     = asset.costBasisChf
+        const isNonChf    = origCurrency !== "CHF" && rateToChf !== 1
+        const looksLikeNative = rawCost != null && rawCost > 0 && isNonChf &&
+          Math.abs(rawCost / nativeTotal - 1.0) < 0.03   // ratio dans ±3% du total natif
+        const costCHF = (rawCost != null && rawCost > 0 && !looksLikeNative)
+          ? rawCost
+          : nativeTotal / rateToChf
 
         const userRate    = ((fxRates as Record<string,number>)[currency] ?? 1)
         const pnlUserCurr = (valueCHF - costCHF) * userRate
@@ -763,10 +771,16 @@ export default function PortfoliosPage() {
     .map(a => {
       const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF"
       const rateToChf  = (fxRates as Record<string,number>)[nativeCurr] ?? 1
-      // costBasisChf en DB est garanti en CHF historique (migration automatique au load)
-      const costBasisChf = (a.costBasisChf != null && a.costBasisChf > 0)
-        ? a.costBasisChf
-        : (a.quantity * a.avgBuyPrice) / rateToChf
+      // Détection auto data corrompue : si costBasisChf ≈ qty × avgBuyPrice (ratio ~1.0)
+      // pour un actif non-CHF, c'est stocké en natif sans FX → recalculer avec taux actuel
+      const nativeTotal = a.quantity * a.avgBuyPrice
+      const raw = a.costBasisChf
+      const isNonChf = nativeCurr !== "CHF" && rateToChf !== 1
+      const looksLikeNative = raw != null && raw > 0 && isNonChf &&
+        Math.abs(raw / nativeTotal - 1.0) < 0.03
+      const costBasisChf = (raw != null && raw > 0 && !looksLikeNative)
+        ? raw
+        : nativeTotal / rateToChf
       return {
         ticker: a.ticker,
         quantity: a.quantity,
