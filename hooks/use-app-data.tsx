@@ -346,15 +346,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const soldCostBasisChf = amounts.soldCostBasisChf
     const realizedPnlChf = tx.type === "sell" ? (tx.realizedPnlChf ?? amounts.realizedPnlChf) : (tx.realizedPnlChf ?? 0)
 
-    const preparedTx: Omit<Transaction, "id"> = {
-      ...tx,
-      fxRateToChf: tx.fxRateToChf ?? amounts.fxRateToChf,
-      grossAmountChf,
-      feesChf,
-      netAmountChf,
-      realizedPnlChf,
-    }
-
     // ── Validations métier ───────────────────────────────────────────────────
     if (tx.type === "sell") {
       const asset = existingAsset
@@ -363,6 +354,48 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       if (tx.quantity > asset.quantity) {
         return { ok: false, error: `Quantité vendue trop élevée. Disponible: ${asset.quantity}.` }
       }
+    }
+
+    // ── Pour BUY/SELL: créer/mettre à jour l'asset AVANT la transaction ──
+    let assetIdForTx = existingAsset?.id
+    if ((tx.type === "buy" || tx.type === "sell") && tx.assetClass !== "cash") {
+      if (tx.type === "buy" && !isSupabaseConfigured) {
+        // Mode local: garder assetId temporaire
+        if (!assetIdForTx) assetIdForTx = `local-${Date.now()}`
+      } else if (isSupabaseConfigured) {
+        // Mode Supabase: upsertAsset AVANT createTransaction pour avoir l'ID réel
+        if (tx.type === "buy") {
+          const newAssetId = await Q.upsertAssetFromBuy({
+            portfolioId: tx.portfolioId,
+            ticker:      tx.ticker,
+            assetName:   tx.assetName,
+            assetClass:  tx.assetClass,
+            quantity:    tx.quantity,
+            price:       tx.price,
+            fees:        tx.fees,
+            currency:    tx.currency ?? "CHF",
+            costBasisChf: netAmountChf,
+            cryptoCustody: tx.cryptoCustody,
+            stakingEnabled: tx.stakingEnabled,
+            assetId: assetIdForTx,  // Passer l'ID existant si présent
+          })
+          if (newAssetId) {
+            assetIdForTx = newAssetId
+          } else {
+            return { ok: false, error: "Erreur lors de la création/mise à jour de l'actif." }
+          }
+        }
+      }
+    }
+
+    const preparedTx: Omit<Transaction, "id"> = {
+      ...tx,
+      assetId: assetIdForTx,  // ← Inclure asset_id (obligatoire pour buy/sell non-cash)
+      fxRateToChf: tx.fxRateToChf ?? amounts.fxRateToChf,
+      grossAmountChf,
+      feesChf,
+      netAmountChf,
+      realizedPnlChf,
     }
 
     if (tx.type === "buy" && tx.assetClass !== "cash") {
@@ -477,26 +510,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setTransactions(prev => prev.map(t => t.id === tempId ? { ...t, id: result.id } : t))
 
       // ── 4. Sync asset in Supabase ─────────────────────────────────────────
-      if (preparedTx.type === "buy") {
-        await Q.upsertAssetFromBuy({
-          portfolioId: preparedTx.portfolioId,
-          ticker:      preparedTx.ticker,
-          assetName:   preparedTx.assetName,
-          assetClass:  preparedTx.assetClass,
-          quantity:    preparedTx.quantity,
-          price:       preparedTx.price,
-          fees:        preparedTx.fees,
-          currency:    preparedTx.currency ?? "CHF",
-          costBasisChf: netAmountChf,
-          cryptoCustody: preparedTx.cryptoCustody,
-          stakingEnabled: preparedTx.stakingEnabled,
-        })
-      } else if (preparedTx.type === "sell") {
+      // Note: upsertAssetFromBuy a déjà été appelé AVANT createTransaction
+      // Ici on ne traite que les SELL
+      if (preparedTx.type === "sell" && preparedTx.assetClass !== "cash") {
         await Q.reduceAssetFromSell({
           portfolioId: preparedTx.portfolioId,
           ticker:      preparedTx.ticker,
           quantity:    preparedTx.quantity,
           soldCostBasisChf,
+          assetId: assetIdForTx,  // Obligatoire pour sells
         })
       }
 

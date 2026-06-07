@@ -254,6 +254,7 @@ export async function createTransaction(tx: Omit<Transaction, "id">) {
   if (!sb) return null
 
   const { data, error } = await sb.from("transactions").insert({
+    asset_id:     tx.assetId ?? null,  // ← Nouvelle colonne : asset_id en priorité
     portfolio_id: tx.portfolioId,
     ticker:       tx.ticker,
     asset_name:   tx.assetName,
@@ -320,9 +321,12 @@ export async function deleteTransaction(id: string) {
 // ─── Asset upsert from transaction ────────────────────────────────────────────
 
 /**
- * Called after a BUY transaction:
- *  - If the asset already exists in the portfolio → update qty + recalculate avg price
- *  - Otherwise → insert a new asset row
+ * Called before a BUY transaction to ensure the asset exists.
+ * Returns the asset ID (new or existing).
+ *
+ * - If assetId provided → update that specific asset, return its ID
+ * - Else if asset exists by portfolio_id + ticker → update it, return its ID (legacy fallback)
+ * - Otherwise → insert a new asset row, return its ID
  */
 export async function upsertAssetFromBuy(tx: {
   portfolioId: string
@@ -336,20 +340,33 @@ export async function upsertAssetFromBuy(tx: {
   costBasisChf?: number
   cryptoCustody?: string
   stakingEnabled?: boolean
-}) {
+  assetId?: string
+}): Promise<string | null> {
   const sb = createClient()
-  if (!sb) return
+  if (!sb) return null
 
-  // Check if asset already exists in this portfolio
-  const { data: existing } = await sb
-    .from("assets")
-    .select("id, quantity, avg_buy_price, cost_basis_chf")
-    .eq("portfolio_id", tx.portfolioId)
-    .eq("ticker", tx.ticker)
-    .maybeSingle()
+  let existing: { id: string; quantity: string; avg_buy_price: string; cost_basis_chf: string | null } | null = null
+
+  if (tx.assetId) {
+    const { data } = await sb
+      .from("assets")
+      .select("id, quantity, avg_buy_price, cost_basis_chf")
+      .eq("id", tx.assetId)
+      .maybeSingle()
+    existing = data
+  } else {
+    // Fallback: chercher par portfolio_id + ticker (legacy only)
+    const { data } = await sb
+      .from("assets")
+      .select("id, quantity, avg_buy_price, cost_basis_chf")
+      .eq("portfolio_id", tx.portfolioId)
+      .eq("ticker", tx.ticker)
+      .maybeSingle()
+    existing = data
+  }
 
   if (existing) {
-    // Recalculate: weighted avg price
+    // Update existing asset
     const oldQty  = Number(existing.quantity)
     const oldAvg  = Number(existing.avg_buy_price)
     const oldCostBasisChf = Number(existing.cost_basis_chf ?? 0)
@@ -373,14 +390,13 @@ export async function upsertAssetFromBuy(tx: {
       .update(update)
       .eq("id", existing.id)
 
-    if (error) console.error("[upsertAsset] update error:", error.message, error.details)
+    if (error) console.error("[upsertAssetFromBuy] update error:", error.message, error.details)
+    return existing.id  // ← Return the asset ID
   } else {
-    // Create new asset row
-    // ⚠️ costBasisChf DOIT être fourni par le caller — c'est le CHF réel dépensé au moment de l'achat
-    // Fallback: si manquant, supposer 1:1 (dangereux mais mieux que rien)
+    // Insert new asset
     const buyCostBasisChf = tx.costBasisChf ?? (tx.quantity * tx.price + (tx.fees ?? 0))
 
-    const { error } = await sb.from("assets").insert({
+    const { data, error } = await sb.from("assets").insert({
       portfolio_id:  tx.portfolioId,
       ticker:        tx.ticker,
       name:          tx.assetName,
@@ -393,31 +409,52 @@ export async function upsertAssetFromBuy(tx: {
       cost_basis_updated_at: new Date().toISOString(),
       crypto_custody: tx.assetClass === "crypto" ? tx.cryptoCustody : undefined,
       staking_enabled: tx.assetClass === "crypto" ? Boolean(tx.stakingEnabled) : undefined,
-    })
+    }).select().single()
 
-    if (error) console.error("[upsertAsset] insert error:", error.message, error.details)
+    if (error) {
+      console.error("[upsertAssetFromBuy] insert error:", error.message, error.details)
+      return null
+    }
+    return data?.id ?? null  // ← Return the newly created asset ID
   }
 }
 
 /**
  * Called after a SELL transaction — reduces the asset quantity.
  * If quantity reaches 0 or below, the asset is deleted.
+ *
+ * assetId is REQUIRED for sells — we must know exactly which asset to reduce.
  */
 export async function reduceAssetFromSell(tx: {
   portfolioId: string
   ticker:      string
   quantity:    number
   soldCostBasisChf?: number
+  assetId?: string  // ← NEW: prioritaire si fourni
 }) {
   const sb = createClient()
   if (!sb) return
 
-  const { data: existing } = await sb
-    .from("assets")
-    .select("id, quantity, cost_basis_chf")
-    .eq("portfolio_id", tx.portfolioId)
-    .eq("ticker", tx.ticker)
-    .maybeSingle()
+  let existing: { id: string; quantity: string; cost_basis_chf: string | null } | null = null
+
+  if (tx.assetId) {
+    // Use assetId directly
+    const { data } = await sb
+      .from("assets")
+      .select("id, quantity, cost_basis_chf")
+      .eq("id", tx.assetId)
+      .maybeSingle()
+    existing = data
+  } else {
+    // Fallback: chercher par portfolio_id + ticker (legacy, risky for sells)
+    const { data } = await sb
+      .from("assets")
+      .select("id, quantity, cost_basis_chf")
+      .eq("portfolio_id", tx.portfolioId)
+      .eq("ticker", tx.ticker)
+      .maybeSingle()
+    existing = data
+  }
 
   if (!existing) return
 
