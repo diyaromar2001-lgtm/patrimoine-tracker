@@ -349,14 +349,12 @@ export async function updateTransactionAndRecalculate(
 
       // Reconstruct asset metrics from all transactions
       let newQty = 0
-      let totalCostChf = 0
       let totalQtyBought = 0
       let totalBuyCostChf = 0
 
       for (const t of remainingTx || []) {
         if (t.type === "buy") {
           newQty += Number(t.quantity)
-          totalCostChf += Number(t.net_amount_chf ?? 0)
           totalQtyBought += Number(t.quantity)
           totalBuyCostChf += Number(t.net_amount_chf ?? 0)
         } else if (t.type === "sell") {
@@ -366,12 +364,16 @@ export async function updateTransactionAndRecalculate(
 
       const newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
 
+      // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
+      // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
+      const newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
+
       const { error: updateAssetErr } = await sb
         .from("assets")
         .update({
           quantity: Math.max(0, newQty),
           avg_buy_price: newAvgBuyPrice,
-          cost_basis_chf: Math.max(0, totalCostChf),
+          cost_basis_chf: newCostBasisChf,
           cost_basis_source: "computed",
           cost_basis_updated_at: new Date().toISOString(),
         })
@@ -433,14 +435,12 @@ export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok:
 
       // Reconstruct asset metrics from remaining transactions
       let newQty = 0
-      let totalCostChf = 0
       let totalQtyBought = 0
       let totalBuyCostChf = 0
 
       for (const t of remainingTx || []) {
         if (t.type === "buy") {
           newQty += Number(t.quantity)
-          totalCostChf += Number(t.net_amount_chf ?? 0)
           totalQtyBought += Number(t.quantity)
           totalBuyCostChf += Number(t.net_amount_chf ?? 0)  // Includes fees
         } else if (t.type === "sell") {
@@ -448,9 +448,13 @@ export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok:
         }
       }
 
-      // Calculate avg buy price including fees: totalCostChf / totalQtyBought
+      // Calculate avg buy price including fees: totalBuyCostChf / totalQtyBought
       // Example: 1.2 shares @ 80 CHF + 1 CHF fees = 97 CHF total → 97/1.2 = 80.83 per share
       const newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
+
+      // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
+      // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
+      const newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
 
       // Update the asset
       const { error: updateErr } = await sb
@@ -458,7 +462,7 @@ export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok:
         .update({
           quantity: Math.max(0, newQty),
           avg_buy_price: newAvgBuyPrice,
-          cost_basis_chf: Math.max(0, totalCostChf),
+          cost_basis_chf: newCostBasisChf,
           cost_basis_source: "computed",
           cost_basis_updated_at: new Date().toISOString(),
         })
