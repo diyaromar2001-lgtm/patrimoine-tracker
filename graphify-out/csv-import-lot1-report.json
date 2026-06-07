@@ -1,0 +1,479 @@
+{
+  "filename": "from_2025-07-05_to_2026-06-07_MTc4MDg0ODQxMDA0Nw.csv",
+  "totalLines": 482,
+  "totalOperations": 481,
+  "period": {
+    "start": "2025-07-07",
+    "end": "2026-06-07"
+  },
+  "brokerDetected": "Trading 212",
+  "operationCounts": {
+    "buy": 332,
+    "sell": 37,
+    "deposit": 28,
+    "withdrawal": 2,
+    "dividend": 0,
+    "interest": 54,
+    "fx_conversion": 5,
+    "split": 2,
+    "unknown": 21
+  },
+  "currencies": [
+    "\"CHF\"",
+    "\"USD\"",
+    "CHF",
+    "EUR",
+    "GBP",
+    "USD"
+  ],
+  "tickers": [
+    {
+      "ticker": "O",
+      "name": "\"Realty Income\"",
+      "isin": "US7561091049",
+      "count": 29
+    },
+    {
+      "ticker": "EIMI",
+      "name": "\"iShares Core MSCI EM IMI (Acc)\"",
+      "isin": "IE00BKM4GZ66",
+      "count": 27
+    },
+    {
+      "ticker": "EUNL",
+      "name": "\"iShares Core MSCI World (Acc)\"",
+      "isin": "IE00B4L5Y983",
+      "count": 27
+    },
+    {
+      "ticker": "ZURN",
+      "name": "\"Zurich Insurance\"",
+      "isin": "CH0011075394",
+      "count": 22
+    },
+    {
+      "ticker": "NESN",
+      "name": "\"Nestle\"",
+      "isin": "CH0038863350",
+      "count": 21
+    },
+    {
+      "ticker": "VHYL",
+      "name": "\"Vanguard FTSE All-World High Dividend Yield (Dist)\"",
+      "isin": "IE00B8GKDB10",
+      "count": 20
+    },
+    {
+      "ticker": "IDVY",
+      "name": "\"iShares Euro Dividend (Dist)\"",
+      "isin": "IE00B0M62S72",
+      "count": 19
+    },
+    {
+      "ticker": "WSML",
+      "name": "\"iShares MSCI World Small Cap (Acc)\"",
+      "isin": "IE00BF4RFH31",
+      "count": 18
+    },
+    {
+      "ticker": "NOVN",
+      "name": "\"Novartis\"",
+      "isin": "CH0012005267",
+      "count": 15
+    },
+    {
+      "ticker": "SMH",
+      "name": "\"VanEck Semiconductor (Acc)\"",
+      "isin": "IE00BMC38736",
+      "count": 15
+    },
+    {
+      "ticker": "CYBR",
+      "name": "\"Rize Cybersecurity & Data Privacy (Acc)\"",
+      "isin": "IE00BJXRZJ40",
+      "count": 14
+    },
+    {
+      "ticker": "KMDA",
+      "name": "\"Kamada\"",
+      "isin": "IL0010941198",
+      "count": 14
+    },
+    {
+      "ticker": "DGTL",
+      "name": "\"iShares Digitalisation (Acc)\"",
+      "isin": "IE00BYZK4883",
+      "count": 13
+    },
+    {
+      "ticker": "NVDA",
+      "name": "\"Nvidia\"",
+      "isin": "US67066G1040",
+      "count": 13
+    },
+    {
+      "ticker": "LCID",
+      "name": "\"Lucid\"",
+      "isin": "US5494982029",
+      "count": 13
+    },
+    {
+      "ticker": "ARLO",
+      "name": "\"Arlo Technologies\"",
+      "isin": "US04206A1016",
+      "count": 12
+    },
+    {
+      "ticker": "XAIX",
+      "name": "\"Xtrackers Artificial Intelligence & Big Data (Acc)\"",
+      "isin": "IE00BGV5VN51",
+      "count": 12
+    },
+    {
+      "ticker": "WOSC",
+      "name": "\"SPDR MSCI World Small Cap (Acc)\"",
+      "isin": "IE00BCBJG560",
+      "count": 11
+    },
+    {
+      "ticker": "LLY",
+      "name": "\"Eli Lilly & Co\"",
+      "isin": "US5324571083",
+      "count": 9
+    },
+    {
+      "ticker": "GBDV",
+      "name": "\"SPDR S&P Global Dividend Aristocrats (Dist)\"",
+      "isin": "IE00B9CQXS71",
+      "count": 8
+    },
+    {
+      "ticker": "RMBS",
+      "name": "\"Rambus\"",
+      "isin": "US7509171069",
+      "count": 8
+    },
+    {
+      "ticker": "MSFT",
+      "name": "\"Microsoft\"",
+      "isin": "US5949181045",
+      "count": 7
+    },
+    {
+      "ticker": "UBSG",
+      "name": "\"UBS Group\"",
+      "isin": "CH0244767585",
+      "count": 7
+    },
+    {
+      "ticker": "LRCX",
+      "name": "\"Lam Research\"",
+      "isin": "US5128073062",
+      "count": 6
+    },
+    {
+      "ticker": "ROP",
+      "name": "\"Roche\"",
+      "isin": "CH1499059983",
+      "count": 6
+    },
+    {
+      "ticker": "TTWO",
+      "name": "\"Take-Two Interactive Software\"",
+      "isin": "US8740541094",
+      "count": 3
+    },
+    {
+      "ticker": "INTC",
+      "name": "\"Intel\"",
+      "isin": "US4581401001",
+      "count": 3
+    },
+    {
+      "ticker": "JPM",
+      "name": "\"JPMorgan Chase & Co\"",
+      "isin": "US46625H1005",
+      "count": 3
+    },
+    {
+      "ticker": "AIAI",
+      "name": "\"L&G Artificial Intelligence (Acc)\"",
+      "isin": "IE00BK5BCD43",
+      "count": 2
+    },
+    {
+      "ticker": "INRG",
+      "name": "\"iShares Global Clean Energy Transition (Dist)\"",
+      "isin": "IE00B1XNHC34",
+      "count": 2
+    },
+    {
+      "ticker": "NRJ",
+      "name": "\"Amundi MSCI New Energy\"",
+      "isin": "FR0010524777",
+      "count": 2
+    },
+    {
+      "ticker": "DIS",
+      "name": "\"Walt Disney\"",
+      "isin": "US2546871060",
+      "count": 2
+    },
+    {
+      "ticker": "ADS",
+      "name": "\"Adidas\"",
+      "isin": "DE000A1EWWW0",
+      "count": 2
+    },
+    {
+      "ticker": "HMSB",
+      "name": "\"H&M Hennes & Mauritz\"",
+      "isin": "SE0000106270",
+      "count": 2
+    },
+    {
+      "ticker": "TSLA",
+      "name": "\"Tesla\"",
+      "isin": "US88160R1014",
+      "count": 2
+    },
+    {
+      "ticker": "MU",
+      "name": "\"Micron Technology\"",
+      "isin": "US5951121038",
+      "count": 2
+    }
+  ],
+  "isins": [
+    {
+      "isin": "US7561091049",
+      "ticker": "O",
+      "name": "\"Realty Income\"",
+      "count": 29
+    },
+    {
+      "isin": "IE00BKM4GZ66",
+      "ticker": "EIMI",
+      "name": "\"iShares Core MSCI EM IMI (Acc)\"",
+      "count": 27
+    },
+    {
+      "isin": "IE00B4L5Y983",
+      "ticker": "EUNL",
+      "name": "\"iShares Core MSCI World (Acc)\"",
+      "count": 27
+    },
+    {
+      "isin": "CH0011075394",
+      "ticker": "ZURN",
+      "name": "\"Zurich Insurance\"",
+      "count": 22
+    },
+    {
+      "isin": "CH0038863350",
+      "ticker": "NESN",
+      "name": "\"Nestle\"",
+      "count": 21
+    },
+    {
+      "isin": "IE00B8GKDB10",
+      "ticker": "VHYL",
+      "name": "\"Vanguard FTSE All-World High Dividend Yield (Dist)\"",
+      "count": 20
+    },
+    {
+      "isin": "IE00B0M62S72",
+      "ticker": "IDVY",
+      "name": "\"iShares Euro Dividend (Dist)\"",
+      "count": 19
+    },
+    {
+      "isin": "IE00BF4RFH31",
+      "ticker": "WSML",
+      "name": "\"iShares MSCI World Small Cap (Acc)\"",
+      "count": 18
+    },
+    {
+      "isin": "CH0012005267",
+      "ticker": "NOVN",
+      "name": "\"Novartis\"",
+      "count": 15
+    },
+    {
+      "isin": "IE00BMC38736",
+      "ticker": "SMH",
+      "name": "\"VanEck Semiconductor (Acc)\"",
+      "count": 15
+    },
+    {
+      "isin": "IE00BJXRZJ40",
+      "ticker": "CYBR",
+      "name": "\"Rize Cybersecurity & Data Privacy (Acc)\"",
+      "count": 14
+    },
+    {
+      "isin": "IL0010941198",
+      "ticker": "KMDA",
+      "name": "\"Kamada\"",
+      "count": 14
+    },
+    {
+      "isin": "IE00BYZK4883",
+      "ticker": "DGTL",
+      "name": "\"iShares Digitalisation (Acc)\"",
+      "count": 13
+    },
+    {
+      "isin": "US67066G1040",
+      "ticker": "NVDA",
+      "name": "\"Nvidia\"",
+      "count": 13
+    },
+    {
+      "isin": "US5494982029",
+      "ticker": "LCID",
+      "name": "\"Lucid\"",
+      "count": 13
+    },
+    {
+      "isin": "US04206A1016",
+      "ticker": "ARLO",
+      "name": "\"Arlo Technologies\"",
+      "count": 12
+    },
+    {
+      "isin": "IE00BGV5VN51",
+      "ticker": "XAIX",
+      "name": "\"Xtrackers Artificial Intelligence & Big Data (Acc)\"",
+      "count": 12
+    },
+    {
+      "isin": "IE00BCBJG560",
+      "ticker": "WOSC",
+      "name": "\"SPDR MSCI World Small Cap (Acc)\"",
+      "count": 11
+    },
+    {
+      "isin": "US5324571083",
+      "ticker": "LLY",
+      "name": "\"Eli Lilly & Co\"",
+      "count": 9
+    },
+    {
+      "isin": "IE00B9CQXS71",
+      "ticker": "GBDV",
+      "name": "\"SPDR S&P Global Dividend Aristocrats (Dist)\"",
+      "count": 8
+    },
+    {
+      "isin": "US7509171069",
+      "ticker": "RMBS",
+      "name": "\"Rambus\"",
+      "count": 8
+    },
+    {
+      "isin": "US5949181045",
+      "ticker": "MSFT",
+      "name": "\"Microsoft\"",
+      "count": 7
+    },
+    {
+      "isin": "CH0244767585",
+      "ticker": "UBSG",
+      "name": "\"UBS Group\"",
+      "count": 7
+    },
+    {
+      "isin": "US5128073062",
+      "ticker": "LRCX",
+      "name": "\"Lam Research\"",
+      "count": 6
+    },
+    {
+      "isin": "CH1499059983",
+      "ticker": "ROP",
+      "name": "\"Roche\"",
+      "count": 6
+    },
+    {
+      "isin": "US8740541094",
+      "ticker": "TTWO",
+      "name": "\"Take-Two Interactive Software\"",
+      "count": 3
+    },
+    {
+      "isin": "US4581401001",
+      "ticker": "INTC",
+      "name": "\"Intel\"",
+      "count": 3
+    },
+    {
+      "isin": "US46625H1005",
+      "ticker": "JPM",
+      "name": "\"JPMorgan Chase & Co\"",
+      "count": 3
+    },
+    {
+      "isin": "IE00BK5BCD43",
+      "ticker": "AIAI",
+      "name": "\"L&G Artificial Intelligence (Acc)\"",
+      "count": 2
+    },
+    {
+      "isin": "IE00B1XNHC34",
+      "ticker": "INRG",
+      "name": "\"iShares Global Clean Energy Transition (Dist)\"",
+      "count": 2
+    },
+    {
+      "isin": "FR0010524777",
+      "ticker": "NRJ",
+      "name": "\"Amundi MSCI New Energy\"",
+      "count": 2
+    },
+    {
+      "isin": "US2546871060",
+      "ticker": "DIS",
+      "name": "\"Walt Disney\"",
+      "count": 2
+    },
+    {
+      "isin": "DE000A1EWWW0",
+      "ticker": "ADS",
+      "name": "\"Adidas\"",
+      "count": 2
+    },
+    {
+      "isin": "SE0000106270",
+      "ticker": "HMSB",
+      "name": "\"H&M Hennes & Mauritz\"",
+      "count": 2
+    },
+    {
+      "isin": "US88160R1014",
+      "ticker": "TSLA",
+      "name": "\"Tesla\"",
+      "count": 2
+    },
+    {
+      "isin": "US5951121038",
+      "ticker": "MU",
+      "name": "\"Micron Technology\"",
+      "count": 2
+    }
+  ],
+  "stats": {
+    "totalDeposits": 28,
+    "totalWithdrawals": 2,
+    "totalBuys": 332,
+    "totalSells": 37,
+    "totalDividends": 0,
+    "totalInterest": 54,
+    "totalFxConversions": 5,
+    "totalSplits": 2
+  },
+  "incompleteRows": [],
+  "ambiguousRows": [],
+  "duplicateSourceIds": [],
+  "missingTickers": []
+}
