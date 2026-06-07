@@ -37,6 +37,7 @@ export default function TransactionsPage() {
     mode:    "add" | "edit"
     initial: TransactionFormData
   } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null) // transaction ID to delete
 
   const filtered = transactions
     .filter(t => typeFilter === "all" || t.type === typeFilter)
@@ -265,7 +266,7 @@ export default function TransactionsPage() {
                       style={{ color: "var(--text-tertiary)" }}>
                       <Pencil className="h-3 w-3" />
                     </button>
-                    <button onClick={() => removeTransaction(tx.id)}
+                    <button onClick={() => setDeleteConfirm(tx.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-red-500/20 transition-colors"
                       style={{ color: "var(--text-tertiary)" }}>
                       <X className="h-3 w-3" />
@@ -349,6 +350,74 @@ export default function TransactionsPage() {
           })}
         </div>
       </div>
+
+      {/* Delete transaction confirmation modal */}
+      <AnimatePresence>
+        {deleteConfirm && (() => {
+          const tx = transactions.find(t => t.id === deleteConfirm)
+          if (!tx) return null
+          const ur = (fxRates as Record<string,number>)[currency] ?? 1
+          const net = tx.type === "buy"
+            ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price + tx.fees))
+            : tx.type === "sell"
+            ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price - tx.fees))
+            : 0
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
+              onClick={() => setDeleteConfirm(null)}>
+              <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-sm rounded-2xl border overflow-hidden"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+                  <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Supprimer la transaction</h3>
+                  <button onClick={() => setDeleteConfirm(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
+                    <X className="h-4 w-4 text-zinc-500" />
+                  </button>
+                </div>
+                <div className="px-5 py-4 space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {TX_LABELS[tx.type]} — {tx.assetName}
+                    </p>
+                    <div className="space-y-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                      <p>Ticker: <strong>{tx.ticker}</strong></p>
+                      <p>Quantité: <strong>{Number(tx.quantity).toFixed(8).replace(/\.?0+$/, '')}</strong></p>
+                      <p>Montant net: <strong>{tx.type === "sell" ? "+" : "−"}{format(net)}</strong></p>
+                      {tx.feesChf && tx.feesChf > 0 && (
+                        <p>Frais: <strong>−{format(toUser(tx.feesChf))}</strong></p>
+                      )}
+                      {tx.type === "sell" && tx.realizedPnlChf != null && (
+                        <p>P&L réalisé: <strong style={{ color: tx.realizedPnlChf >= 0 ? "#22c55e" : "#ef4444" }}>
+                          {tx.realizedPnlChf >= 0 ? "+" : ""}{format(toUser(tx.realizedPnlChf))}
+                        </strong></p>
+                      )}
+                      <p>Date: <strong>{new Date(tx.date).toLocaleDateString("fr-FR")}</strong></p>
+                    </div>
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                    ⚠️ Cette action supprimera la transaction. Les positions et P&L seront recalculés automatiquement.
+                  </p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setDeleteConfirm(null)}
+                      className="flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all"
+                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "var(--bg-base)" }}>
+                      Annuler
+                    </button>
+                    <button onClick={() => { removeTransaction(deleteConfirm); setDeleteConfirm(null) }}
+                      className="flex-1 rounded-lg px-3 py-2.5 text-xs font-semibold text-white transition-all hover:opacity-90"
+                      style={{ backgroundColor: "#ef4444" }}>
+                      Supprimer
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
 
       {/* Transaction modal — shared component with autocomplete + live price */}
       <AnimatePresence>

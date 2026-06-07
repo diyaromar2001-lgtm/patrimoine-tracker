@@ -1430,7 +1430,11 @@ export default function PortfoliosPage() {
                       .filter(t => t.portfolioId === activePortfolio.id && t.type === "sell")
                       .reduce((s,t) => s + ((t.realizedPnlChf ?? 0) * ur2), 0)
                     const pnlTotal = pnlLatent + pnlRealized
-                    const pct  = metrics.totalReturnPercent
+                    // P&L % must include both latent AND realized
+                    // Formula: (pnlLatent + pnlRealized) / investedChf × 100
+                    const investedChf = metrics.investedChf
+                    const pctTotal = investedChf > 0 ? (pnlTotal / investedChf) * 100 : 0
+                    const pctLatent = investedChf > 0 ? (pnlLatent / investedChf) * 100 : 0
                     return (
                       <>
                         <div className="text-right">
@@ -1442,6 +1446,11 @@ export default function PortfoliosPage() {
                               <span className="tabular-nums font-semibold" style={{ color: pnlLatent >= 0 ? "#22c55e" : "#ef4444" }}>
                                 {pnlLatent >= 0 ? "+" : ""}{format(pnlLatent)}
                               </span>
+                              {investedChf > 0 && (
+                                <span className="text-[10px]" style={{ color: pnlLatent >= 0 ? "#22c55e" : "#ef4444" }}>
+                                  {pctLatent >= 0 ? "+" : ""}{pctLatent.toFixed(2)}%
+                                </span>
+                              )}
                             </div>
                             {/* P&L realized (from sales) */}
                             {pnlRealized !== 0 && (
@@ -1452,13 +1461,17 @@ export default function PortfoliosPage() {
                                 </span>
                               </div>
                             )}
-                            {/* P&L total */}
+                            {/* P&L total = latent + realized */}
                             <div className="flex items-center gap-2 justify-end pt-1 border-t" style={{ borderColor: "var(--border-subtle)" }}>
                               <span style={{ color: "var(--text-secondary)" }}>total:</span>
                               <span className="tabular-nums font-bold" style={{ color: pnlTotal >= 0 ? "#22c55e" : "#ef4444" }}>
                                 {pnlTotal >= 0 ? "+" : ""}{format(pnlTotal)}
                               </span>
-                              <ChangeBadge value={pct} showIcon={false} />
+                              {investedChf > 0 && (
+                                <span className="text-[10px] font-bold" style={{ color: pnlTotal >= 0 ? "#22c55e" : "#ef4444" }}>
+                                  {pctTotal >= 0 ? "+" : ""}{pctTotal.toFixed(2)}%
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
