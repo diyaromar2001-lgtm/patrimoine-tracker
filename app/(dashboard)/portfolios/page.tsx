@@ -679,6 +679,9 @@ export default function PortfoliosPage() {
     notes:      string
   } | null>(null)
 
+  // Confirmation before deletion
+  const [deleteConfirm, setDeleteConfirm] = useState<{ portfolioId: string; assetId: string } | null>(null)
+
   function openEditModal(asset: Asset) {
     const lastBuy = [...transactions]
       .filter(t => t.portfolioId === asset.portfolioId && t.ticker === asset.ticker && t.type === "buy")
@@ -896,7 +899,14 @@ export default function PortfoliosPage() {
   }
 
   function handleDeleteAsset(portfolioId: string, assetId: string) {
-    dbRemoveAsset(portfolioId, assetId)
+    // Show confirmation dialog instead of deleting immediately
+    setDeleteConfirm({ portfolioId, assetId })
+  }
+
+  function confirmDeleteAsset() {
+    if (!deleteConfirm) return
+    dbRemoveAsset(deleteConfirm.portfolioId, deleteConfirm.assetId)
+    setDeleteConfirm(null)
   }
 
   function handleDeletePortfolio(id: string) {
@@ -1415,17 +1425,41 @@ export default function PortfoliosPage() {
                     const metrics = activePortfolioMetrics ?? calculatePortfolioMetrics(metricAssetsFor(activePortfolio.assets), {}, fxRates)
                     const ur2  = (fxRates as Record<string,number>)[currency] ?? 1
                     const val  = metrics.portfolioValueChf * ur2
-                    const pnl  = metrics.totalPnlChf * ur2
+                    const pnlLatent  = metrics.totalPnlChf * ur2
+                    const pnlRealized = transactions
+                      .filter(t => t.portfolioId === activePortfolio.id && t.type === "sell")
+                      .reduce((s,t) => s + ((t.realizedPnlChf ?? 0) * ur2), 0)
+                    const pnlTotal = pnlLatent + pnlRealized
                     const pct  = metrics.totalReturnPercent
                     return (
                       <>
                         <div className="text-right">
                           <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{format(val)}</p>
-                          <div className="flex items-center gap-2 justify-end">
-                            <span className="text-xs tabular-nums" style={{ color: pnl >= 0 ? "#22c55e" : "#ef4444" }}>
-                              {pnl >= 0 ? "+" : ""}{format(pnl)}
-                            </span>
-                            <ChangeBadge value={pct} showIcon={false} />
+                          <div className="flex flex-col gap-1 justify-end text-[11px]">
+                            {/* P&L latent (unrealized) */}
+                            <div className="flex items-center gap-2 justify-end">
+                              <span style={{ color: "var(--text-tertiary)" }}>latent:</span>
+                              <span className="tabular-nums font-semibold" style={{ color: pnlLatent >= 0 ? "#22c55e" : "#ef4444" }}>
+                                {pnlLatent >= 0 ? "+" : ""}{format(pnlLatent)}
+                              </span>
+                            </div>
+                            {/* P&L realized (from sales) */}
+                            {pnlRealized !== 0 && (
+                              <div className="flex items-center gap-2 justify-end">
+                                <span style={{ color: "var(--text-tertiary)" }}>réalisé:</span>
+                                <span className="tabular-nums font-semibold" style={{ color: pnlRealized >= 0 ? "#22c55e" : "#ef4444" }}>
+                                  {pnlRealized >= 0 ? "+" : ""}{format(pnlRealized)}
+                                </span>
+                              </div>
+                            )}
+                            {/* P&L total */}
+                            <div className="flex items-center gap-2 justify-end pt-1 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>total:</span>
+                              <span className="tabular-nums font-bold" style={{ color: pnlTotal >= 0 ? "#22c55e" : "#ef4444" }}>
+                                {pnlTotal >= 0 ? "+" : ""}{format(pnlTotal)}
+                              </span>
+                              <ChangeBadge value={pct} showIcon={false} />
+                            </div>
                           </div>
                         </div>
                         <button
@@ -1785,6 +1819,51 @@ export default function PortfoliosPage() {
             </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* ─── Delete asset confirmation modal ─── */}
+      <AnimatePresence>
+        {deleteConfirm && (() => {
+          const asset = activePortfolio?.assets.find(a => a.id === deleteConfirm.assetId)
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
+              onClick={() => setDeleteConfirm(null)}>
+              <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-sm rounded-2xl border overflow-hidden"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+                  <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Supprimer la position</h3>
+                  <button onClick={() => setDeleteConfirm(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
+                    <X className="h-4 w-4 text-zinc-500" />
+                  </button>
+                </div>
+                <div className="px-5 py-4 space-y-4">
+                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Êtes-vous sûr de vouloir supprimer la position <strong>{asset?.name}</strong> ({asset?.ticker})?
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                    ⚠️ Cette action supprimera la position entière de votre portefeuille. Les transactions historiques restent intactes.
+                  </p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setDeleteConfirm(null)}
+                      className="flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all"
+                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "var(--bg-base)" }}>
+                      Annuler
+                    </button>
+                    <button onClick={confirmDeleteAsset}
+                      className="flex-1 rounded-lg px-3 py-2.5 text-xs font-semibold text-white transition-all hover:opacity-90"
+                      style={{ backgroundColor: "#ef4444" }}>
+                      Supprimer
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
       </AnimatePresence>
 
       {/* ─── New portfolio modal ─── */}
