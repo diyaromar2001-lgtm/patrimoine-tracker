@@ -36,7 +36,7 @@ SELECT
   COALESCE(
     (SELECT SUM(COALESCE(net_amount_chf, 0))
      FROM transactions t
-     WHERE t.asset_id = a.id AND t.type = 'buy'),
+     WHERE t.ticker = a.ticker AND t.type = 'buy'),
     0
   ) AS cost_from_transactions
 FROM assets a
@@ -79,7 +79,7 @@ ORDER BY status, a.ticker
           const { data: txs } = await supabase
             .from("transactions")
             .select("net_amount_chf")
-            .eq("asset_id", a.id)
+            .eq("ticker", a.ticker)
             .eq("type", "buy")
 
           const costFromTransactions = (txs || []).reduce(
