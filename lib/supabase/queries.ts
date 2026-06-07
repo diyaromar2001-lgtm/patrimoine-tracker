@@ -335,6 +335,18 @@ export async function updateTransactionAndRecalculate(
 
     // 3. Recalculate asset if this was a buy/sell (not cash-related)
     if (oldTx.asset_id && ["buy", "sell"].includes(oldTx.type)) {
+      // 3a. Fetch current asset state (before modification)
+      const { data: asset, error: assetErr } = await sb
+        .from("assets")
+        .select("*")
+        .eq("id", oldTx.asset_id)
+        .maybeSingle()
+
+      if (assetErr) {
+        console.error("[updateTransactionAndRecalculate] Error fetching asset:", assetErr)
+        return { ok: false, error: "Failed to fetch asset" }
+      }
+
       const { data: remainingTx, error: txErr } = await sb
         .from("transactions")
         .select("*")
@@ -347,26 +359,59 @@ export async function updateTransactionAndRecalculate(
         return { ok: false, error: "Failed to recalculate asset" }
       }
 
-      // Reconstruct asset metrics from all transactions
       let newQty = 0
-      let totalQtyBought = 0
-      let totalBuyCostChf = 0
+      let newCostBasisChf = 0
+      let newAvgBuyPrice = 0
 
-      for (const t of remainingTx || []) {
-        if (t.type === "buy") {
-          newQty += Number(t.quantity)
-          totalQtyBought += Number(t.quantity)
-          totalBuyCostChf += Number(t.net_amount_chf ?? 0)
-        } else if (t.type === "sell") {
-          newQty -= Number(t.quantity)
+      // ────────────────────────────────────────────────────────────────────────
+      // SELL PARTIAL: Use historical cost per unit to handle currency-agnosticism
+      // ────────────────────────────────────────────────────────────────────────
+      const oldQty = Number(oldTx.quantity)
+      const newTxQty = updates.quantity ?? oldQty
+      const oldAssetQty = asset ? Number(asset.quantity) : 0
+      const oldAssetCostBasisChf = asset ? Number(asset.cost_basis_chf) : 0
+
+      if (
+        oldTx.type === "sell" &&
+        asset &&
+        oldAssetQty > 0 &&
+        newTxQty !== oldQty  // Only if quantity changed
+      ) {
+        // Quantity difference: how much more or less are we selling?
+        const qtyDifference = newTxQty - oldQty
+        const costPerUnitChf = oldAssetCostBasisChf / oldAssetQty
+
+        // Adjust cost basis based on the quantity difference
+        // If reducing sell qty (qtyDifference < 0), we add back cost basis
+        // If increasing sell qty (qtyDifference > 0), we reduce cost basis
+        newCostBasisChf = oldAssetCostBasisChf - (qtyDifference * costPerUnitChf)
+        newQty = oldAssetQty - newTxQty
+        newAvgBuyPrice = newQty > 0 ? newCostBasisChf / newQty : 0
+      } else {
+        // ────────────────────────────────────────────────────────────────────
+        // BUY MODIFIED or SELL with no qty change: Recalculate from all transactions
+        // ────────────────────────────────────────────────────────────────────
+        let totalQtyBought = 0
+        let totalBuyCostChf = 0
+
+        for (const t of remainingTx || []) {
+          if (t.type === "buy") {
+            newQty += Number(t.quantity)
+            totalQtyBought += Number(t.quantity)
+            totalBuyCostChf += Number(t.net_amount_chf ?? 0)
+          } else if (t.type === "sell") {
+            newQty -= Number(t.quantity)
+          }
         }
+
+        // Calculate avg buy price including fees: totalBuyCostChf / totalQtyBought
+        // Example: 1.2 shares @ 80 CHF + 1 CHF fees = 97 CHF total → 97/1.2 = 80.83 per share
+        newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
+
+        // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
+        // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
+        newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
       }
-
-      const newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
-
-      // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
-      // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
-      const newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
 
       const { error: updateAssetErr } = await sb
         .from("assets")
@@ -412,6 +457,13 @@ export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok:
       return { ok: false, error: "Transaction not found" }
     }
 
+    // 1b. Fetch current asset state (before deleting transaction)
+    const { data: asset, error: assetErr } = await sb
+      .from("assets")
+      .select("*")
+      .eq("id", tx.asset_id)
+      .maybeSingle()
+
     // 2. Delete the transaction
     const { error: deleteErr } = await sb.from("transactions").delete().eq("id", id)
     if (deleteErr) {
@@ -433,28 +485,45 @@ export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok:
         return { ok: false, error: "Failed to recalculate asset" }
       }
 
-      // Reconstruct asset metrics from remaining transactions
       let newQty = 0
-      let totalQtyBought = 0
-      let totalBuyCostChf = 0
+      let newCostBasisChf = 0
+      let newAvgBuyPrice = 0
 
-      for (const t of remainingTx || []) {
-        if (t.type === "buy") {
-          newQty += Number(t.quantity)
-          totalQtyBought += Number(t.quantity)
-          totalBuyCostChf += Number(t.net_amount_chf ?? 0)  // Includes fees
-        } else if (t.type === "sell") {
-          newQty -= Number(t.quantity)
+      if (tx.type === "sell" && asset && Number(asset.quantity) > 0) {
+        // ──────────────────────────────────────────────────────────────────────
+        // VENTE PARTIELLE: Use historical cost per unit to maintain accuracy
+        // across multiple currencies (USD, EUR, CHF).
+        // ──────────────────────────────────────────────────────────────────────
+        const costPerUnitChf = Number(asset.cost_basis_chf) / Number(asset.quantity)
+        newQty = Number(asset.quantity) + Number(tx.quantity)
+        newCostBasisChf = Number(asset.cost_basis_chf) + (Number(tx.quantity) * costPerUnitChf)
+        // avg_buy_price is unchanged: the historical buy cost per unit remains the same
+        newAvgBuyPrice = newQty > 0 ? newCostBasisChf / newQty : 0
+      } else {
+        // ──────────────────────────────────────────────────────────────────────
+        // ACHAT SUPPRIMÉ ou autres: Recalculate from remaining transactions
+        // ──────────────────────────────────────────────────────────────────────
+        let totalQtyBought = 0
+        let totalBuyCostChf = 0
+
+        for (const t of remainingTx || []) {
+          if (t.type === "buy") {
+            newQty += Number(t.quantity)
+            totalQtyBought += Number(t.quantity)
+            totalBuyCostChf += Number(t.net_amount_chf ?? 0)  // Includes fees
+          } else if (t.type === "sell") {
+            newQty -= Number(t.quantity)
+          }
         }
+
+        // Calculate avg buy price including fees: totalBuyCostChf / totalQtyBought
+        // Example: 1.2 shares @ 80 CHF + 1 CHF fees = 97 CHF total → 97/1.2 = 80.83 per share
+        newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
+
+        // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
+        // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
+        newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
       }
-
-      // Calculate avg buy price including fees: totalBuyCostChf / totalQtyBought
-      // Example: 1.2 shares @ 80 CHF + 1 CHF fees = 97 CHF total → 97/1.2 = 80.83 per share
-      const newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
-
-      // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
-      // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
-      const newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
 
       // Update the asset
       const { error: updateErr } = await sb
