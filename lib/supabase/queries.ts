@@ -168,51 +168,58 @@ export async function updateCashBalance(portfolioId: string, cash: CashBalance) 
 }
 
 /**
- * Delete a portfolio and ALL its related data transactionally.
- * Deletes: transactions, assets, and portfolio itself.
- * DOES NOT delete global cash/revenues (these are shared across portfolios).
- * Returns {ok: true} on success, {ok: false, error: string} on failure.
+ * Delete a portfolio and ALL its related data via atomic RPC.
+ *
+ * Uses PostgreSQL function delete_portfolio_atomic() to guarantee:
+ * - All-or-nothing deletion (no partial deletes)
+ * - Automatic cascade: portfolio → assets → transactions
+ * - Transaction rollback if any step fails
+ *
+ * Does NOT delete: global cash, global revenues (shared across portfolios)
+ *
+ * Returns: {ok: true, txDeleted, assetsDeleted} or {ok: false, error}
  */
-export async function deletePortfolio(id: string): Promise<{ ok: boolean; error?: string }> {
+export async function deletePortfolio(id: string): Promise<{
+  ok: boolean
+  txDeleted?: number
+  assetsDeleted?: number
+  error?: string
+}> {
   const sb = createClient()
   if (!sb) return { ok: false, error: "Supabase not configured" }
 
   try {
-    // 1. Delete transactions (they depend on assets)
-    const { error: txErr } = await sb
-      .from("transactions")
-      .delete()
-      .eq("portfolio_id", id)
+    // Call atomic RPC function
+    const { data, error } = await sb.rpc("delete_portfolio_atomic", {
+      portfolio_id_param: id,
+    })
 
-    if (txErr) {
-      console.error("[deletePortfolio] Error deleting transactions:", txErr)
-      return { ok: false, error: `Failed to delete transactions: ${txErr.message}` }
+    if (error) {
+      console.error("[deletePortfolio] RPC error:", error)
+      return { ok: false, error: `Atomic delete failed: ${error.message}` }
     }
 
-    // 2. Delete assets (they belong to portfolio)
-    const { error: assetsErr } = await sb
-      .from("assets")
-      .delete()
-      .eq("portfolio_id", id)
-
-    if (assetsErr) {
-      console.error("[deletePortfolio] Error deleting assets:", assetsErr)
-      return { ok: false, error: `Failed to delete assets: ${assetsErr.message}` }
+    if (!data || !data[0]) {
+      return { ok: false, error: "RPC returned no result" }
     }
 
-    // 3. Delete the portfolio itself
-    const { error: portfolioErr } = await sb
-      .from("portfolios")
-      .delete()
-      .eq("id", id)
+    const result = data[0]
 
-    if (portfolioErr) {
-      console.error("[deletePortfolio] Error deleting portfolio:", portfolioErr)
-      return { ok: false, error: `Failed to delete portfolio: ${portfolioErr.message}` }
+    if (!result.success) {
+      console.error("[deletePortfolio] RPC returned error:", result.error_message)
+      return { ok: false, error: result.error_message || "Unknown error" }
     }
 
-    console.log(`[deletePortfolio] Successfully deleted portfolio ${id}`)
-    return { ok: true }
+    console.log(
+      `[deletePortfolio] Atomically deleted portfolio ${id}: ` +
+      `${result.transactions_deleted} transactions, ${result.assets_deleted} assets`
+    )
+
+    return {
+      ok: true,
+      txDeleted: result.transactions_deleted,
+      assetsDeleted: result.assets_deleted,
+    }
   } catch (e) {
     console.error("[deletePortfolio] Exception:", e)
     return { ok: false, error: String(e) }

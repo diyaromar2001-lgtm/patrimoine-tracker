@@ -1438,14 +1438,20 @@ export default function PortfoliosPage() {
                       .filter(t => t.portfolioId === activePortfolio.id && t.type === "sell")
                       .reduce((s,t) => s + ((t.realizedPnlChf ?? 0) * ur2), 0)
                     const pnlTotal = pnlLatent + pnlRealized
-                    // P&L % MUST use HISTORICAL CAPITAL INVESTED (all buy transactions), not remaining cost_basis
-                    // metrics.investedChf is only remaining cost basis for open positions
-                    // We need: sum of ALL buy transactions (including those partially/fully sold)
-                    const historyBuyCostChf = transactions
+                    // Dénominateur = ALL historical capital invested (sum of all buy transactions)
+                    // This is the total amount deployed, including positions already sold
+                    // NOM: "Rendement sur capital cumulé investi" (not TWR, not broker return)
+                    const historicalCapitalInvestedChf = transactions
                       .filter(t => t.portfolioId === activePortfolio.id && t.type === "buy")
                       .reduce((s, t) => s + (t.netAmountChf ?? 0), 0)
-                    const pctTotal = historyBuyCostChf > 0 ? (pnlTotal / historyBuyCostChf) * 100 : 0
-                    const pctLatent = historyBuyCostChf > 0 ? (pnlLatent / historyBuyCostChf) * 100 : 0
+                    // Formula: (P&L latent + P&L réalisé) / capital cumulé × 100
+                    const rendementCapitalCumulePct = historicalCapitalInvestedChf > 0
+                      ? (pnlTotal / historicalCapitalInvestedChf) * 100
+                      : 0
+                    // Rendement latent = P&L non-réalisé seulement
+                    const rendementLatentPct = historicalCapitalInvestedChf > 0
+                      ? (pnlLatent / historicalCapitalInvestedChf) * 100
+                      : 0
                     return (
                       <>
                         <div className="text-right">
@@ -1457,9 +1463,9 @@ export default function PortfoliosPage() {
                               <span className="tabular-nums font-semibold" style={{ color: pnlLatent >= 0 ? "#22c55e" : "#ef4444" }}>
                                 {pnlLatent >= 0 ? "+" : ""}{format(pnlLatent)}
                               </span>
-                              {investedChf > 0 && (
+                              {historicalCapitalInvestedChf > 0 && (
                                 <span className="text-[10px]" style={{ color: pnlLatent >= 0 ? "#22c55e" : "#ef4444" }}>
-                                  {pctLatent >= 0 ? "+" : ""}{pctLatent.toFixed(2)}%
+                                  {rendementLatentPct >= 0 ? "+" : ""}{rendementLatentPct.toFixed(2)}%
                                 </span>
                               )}
                             </div>
@@ -1478,9 +1484,9 @@ export default function PortfoliosPage() {
                               <span className="tabular-nums font-bold" style={{ color: pnlTotal >= 0 ? "#22c55e" : "#ef4444" }}>
                                 {pnlTotal >= 0 ? "+" : ""}{format(pnlTotal)}
                               </span>
-                              {investedChf > 0 && (
+                              {historicalCapitalInvestedChf > 0 && (
                                 <span className="text-[10px] font-bold" style={{ color: pnlTotal >= 0 ? "#22c55e" : "#ef4444" }}>
-                                  {pctTotal >= 0 ? "+" : ""}{pctTotal.toFixed(2)}%
+                                  {rendementCapitalCumulePct >= 0 ? "+" : ""}{rendementCapitalCumulePct.toFixed(2)}%
                                 </span>
                               )}
                             </div>
