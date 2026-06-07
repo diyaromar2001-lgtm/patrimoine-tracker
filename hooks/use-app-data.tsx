@@ -225,7 +225,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       if (!result.ok) {
         console.error("[removePortfolio] Failed to delete portfolio:", result.error)
         // Reload to restore the deleted portfolio
-        reload()
+        await refresh()
       }
     }
   }
