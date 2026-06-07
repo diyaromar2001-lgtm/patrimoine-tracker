@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Loader2 } from "lucide-react"
+import { createClient } from "@supabase/supabase-js"
 
 interface AuditResult {
   total_assets: number
@@ -30,13 +31,82 @@ export default function AuditPage() {
   useEffect(() => {
     const fetch_ = async () => {
       try {
-        const res = await fetch("/api/audit-cost-basis", {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}`,
-          },
-        })
-        if (!res.ok) throw new Error(`${res.status}`)
-        setResult(await res.json())
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+        )
+
+        // Fetch assets
+        const { data: assets, error: assetsError } = await supabase
+          .from("assets")
+          .select("*")
+          .neq("asset_class", "cash")
+
+        if (assetsError) throw assetsError
+
+        // Audit chaque asset
+        const audit = await Promise.all(
+          (assets || []).map(async (a: any) => {
+            const nativeTotal = a.quantity * a.avg_buy_price
+            let status = "CHF natif"
+            if (a.currency !== "CHF") {
+              if (a.cost_basis_chf == null) {
+                status = "Manquant"
+              } else if (
+                Math.abs(a.cost_basis_chf / nativeTotal - 1.0) < 0.03
+              ) {
+                status = "CORROMPU (native stocké sans FX)"
+              } else {
+                status = "Valide (CHF historique)"
+              }
+            }
+
+            // Fetch transactions pour ce ticker
+            const { data: txs, error: txError } = await supabase
+              .from("transactions")
+              .select("net_amount_chf")
+              .eq("ticker", a.ticker)
+              .eq("type", "buy")
+
+            if (txError) throw txError
+
+            const costFromTransactions = (txs || []).reduce(
+              (s: number, t: any) => s + (t.net_amount_chf || 0),
+              0
+            )
+
+            return {
+              id: a.id,
+              ticker: a.ticker,
+              currency: a.currency,
+              quantity: a.quantity,
+              avg_buy_price: a.avg_buy_price,
+              cost_basis_chf: a.cost_basis_chf,
+              native_total: nativeTotal,
+              status,
+              cost_from_transactions: costFromTransactions,
+            }
+          })
+        )
+
+        const summary = {
+          total_assets: audit.length,
+          chf_native: audit.filter(
+            (x: any) => x.status === "CHF natif"
+          ).length,
+          missing: audit.filter(
+            (x: any) => x.status === "Manquant"
+          ).length,
+          corrupted: audit.filter(
+            (x: any) => x.status === "CORROMPU (native stocké sans FX)"
+          ).length,
+          valid: audit.filter(
+            (x: any) => x.status === "Valide (CHF historique)"
+          ).length,
+          details: audit,
+        }
+
+        setResult(summary as AuditResult)
       } catch (e) {
         setError(String(e))
       } finally {
