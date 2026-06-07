@@ -521,7 +521,7 @@ export default function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.ticker}</p>
                       <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
-                        {a.quantity} × {a.livePrice.toFixed(2)}
+                        {Number(a.quantity).toFixed(8).replace(/\.?0+$/, '')} × {a.livePrice.toFixed(2)}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -591,7 +591,7 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         {new Date(tx.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" })}
-                        {tx.quantity > 0 && ` · ${tx.quantity} × ${tx.price.toFixed(2)}`}
+                        {tx.quantity > 0 && ` · ${Number(tx.quantity).toFixed(8).replace(/\.?0+$/, '')} × ${tx.price.toFixed(2)}`}
                       </p>
                     </div>
                     <p className="text-sm font-bold tabular-nums flex-shrink-0" style={{ color: meta.color }}>

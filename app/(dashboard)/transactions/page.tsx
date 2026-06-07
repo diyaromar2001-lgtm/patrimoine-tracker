@@ -294,7 +294,7 @@ export default function TransactionsPage() {
                       {TX_LABELS[tx.type]}
                     </span>
                   </div>
-                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{tx.quantity}</p>
+                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{Number(tx.quantity).toFixed(8).replace(/\.?0+$/, '')}</p>
                   {/* Prix unit. + total net */}
                   <div className="text-right">
                     <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>

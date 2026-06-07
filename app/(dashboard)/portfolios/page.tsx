@@ -355,7 +355,7 @@ function HoldingsTable({
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
                     <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                      {asset.quantity} ×
+                      {Number(asset.quantity).toFixed(8).replace(/\.?0+$/, '')} ×
                     </span>
                     {/* Current price inline */}
                     {origPrice && origCurrency ? (
@@ -526,9 +526,9 @@ function HoldingsTable({
                   )}
                 </div>
               </div>
-              {/* Qty — centred, bold */}
+              {/* Qty — centred, bold, rounded to avoid floating point errors */}
               <p className="text-center text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                {asset.quantity}
+                {Number(asset.quantity).toFixed(8).replace(/\.?0+$/, '')}
               </p>
               {/* Avg buy price — frais inclus dans avgBuyPrice */}
               <div className="flex flex-col items-end gap-0.5">
