@@ -58,6 +58,9 @@ const ACTION_MAPPING = {
   'Deposit': 'deposit',
   'Withdrawal': 'withdrawal',
   'Dividend': 'dividend',
+  'Dividend (Dividend)': 'dividend',
+  'Dividend (Tax exempted)': 'dividend',
+  'Dividend adjustment': 'dividend_adjustment',
   'Interest on cash': 'interest',
   'Currency conversion': 'fx_conversion',
   'Stock split open': 'split',
@@ -81,9 +84,8 @@ function normalizeOperation(raw, lineNumber) {
     price: parseFloat(raw['Price / share']) || 0,
     priceCurrency: raw['Currency (Price / share)'] || '',
     exchangeRate: parseFloat(raw['Exchange rate']) || 1,
-    totalAmountNative: parseFloat(raw.Total) || 0,
-    totalAmountBase: raw['Currency (Total)'] || 'CHF',
-    baseCurrency: raw['Currency (Total)'] || 'CHF',
+    totalAmount: parseFloat(raw.Total) || 0,
+    totalCurrency: raw['Currency (Total)'] || '',
     result: parseFloat(raw.Result) || 0,
     resultCurrency: raw['Currency (Result)'] || '',
     withholdingTax: parseFloat(raw['Withholding tax']) || 0,
@@ -113,19 +115,26 @@ async function parseTrading212CSV(csvContent) {
     deposit: 0,
     withdrawal: 0,
     dividend: 0,
+    dividend_adjustment: 0,
     interest: 0,
     fx_conversion: 0,
     split: 0,
     unknown: 0,
   }
 
+  // Track sub-types
+  let marketBuys = 0, limitBuys = 0
+  let marketSells = 0, limitSells = 0
+  let splitOpens = 0, splitCloses = 0
+
   const currencies = new Set()
+  const currencyDistribution = new Map()
   const tickers = new Map()
   const isins = new Map()
   const incompleteRows = []
   const ambiguousRows = []
+  const currencyMixIssues = []
   const sourceIdMap = new Map()
-  const missingTickersMap = new Map()
 
   for (let i = 1; i < lines.length; i++) {
     try {
@@ -134,7 +143,10 @@ async function parseTrading212CSV(csvContent) {
 
       // Track currencies
       if (op.priceCurrency) currencies.add(op.priceCurrency)
-      if (op.baseCurrency) currencies.add(op.baseCurrency)
+      if (op.totalCurrency) {
+        currencies.add(op.totalCurrency)
+        currencyDistribution.set(op.totalCurrency, (currencyDistribution.get(op.totalCurrency) || 0) + 1)
+      }
       if (op.resultCurrency) currencies.add(op.resultCurrency)
       if (op.fxFromCurrency) currencies.add(op.fxFromCurrency)
       if (op.fxToCurrency) currencies.add(op.fxToCurrency)
@@ -157,14 +169,6 @@ async function parseTrading212CSV(csvContent) {
         }
         existingIsin.count++
         isins.set(op.isin, existingIsin)
-      } else if (op.isin && !op.ticker) {
-        const key = `${op.isin}:::${op.name}`
-        const existing = missingTickersMap.get(key) || {
-          name: op.name,
-          count: 0,
-        }
-        existing.count++
-        missingTickersMap.set(key, existing)
       }
 
       // Track source IDs
@@ -172,11 +176,27 @@ async function parseTrading212CSV(csvContent) {
         sourceIdMap.set(op.sourceId, (sourceIdMap.get(op.sourceId) || 0) + 1)
       }
 
-      // Count
+      // Count operations and sub-types
       operationCounts[op.type]++
 
+      if (op.rawAction === 'Market buy') marketBuys++
+      if (op.rawAction === 'Limit buy') limitBuys++
+      if (op.rawAction === 'Market sell') marketSells++
+      if (op.rawAction === 'Limit sell') limitSells++
+      if (op.rawAction === 'Stock split open') splitOpens++
+      if (op.rawAction === 'Stock split close') splitCloses++
+
       if (op.isIncomplete) incompleteRows.push({ lineNumber: i, operation: op })
-      if (op.ambiguityWarnings.length > 0) ambiguousRows.push({ lineNumber: i, operation: op })
+      if (op.ambiguityWarnings.length > 0) {
+        ambiguousRows.push({ lineNumber: i, operation: op })
+        if (op.totalCurrency && op.totalCurrency !== 'CHF') {
+          currencyMixIssues.push({
+            lineNumber: i,
+            operation: op,
+            description: `Total in ${op.totalCurrency}, price in ${op.priceCurrency}`,
+          })
+        }
+      }
 
       operations.push(op)
     } catch (e) {
@@ -198,35 +218,40 @@ async function parseTrading212CSV(csvContent) {
     },
     brokerDetected: 'Trading 212',
     operationCounts,
-    currencies: Array.from(currencies).sort(),
-    tickers: Array.from(tickers.entries()).map(([ticker, info]) => ({
-      ticker,
-      ...info,
-    })),
-    isins: Array.from(isins.entries()).map(([isin, info]) => ({
-      isin,
-      ...info,
-    })),
+    currenciesUsed: Array.from(currencies).sort(),
+    currencyDistribution: Object.fromEntries(
+      Array.from(currencyDistribution.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => [k, v])
+    ),
+    tickers: Array.from(tickers.entries())
+      .map(([ticker, info]) => ({ ticker, ...info }))
+      .sort((a, b) => b.count - a.count),
+    isins: Array.from(isins.entries())
+      .map(([isin, info]) => ({ isin, ...info }))
+      .sort((a, b) => b.count - a.count),
     stats: {
+      marketBuys,
+      limitBuys,
+      totalBuys: operationCounts.buy,
+      marketSells,
+      limitSells,
+      totalSells: operationCounts.sell,
       totalDeposits: operationCounts.deposit,
       totalWithdrawals: operationCounts.withdrawal,
-      totalBuys: operationCounts.buy,
-      totalSells: operationCounts.sell,
-      totalDividends: operationCounts.dividend,
+      dividendPayments: operationCounts.dividend,
+      dividendAdjustments: operationCounts.dividend_adjustment,
+      totalDividends: operationCounts.dividend + operationCounts.dividend_adjustment,
       totalInterest: operationCounts.interest,
       totalFxConversions: operationCounts.fx_conversion,
+      stockSplitsOpen: splitOpens,
+      stockSplitsClose: splitCloses,
       totalSplits: operationCounts.split,
     },
     incompleteRows,
     ambiguousRows,
     duplicateSourceIds: duplicates,
-    missingTickers: Array.from(missingTickersMap.entries()).map(
-      ([key, value]) => ({
-        isin: key.split(':::')[0],
-        name: value.name,
-        count: value.count,
-      })
-    ),
+    currencyMixIssues,
   }
 
   return { operations, report }
@@ -235,7 +260,7 @@ async function parseTrading212CSV(csvContent) {
 function generatePreviewReport(report) {
   const lines = [
     '═══════════════════════════════════════════════════════════════════════════',
-    'TRADING 212 CSV IMPORT — LOT 1 PREVIEW REPORT',
+    'TRADING 212 CSV IMPORT — LOT 1 PREVIEW REPORT (CORRECTED)',
     '═══════════════════════════════════════════════════════════════════════════',
     '',
     `File: ${report.filename}`,
@@ -244,45 +269,65 @@ function generatePreviewReport(report) {
     `Period: ${report.period.start} → ${report.period.end}`,
     `Broker: ${report.brokerDetected}`,
     '',
-    '─── OPERATIONS ───────────────────────────────────────────────────────────',
-    `Buy:              ${report.stats.totalBuys}`,
-    `Sell:             ${report.stats.totalSells}`,
-    `Deposit:          ${report.stats.totalDeposits}`,
-    `Withdrawal:       ${report.stats.totalWithdrawals}`,
-    `Dividend:         ${report.stats.totalDividends}`,
-    `Interest:         ${report.stats.totalInterest}`,
-    `FX Conversion:    ${report.stats.totalFxConversions}`,
-    `Split:            ${report.stats.totalSplits}`,
+    '─── OPERATIONS (CORRECTED) ────────────────────────────────────────────────',
     '',
-    '─── CURRENCIES ────────────────────────────────────────────────────────────',
-    report.currencies.map(c => `  ${c}`).join('\n'),
+    'Buys:',
+    `  Market buy:  ${report.stats.marketBuys}`,
+    `  Limit buy:   ${report.stats.limitBuys}`,
+    `  Total:       ${report.stats.totalBuys}`,
+    '',
+    'Sells:',
+    `  Market sell: ${report.stats.marketSells}`,
+    `  Limit sell:  ${report.stats.limitSells}`,
+    `  Total:       ${report.stats.totalSells}`,
+    '',
+    'Cash:',
+    `  Deposits:    ${report.stats.totalDeposits}`,
+    `  Withdrawals: ${report.stats.totalWithdrawals}`,
+    '',
+    'Dividends (CORRECTED: 19 + 1 Tax exempted + 1 adjustment = 21):',
+    `  Dividend:    ${report.stats.dividendPayments}`,
+    `  Adjustment:  ${report.stats.dividendAdjustments}`,
+    `  Total:       ${report.stats.totalDividends}`,
+    '',
+    'Other:',
+    `  Interest:    ${report.stats.totalInterest}`,
+    `  FX Conv:     ${report.stats.totalFxConversions}`,
+    '',
+    'Splits:',
+    `  Open:        ${report.stats.stockSplitsOpen}`,
+    `  Close:       ${report.stats.stockSplitsClose}`,
+    `  Total:       ${report.stats.totalSplits}`,
+    '',
+    '─── CURRENCIES (CORRECTED) ────────────────────────────────────────────────',
+    '',
+    `Used in operations: ${report.currenciesUsed.join(', ')}`,
+    '',
+    'Total currency distribution:',
+    Object.entries(report.currencyDistribution)
+      .map(([currency, count]) => `  ${currency}: ${count} operations`)
+      .join('\n'),
     '',
     '─── TICKERS & ISINs ───────────────────────────────────────────────────────',
+    '',
     `Unique tickers: ${report.tickers.length}`,
     report.tickers
-      .sort((a, b) => b.count - a.count)
       .slice(0, 20)
-      .map(
-        info =>
-          `  ${info.ticker}: ${info.isin} (${info.name}) — ${info.count}x`
-      )
+      .map(info => `  ${info.ticker}: ${info.isin} (${info.name}) — ${info.count}x`)
       .join('\n'),
     '',
     `Unique ISINs: ${report.isins.length}`,
     report.isins
-      .sort((a, b) => b.count - a.count)
       .slice(0, 15)
-      .map(
-        info =>
-          `  ${info.isin}: ${info.ticker} (${info.name}) — ${info.count}x`
-      )
+      .map(info => `  ${info.isin}: ${info.ticker} (${info.name}) — ${info.count}x`)
       .join('\n'),
     '',
     '─── DATA QUALITY ──────────────────────────────────────────────────────────',
-    `Incomplete rows:     ${report.incompleteRows.length}`,
-    `Ambiguous rows:      ${report.ambiguousRows.length}`,
-    `Duplicate source IDs: ${report.duplicateSourceIds.length}`,
-    `Missing tickers:     ${report.missingTickers.length}`,
+    '',
+    `Incomplete rows:        ${report.incompleteRows.length}`,
+    `Ambiguous rows:         ${report.ambiguousRows.length}`,
+    `Currency mix issues:    ${report.currencyMixIssues.length}`,
+    `Duplicate source IDs:   ${report.duplicateSourceIds.length}`,
     '',
     '═══════════════════════════════════════════════════════════════════════════',
   ]
