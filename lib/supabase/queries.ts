@@ -287,29 +287,107 @@ export async function createTransaction(tx: Omit<Transaction, "id">) {
   return data
 }
 
-export async function updateTransaction(id: string, tx: Partial<Omit<Transaction, "id">>) {
+/**
+ * Update transaction AND recalculate affected asset metrics.
+ * Returns {ok: true} on success, or {ok: false, error: string} if validation fails.
+ */
+export async function updateTransactionAndRecalculate(
+  id: string,
+  updates: Partial<Omit<Transaction, "id">>
+): Promise<{ ok: boolean; error?: string }> {
   const sb = createClient()
-  if (!sb) return false
+  if (!sb) return { ok: false, error: "Supabase not configured" }
 
-  const { error } = await sb.from("transactions").update({
-    ticker:      tx.ticker,
-    asset_name:  tx.assetName,
-    asset_class: tx.assetClass,
-    type:        tx.type,
-    quantity:    tx.quantity,
-    price:       tx.price,
-    fees:        tx.fees,
-    currency:    tx.currency,
-    fx_rate_to_chf: tx.fxRateToChf,
-    gross_amount_chf: tx.grossAmountChf,
-    fees_chf: tx.feesChf,
-    net_amount_chf: tx.netAmountChf,
-    realized_pnl_chf: tx.realizedPnlChf,
-    date:        tx.date,
-    notes:       tx.notes,
-  }).eq("id", id)
+  try {
+    // 1. Fetch the transaction to update (to know which asset to recalculate)
+    const { data: oldTx, error: fetchErr } = await sb
+      .from("transactions")
+      .select("*")
+      .eq("id", id)
+      .single()
 
-  return !error
+    if (fetchErr || !oldTx) {
+      return { ok: false, error: "Transaction not found" }
+    }
+
+    // 2. Update the transaction
+    const { error: updateErr } = await sb.from("transactions").update({
+      ticker:      updates.ticker ?? oldTx.ticker,
+      asset_name:  updates.assetName ?? oldTx.asset_name,
+      asset_class: updates.assetClass ?? oldTx.asset_class,
+      type:        updates.type ?? oldTx.type,
+      quantity:    updates.quantity ?? oldTx.quantity,
+      price:       updates.price ?? oldTx.price,
+      fees:        updates.fees ?? oldTx.fees,
+      currency:    updates.currency ?? oldTx.currency,
+      fx_rate_to_chf: updates.fxRateToChf ?? oldTx.fx_rate_to_chf,
+      gross_amount_chf: updates.grossAmountChf ?? oldTx.gross_amount_chf,
+      fees_chf: updates.feesChf ?? oldTx.fees_chf,
+      net_amount_chf: updates.netAmountChf ?? oldTx.net_amount_chf,
+      realized_pnl_chf: updates.realizedPnlChf ?? oldTx.realized_pnl_chf,
+      date:        updates.date ?? oldTx.date,
+      notes:       updates.notes ?? oldTx.notes,
+    }).eq("id", id)
+
+    if (updateErr) {
+      return { ok: false, error: `Update failed: ${updateErr.message}` }
+    }
+
+    // 3. Recalculate asset if this was a buy/sell (not cash-related)
+    if (oldTx.asset_id && ["buy", "sell"].includes(oldTx.type)) {
+      const { data: remainingTx, error: txErr } = await sb
+        .from("transactions")
+        .select("*")
+        .eq("asset_id", oldTx.asset_id)
+        .in("type", ["buy", "sell"])
+        .order("date", { ascending: true })
+
+      if (txErr) {
+        console.error("[updateTransactionAndRecalculate] Error fetching transactions:", txErr)
+        return { ok: false, error: "Failed to recalculate asset" }
+      }
+
+      // Reconstruct asset metrics from all transactions
+      let newQty = 0
+      let totalCostChf = 0
+      let totalQtyBought = 0
+      let totalBuyCostChf = 0
+
+      for (const t of remainingTx || []) {
+        if (t.type === "buy") {
+          newQty += Number(t.quantity)
+          totalCostChf += Number(t.net_amount_chf ?? 0)
+          totalQtyBought += Number(t.quantity)
+          totalBuyCostChf += Number(t.net_amount_chf ?? 0)
+        } else if (t.type === "sell") {
+          newQty -= Number(t.quantity)
+        }
+      }
+
+      const newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
+
+      const { error: updateAssetErr } = await sb
+        .from("assets")
+        .update({
+          quantity: Math.max(0, newQty),
+          avg_buy_price: newAvgBuyPrice,
+          cost_basis_chf: Math.max(0, totalCostChf),
+          cost_basis_source: "computed",
+          cost_basis_updated_at: new Date().toISOString(),
+        })
+        .eq("id", oldTx.asset_id)
+
+      if (updateAssetErr) {
+        console.error("[updateTransactionAndRecalculate] Error updating asset:", updateAssetErr)
+        return { ok: false, error: "Failed to update asset metrics" }
+      }
+    }
+
+    return { ok: true }
+  } catch (e) {
+    console.error("[updateTransactionAndRecalculate] Exception:", e)
+    return { ok: false, error: String(e) }
+  }
 }
 
 /**

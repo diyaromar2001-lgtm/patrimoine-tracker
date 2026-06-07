@@ -572,10 +572,31 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }
 
   async function editTransaction(id: string, updates: Partial<Omit<Transaction, "id">>) {
+    // Optimistic: update in UI immediately
+    const oldTx = transactions.find(t => t.id === id)
     setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
+
     if (isSupabaseConfigured) {
-      try { await Q.updateTransaction(id, updates) }
-      catch (e) { console.error("[AppData] editTransaction failed:", e); await refresh() }
+      try {
+        // Update transaction AND recalculate affected asset in one atomic operation
+        const result = await Q.updateTransactionAndRecalculate(id, updates)
+        if (!result.ok) {
+          // Revert optimistic update on error
+          if (oldTx) {
+            setTransactions(prev => prev.map(t => t.id === id ? oldTx : t))
+          }
+          console.error("[AppData] editTransaction failed:", result.error)
+          return
+        }
+        // Success: refresh to get recalculated assets and global cash
+        await refresh()
+      } catch (e) {
+        // Revert optimistic update on exception
+        if (oldTx) {
+          setTransactions(prev => prev.map(t => t.id === id ? oldTx : t))
+        }
+        console.error("[AppData] editTransaction exception:", e)
+      }
     }
   }
 

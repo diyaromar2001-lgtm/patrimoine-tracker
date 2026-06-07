@@ -129,8 +129,18 @@ export function useTransactions() {
   async function editTransaction(id: string, updates: Partial<Omit<Transaction, "id">>) {
     setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
     if (isSupabaseConfigured) {
-      try { await Q.updateTransaction(id, updates) }
-      catch (e) { console.error("[useTransactions] editTransaction failed:", e); reload() }
+      try {
+        const result = await Q.updateTransactionAndRecalculate(id, updates)
+        if (!result.ok) {
+          console.error("[useTransactions] editTransaction failed:", result.error)
+          await reload()
+        } else {
+          await reload()
+        }
+      } catch (e) {
+        console.error("[useTransactions] editTransaction exception:", e)
+        await reload()
+      }
     }
   }
 
