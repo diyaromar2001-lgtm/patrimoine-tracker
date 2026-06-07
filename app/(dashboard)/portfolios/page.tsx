@@ -681,6 +681,7 @@ export default function PortfoliosPage() {
 
   // Confirmation before deletion
   const [deleteConfirm, setDeleteConfirm] = useState<{ portfolioId: string; assetId: string } | null>(null)
+  const [deletePortfolioConfirm, setDeletePortfolioConfirm] = useState<string | null>(null) // portfolio ID to delete
 
   function openEditModal(asset: Asset) {
     const lastBuy = [...transactions]
@@ -910,7 +911,14 @@ export default function PortfoliosPage() {
   }
 
   function handleDeletePortfolio(id: string) {
-    dbRemovePortfolio(id)
+    // Show confirmation dialog instead of deleting immediately
+    setDeletePortfolioConfirm(id)
+  }
+
+  function confirmDeletePortfolio() {
+    if (!deletePortfolioConfirm) return
+    dbRemovePortfolio(deletePortfolioConfirm)
+    setDeletePortfolioConfirm(null)
     setActiveTab("global")
   }
 
@@ -1873,6 +1881,64 @@ export default function PortfoliosPage() {
                       className="flex-1 rounded-lg px-3 py-2.5 text-xs font-semibold text-white transition-all hover:opacity-90"
                       style={{ backgroundColor: "#ef4444" }}>
                       Supprimer
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
+
+      {/* ─── Delete portfolio confirmation modal ─── */}
+      <AnimatePresence>
+        {deletePortfolioConfirm && (() => {
+          const portfolio = portfolios.find(p => p.id === deletePortfolioConfirm)
+          const txCount = transactions.filter(t => t.portfolioId === deletePortfolioConfirm).length
+          const assetCount = portfolio?.assets.length ?? 0
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
+              onClick={() => setDeletePortfolioConfirm(null)}>
+              <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-md rounded-2xl border overflow-hidden"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+                onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+                  <h3 className="text-sm font-semibold text-red-400">Supprimer le portefeuille définitivement</h3>
+                  <button onClick={() => setDeletePortfolioConfirm(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
+                    <X className="h-4 w-4 text-zinc-500" />
+                  </button>
+                </div>
+                <div className="px-5 py-4 space-y-4">
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {portfolio?.name}
+                    </p>
+                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                      Cette action supprimera définitivement le portefeuille et toutes ses données associées:
+                    </p>
+                    <ul className="text-xs space-y-1 ml-4" style={{ color: "var(--text-tertiary)" }}>
+                      <li>• {assetCount} position{assetCount !== 1 ? 's' : ''} / actif{assetCount !== 1 ? 's' : ''}</li>
+                      <li>• {txCount} transaction{txCount !== 1 ? 's' : ''} (achats, ventes, dividendes)</li>
+                      <li>• Tous les P&L latent et réalisé de ce portefeuille</li>
+                      <li>• Tous les graphiques et statistiques associés</li>
+                    </ul>
+                    <p className="text-xs font-semibold text-red-400 mt-3">
+                      ⚠️ Cette action est irréversible. Les données supprimées ne peuvent pas être récupérées.
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setDeletePortfolioConfirm(null)}
+                      className="flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all"
+                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "var(--bg-base)" }}>
+                      Annuler
+                    </button>
+                    <button onClick={confirmDeletePortfolio}
+                      className="flex-1 rounded-lg px-3 py-2.5 text-xs font-semibold text-white transition-all hover:opacity-90"
+                      style={{ backgroundColor: "#ef4444" }}>
+                      Supprimer définitivement
                     </button>
                   </div>
                 </div>

@@ -167,11 +167,56 @@ export async function updateCashBalance(portfolioId: string, cash: CashBalance) 
   return !error
 }
 
-export async function deletePortfolio(id: string) {
+/**
+ * Delete a portfolio and ALL its related data transactionally.
+ * Deletes: transactions, assets, and portfolio itself.
+ * DOES NOT delete global cash/revenues (these are shared across portfolios).
+ * Returns {ok: true} on success, {ok: false, error: string} on failure.
+ */
+export async function deletePortfolio(id: string): Promise<{ ok: boolean; error?: string }> {
   const sb = createClient()
-  if (!sb) return false
-  const { error } = await sb.from("portfolios").delete().eq("id", id)
-  return !error
+  if (!sb) return { ok: false, error: "Supabase not configured" }
+
+  try {
+    // 1. Delete transactions (they depend on assets)
+    const { error: txErr } = await sb
+      .from("transactions")
+      .delete()
+      .eq("portfolio_id", id)
+
+    if (txErr) {
+      console.error("[deletePortfolio] Error deleting transactions:", txErr)
+      return { ok: false, error: `Failed to delete transactions: ${txErr.message}` }
+    }
+
+    // 2. Delete assets (they belong to portfolio)
+    const { error: assetsErr } = await sb
+      .from("assets")
+      .delete()
+      .eq("portfolio_id", id)
+
+    if (assetsErr) {
+      console.error("[deletePortfolio] Error deleting assets:", assetsErr)
+      return { ok: false, error: `Failed to delete assets: ${assetsErr.message}` }
+    }
+
+    // 3. Delete the portfolio itself
+    const { error: portfolioErr } = await sb
+      .from("portfolios")
+      .delete()
+      .eq("id", id)
+
+    if (portfolioErr) {
+      console.error("[deletePortfolio] Error deleting portfolio:", portfolioErr)
+      return { ok: false, error: `Failed to delete portfolio: ${portfolioErr.message}` }
+    }
+
+    console.log(`[deletePortfolio] Successfully deleted portfolio ${id}`)
+    return { ok: true }
+  } catch (e) {
+    console.error("[deletePortfolio] Exception:", e)
+    return { ok: false, error: String(e) }
+  }
 }
 
 // ─── Assets ───────────────────────────────────────────────────────────────────

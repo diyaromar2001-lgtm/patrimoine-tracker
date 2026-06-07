@@ -43,7 +43,14 @@ export function usePortfolios() {
 
   async function removePortfolio(id: string) {
     setPortfolios(prev => prev.filter(p => p.id !== id))
-    if (isSupabaseConfigured) await Q.deletePortfolio(id)
+    if (isSupabaseConfigured) {
+      const result = await Q.deletePortfolio(id)
+      if (!result.ok) {
+        console.error("[removePortfolio] Failed to delete portfolio:", result.error)
+        // Reload to restore the deleted portfolio
+        await reload()
+      }
+    }
   }
 
   async function addAsset(portfolioId: string, asset: Omit<Asset, "currentPrice">) {
