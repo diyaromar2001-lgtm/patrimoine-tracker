@@ -1430,11 +1430,14 @@ export default function PortfoliosPage() {
                       .filter(t => t.portfolioId === activePortfolio.id && t.type === "sell")
                       .reduce((s,t) => s + ((t.realizedPnlChf ?? 0) * ur2), 0)
                     const pnlTotal = pnlLatent + pnlRealized
-                    // P&L % must include both latent AND realized
-                    // Formula: (pnlLatent + pnlRealized) / investedChf × 100
-                    const investedChf = metrics.investedChf
-                    const pctTotal = investedChf > 0 ? (pnlTotal / investedChf) * 100 : 0
-                    const pctLatent = investedChf > 0 ? (pnlLatent / investedChf) * 100 : 0
+                    // P&L % MUST use HISTORICAL CAPITAL INVESTED (all buy transactions), not remaining cost_basis
+                    // metrics.investedChf is only remaining cost basis for open positions
+                    // We need: sum of ALL buy transactions (including those partially/fully sold)
+                    const historyBuyCostChf = transactions
+                      .filter(t => t.portfolioId === activePortfolio.id && t.type === "buy")
+                      .reduce((s, t) => s + (t.netAmountChf ?? 0), 0)
+                    const pctTotal = historyBuyCostChf > 0 ? (pnlTotal / historyBuyCostChf) * 100 : 0
+                    const pctLatent = historyBuyCostChf > 0 ? (pnlLatent / historyBuyCostChf) * 100 : 0
                     return (
                       <>
                         <div className="text-right">
