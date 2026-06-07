@@ -580,10 +580,31 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }
 
   async function removeTransaction(id: string) {
+    // Optimistic: remove from UI immediately
+    const txToRemove = transactions.find(t => t.id === id)
     setTransactions(prev => prev.filter(t => t.id !== id))
+
     if (isSupabaseConfigured) {
-      try { await Q.deleteTransaction(id) }
-      catch (e) { console.error("[AppData] removeTransaction failed:", e); await refresh() }
+      try {
+        // Delete transaction AND recalculate affected asset in one atomic operation
+        const result = await Q.deleteTransactionAndRecalculate(id)
+        if (!result.ok) {
+          // Revert optimistic update on error
+          if (txToRemove) {
+            setTransactions(prev => [txToRemove, ...prev])
+          }
+          console.error("[AppData] removeTransaction failed:", result.error)
+          return
+        }
+        // Success: refresh to get recalculated assets and global cash
+        await refresh()
+      } catch (e) {
+        // Revert optimistic update on exception
+        if (txToRemove) {
+          setTransactions(prev => [txToRemove, ...prev])
+        }
+        console.error("[AppData] removeTransaction exception:", e)
+      }
     }
   }
 

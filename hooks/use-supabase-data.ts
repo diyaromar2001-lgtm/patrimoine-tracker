@@ -137,8 +137,18 @@ export function useTransactions() {
   async function removeTransaction(id: string) {
     setTransactions(prev => prev.filter(t => t.id !== id))
     if (isSupabaseConfigured) {
-      try { await Q.deleteTransaction(id) }
-      catch (e) { console.error("[useTransactions] removeTransaction failed:", e); reload() }
+      try {
+        const result = await Q.deleteTransactionAndRecalculate(id)
+        if (!result.ok) {
+          console.error("[useTransactions] removeTransaction failed:", result.error)
+          await reload()
+        } else {
+          await reload()
+        }
+      } catch (e) {
+        console.error("[useTransactions] removeTransaction exception:", e)
+        await reload()
+      }
     }
   }
 

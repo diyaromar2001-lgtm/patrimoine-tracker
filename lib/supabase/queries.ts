@@ -312,11 +312,90 @@ export async function updateTransaction(id: string, tx: Partial<Omit<Transaction
   return !error
 }
 
-export async function deleteTransaction(id: string) {
+/**
+ * Delete a transaction AND recalculate the affected asset.
+ * Returns {ok: true} on success, or {ok: false, error: string} if validation fails.
+ */
+export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok: boolean; error?: string }> {
   const sb = createClient()
-  if (!sb) return false
-  const { error } = await sb.from("transactions").delete().eq("id", id)
-  return !error
+  if (!sb) return { ok: false, error: "Supabase not configured" }
+
+  try {
+    // 1. Fetch the transaction to delete (to know which asset to recalculate)
+    const { data: tx, error: fetchErr } = await sb
+      .from("transactions")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    if (fetchErr || !tx) {
+      return { ok: false, error: "Transaction not found" }
+    }
+
+    // 2. Delete the transaction
+    const { error: deleteErr } = await sb.from("transactions").delete().eq("id", id)
+    if (deleteErr) {
+      return { ok: false, error: `Delete failed: ${deleteErr.message}` }
+    }
+
+    // 3. If this was a buy/sell (not cash-related), recalculate the asset
+    if (tx.asset_id && ["buy", "sell"].includes(tx.type)) {
+      // Fetch all remaining transactions for this asset to recalculate qty/avgPrice/costBasis
+      const { data: remainingTx, error: txErr } = await sb
+        .from("transactions")
+        .select("*")
+        .eq("asset_id", tx.asset_id)
+        .in("type", ["buy", "sell"])
+        .order("date", { ascending: true })
+
+      if (txErr) {
+        console.error("[deleteTransactionAndRecalculate] Error fetching remaining transactions:", txErr)
+        return { ok: false, error: "Failed to recalculate asset" }
+      }
+
+      // Reconstruct asset metrics from remaining transactions
+      let newQty = 0
+      let totalCostChf = 0
+      let buyCount = 0
+      let buyCostSum = 0
+
+      for (const t of remainingTx || []) {
+        if (t.type === "buy") {
+          newQty += Number(t.quantity)
+          totalCostChf += Number(t.net_amount_chf ?? 0)
+          buyCount += 1
+          buyCostSum += Number(t.quantity) * Number(t.price)
+        } else if (t.type === "sell") {
+          newQty -= Number(t.quantity)
+        }
+      }
+
+      // Calculate weighted avg buy price (for remaining qty)
+      const newAvgBuyPrice = buyCount > 0 && buyCostSum > 0 ? buyCostSum / buyCount : 0
+
+      // Update the asset
+      const { error: updateErr } = await sb
+        .from("assets")
+        .update({
+          quantity: Math.max(0, newQty),
+          avg_buy_price: newAvgBuyPrice,
+          cost_basis_chf: Math.max(0, totalCostChf),
+          cost_basis_source: "computed",
+          cost_basis_updated_at: new Date().toISOString(),
+        })
+        .eq("id", tx.asset_id)
+
+      if (updateErr) {
+        console.error("[deleteTransactionAndRecalculate] Error updating asset:", updateErr)
+        return { ok: false, error: "Failed to update asset metrics" }
+      }
+    }
+
+    return { ok: true }
+  } catch (e) {
+    console.error("[deleteTransactionAndRecalculate] Exception:", e)
+    return { ok: false, error: String(e) }
+  }
 }
 // ─── Asset upsert from transaction ────────────────────────────────────────────
 
