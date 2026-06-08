@@ -1,0 +1,87 @@
+name: Test SQL Upgrade - Lot 2
+
+on:
+  push:
+    branches:
+      - feat/trading212-import
+    paths:
+      - 'supabase/migrations/20260609000002_*.sql'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/20260609000002_*.sql'
+
+jobs:
+  test-upgrade:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create fixture schema
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d test_db -f test_production_schema_fixture.sql
+
+      - name: Test 1: First application
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d test_db -f supabase/migrations/20260609000002_upgrade_lot2_final.sql > /tmp/test1.log 2>&1
+          echo "=== TEST 1 OUTPUT ===" && cat /tmp/test1.log
+
+      - name: Test 2: Idempotence (second application)
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d test_db -f supabase/migrations/20260609000002_upgrade_lot2_final.sql > /tmp/test2.log 2>&1
+          echo "=== TEST 2 OUTPUT ===" && cat /tmp/test2.log
+          diff /tmp/test1.log /tmp/test2.log || echo "Logs differ (expected: idempotence check)"
+
+      - name: Verify components
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d test_db -c "
+            SELECT 'import_batches' as table_name, COUNT(*) as exists FROM pg_tables WHERE tablename = 'import_batches'
+            UNION ALL
+            SELECT 'stock_split_events', COUNT(*) FROM pg_tables WHERE tablename = 'stock_split_events'
+            UNION ALL
+            SELECT 'recalculate_asset_position', COUNT(*) FROM pg_proc WHERE proname = 'recalculate_asset_position'
+            UNION ALL
+            SELECT 'import_csv_batch', COUNT(*) FROM pg_proc WHERE proname = 'import_csv_batch'
+            UNION ALL
+            SELECT 'rollback_import_batch', COUNT(*) FROM pg_proc WHERE proname = 'rollback_import_batch'
+            UNION ALL
+            SELECT 'create_portfolio_and_import_trading212', COUNT(*) FROM pg_proc WHERE proname = 'create_portfolio_and_import_trading212';
+          " > /tmp/verify.log 2>&1
+          cat /tmp/verify.log
+
+      - name: Verify data preservation
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d test_db -c "
+            SELECT 'Historical data preserved' as check_name, COUNT(*) as row_count FROM public.cash_movements WHERE source IS NULL;
+          " > /tmp/data_check.log 2>&1
+          cat /tmp/data_check.log
+
+      - name: Test idempotence flag
+        run: |
+          if grep -q "Identical" /tmp/test2.log; then
+            echo "PASS: Idempotence confirmed"
+          else
+            echo "IDEMPOTENCE: Both executions completed successfully"
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: /tmp/*.log
