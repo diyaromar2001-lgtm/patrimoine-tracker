@@ -8,7 +8,7 @@ interface ImportResult {
 }
 
 export function usePortfolioImport() {
-  const { addPortfolio } = useAppData()
+  const { addPortfolio, removePortfolio } = useAppData()
   const supabase = createClient()
 
   const importTrading212CSV = useCallback(
@@ -31,43 +31,54 @@ export function usePortfolioImport() {
         throw new Error("Impossible de créer le portefeuille")
       }
 
-      // Step 2: Get file checksum (already computed by parser)
-      // We'll use the file name and size as a simple checksum for now
-      const fileChecksum = await computeFileChecksum(file)
+      try {
+        // Step 2: Get file checksum
+        const fileChecksum = await computeFileChecksum(file)
 
-      // Step 3: Call RPC import_csv_batch
-      if (!supabase) {
-        throw new Error("Supabase client not available")
-      }
+        // Step 3: Call RPC import_csv_batch
+        if (!supabase) {
+          throw new Error("Supabase client not available")
+        }
 
-      const { data, error } = await supabase.rpc("import_csv_batch", {
-        p_portfolio_id: portfolioId,
-        p_broker: "trading_212",
-        p_filename: file.name,
-        p_file_checksum: fileChecksum,
-        p_operations: operations,
-      })
+        const { data, error } = await supabase.rpc("import_csv_batch", {
+          p_portfolio_id: portfolioId,
+          p_broker: "trading_212",
+          p_filename: file.name,
+          p_file_checksum: fileChecksum,
+          p_operations: operations,
+        })
 
-      if (error) {
-        console.error("Import RPC error:", error)
-        throw new Error(`Import failed: ${error.message}`)
-      }
+        if (error) {
+          console.error("Import RPC error:", error)
+          throw new Error(`Import failed: ${error.message}`)
+        }
 
-      if (!data || !data[0]) {
-        throw new Error("Import returned no result")
-      }
+        if (!data || !data[0]) {
+          throw new Error("Import returned no result")
+        }
 
-      const result = data[0]
-      if (!result.success) {
-        throw new Error(result.error_message || "Import failed")
-      }
+        const result = data[0]
+        if (!result.success) {
+          throw new Error(result.error_message || "Import failed")
+        }
 
-      return {
-        portfolioId,
-        batchId: result.batch_id,
+        return {
+          portfolioId,
+          batchId: result.batch_id,
+        }
+      } catch (error) {
+        // Atomic compensation: delete created portfolio if import fails
+        console.error("Import failed, rolling back portfolio creation:", error)
+        try {
+          await removePortfolio(portfolioId)
+        } catch (rollbackError) {
+          console.error("Failed to rollback portfolio:", rollbackError)
+          // Still throw original error
+        }
+        throw error
       }
     },
-    [addPortfolio, supabase]
+    [addPortfolio, removePortfolio, supabase]
   )
 
   return { importTrading212CSV }
