@@ -7,3 +7,16 @@ node_modules/
 .DS_Store
 dist/
 .turbo/
+
+# Lot 3 test artifacts
+LOT3_COMPLETION_SUMMARY.txt
+LOT3_*.md
+BROWSER_E2E_TEST_PLAN.md
+
+# Temporary test files
+scripts/test-*.js
+*.local.csv
+
+# Logs containing tokens or secrets
+*.log
+.env.local
