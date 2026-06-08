@@ -9,6 +9,8 @@ import { Tooltip, METRIC_TOOLTIPS } from "@/components/ui/tooltip"
 import { InsightsWidget } from "@/components/ui/insights-widget"
 import { AssetSearch } from "@/components/ui/asset-search"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
+import { PortfolioCreationModal } from "@/components/ui/portfolio-creation-modal"
+import { usePortfolioImport } from "@/hooks/use-portfolio-import"
 import { AreaChart } from "@/components/charts/area-chart"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { usePortfolioHistory } from "@/hooks/use-portfolio-history"
@@ -661,8 +663,10 @@ export default function PortfoliosPage() {
   } = useAppData()
   // setPortfolios not available in AppData — mutations are reflected automatically
   const setPortfolios = (_: unknown) => {} // noop placeholder
+  const { importTrading212CSV } = usePortfolioImport()
   const [activeTab, setActiveTab] = useState("global")
   const [txModal, setTxModal]     = useState<{ defaultPortfolioId?: string; initial?: TransactionFormData } | null>(null)
+  const [showPortfolioCreation, setShowPortfolioCreation] = useState(false)
 
   function openTxModal(portfolioId?: string) {
     setTxModal({ defaultPortfolioId: portfolioId ?? portfolios[0]?.id ?? "" })
@@ -752,10 +756,6 @@ export default function PortfoliosPage() {
   }
   const [period,     setPeriod]     = useState<Period>("1Y")
   const [chartMode,  setChartMode]  = useState<"valeur" | "performance">("valeur")
-  const [showNewPortfolio, setShowNewPortfolio] = useState(false)
-  const [newName,    setNewName]    = useState("")
-  const [newDesc,    setNewDesc]    = useState("")
-  const [newColor,   setNewColor]   = useState("#3b82f6")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   const allTickers = portfolios.flatMap(p => p.assets.filter(a => a.assetClass !== "cash").map(a => a.ticker))
@@ -864,14 +864,23 @@ export default function PortfoliosPage() {
   const best  = moversData[0]
   const worst = moversData[moversData.length - 1]
 
-  async function handleAddPortfolio() {
-    if (!newName.trim()) return
+  async function handleAddPortfolioManual(name: string, desc: string, color: string) {
     const id = await dbAddPortfolio({
-      name: newName.trim(), description: newDesc.trim(),
-      color: newColor, currency: "CHF", cashBalances: { CHF: 0, USD: 0, EUR: 0 }, createdAt: new Date().toISOString().slice(0, 10),
+      name, description: desc,
+      color, currency: "CHF", cashBalances: { CHF: 0, USD: 0, EUR: 0 }, createdAt: new Date().toISOString().slice(0, 10),
     })
     if (id) setActiveTab(id)
-    setNewName(""); setNewDesc(""); setShowNewPortfolio(false)
+  }
+
+  async function handleAddPortfolioWithImport(
+    name: string,
+    file: File,
+    analysis: any,
+    operations: any[]
+  ) {
+    const result = await importTrading212CSV(name, file, operations)
+    setActiveTab(result.portfolioId)
+    return result
   }
 
   async function handleAddAsset(portfolioId: string, result: SearchResult) {
@@ -1008,7 +1017,7 @@ export default function PortfoliosPage() {
 
           {/* New portfolio */}
           <button
-            onClick={() => setShowNewPortfolio(true)}
+            onClick={() => setShowPortfolioCreation(true)}
             className="flex items-center gap-1.5 px-4 py-3.5 text-sm font-medium text-zinc-500 hover:text-zinc-200 transition-colors whitespace-nowrap"
           >
             <Plus className="h-3.5 w-3.5" /> Nouveau
@@ -1954,56 +1963,13 @@ export default function PortfoliosPage() {
         })()}
       </AnimatePresence>
 
-      {/* ─── New portfolio modal ─── */}
-      <AnimatePresence>
-        {showNewPortfolio && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
-            onClick={() => setShowNewPortfolio(false)}>
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md rounded-2xl border p-6"
-              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Nouveau portefeuille</h3>
-                <button onClick={() => setShowNewPortfolio(false)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
-                  <X className="h-4 w-4 text-zinc-500" />
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Nom *</label>
-                  <input type="text" placeholder="Ex: Actions Long Terme" value={newName} onChange={e => setNewName(e.target.value)}
-                    className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Description</label>
-                  <input type="text" placeholder="Stratégie, objectif…" value={newDesc} onChange={e => setNewDesc(e.target.value)}
-                    className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none"
-                    style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Couleur</label>
-                  <div className="flex gap-2">
-                    {["#3b82f6","#22c55e","#a78bfa","#f59e0b","#ef4444","#ec4899","#14b8a6"].map(c => (
-                      <button key={c} onClick={() => setNewColor(c)}
-                        className="h-7 w-7 rounded-full transition-transform hover:scale-110"
-                        style={{ backgroundColor: c, outline: newColor === c ? "2px solid white" : "none", outlineOffset: "2px" }} />
-                    ))}
-                  </div>
-                </div>
-                <button onClick={handleAddPortfolio}
-                  className="w-full rounded-lg py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-all"
-                  style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}>
-                  Créer le portefeuille
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ─── Portfolio Creation Modal (Manual + CSV Import) ─── */}
+      <PortfolioCreationModal
+        open={showPortfolioCreation}
+        onClose={() => setShowPortfolioCreation(false)}
+        onCreateManual={handleAddPortfolioManual}
+        onCreateWithImport={handleAddPortfolioWithImport}
+      />
     </div>
   )
 }
