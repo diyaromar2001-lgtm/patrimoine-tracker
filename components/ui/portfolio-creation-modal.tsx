@@ -262,13 +262,24 @@ function ImportProgress({
 
       {status === "progress" && (
         <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
-          <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.3 }}
-            className="h-full"
-            style={{ background: "linear-gradient(90deg, #3b82f6, #22c55e)" }}
-          />
+          {progress === 0 ? (
+            // Indeterminate progress: animated shimmer when progress is 0
+            <motion.div
+              className="h-full w-1/3"
+              animate={{ x: ["0%", "200%"] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              style={{ background: "linear-gradient(90deg, #3b82f6, #22c55e)" }}
+            />
+          ) : (
+            // Determinate progress: fills to percentage if progress > 0
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.3 }}
+              className="h-full"
+              style={{ background: "linear-gradient(90deg, #3b82f6, #22c55e)" }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -401,7 +412,7 @@ export function PortfolioCreationModal({
 
     setSelectedFile(file)
     setImportMessage("Analyse du fichier…")
-    setImportProgress(25)
+    setImportProgress(0) // Indeterminate: 0 means no progress bar percent
 
     try {
       // Read file content and parse it
@@ -447,7 +458,7 @@ export function PortfolioCreationModal({
       setAnalysis(anal)
       setOperations(ops)
       setImportStep("analyze")
-      setImportProgress(100)
+      setImportProgress(0) // Analysis complete, move to next step
     } catch (e) {
       setImportError(`Erreur lors de l'analyse: ${e instanceof Error ? e.message : "inconnu"}`)
       setImportStep("error")
@@ -658,8 +669,8 @@ export function PortfolioCreationModal({
                       onClick={async () => {
                         if (!selectedFile || !analysis) return
                         setImportStep("progress")
-                        setImportProgress(10)
-                        setImportMessage("Création du portefeuille…")
+                        setImportProgress(0) // Indeterminate - single RPC call
+                        setImportMessage("Création du portefeuille et import en cours…")
 
                         try {
                           const results = await onCreateWithImport(
@@ -669,7 +680,7 @@ export function PortfolioCreationModal({
                             operations
                           )
 
-                          setImportProgress(100)
+                          setImportProgress(0) // Still indeterminate
                           setImportMessage("Import réussi!")
                           setImportResults({
                             portfolioId: results.portfolioId,
