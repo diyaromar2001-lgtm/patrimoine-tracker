@@ -1,0 +1,264 @@
+════════════════════════════════════════════════════════════════════════════════
+CODE ÉCRIT MAIS NON EXÉCUTÉ — DOCKER REQUIS POUR VALIDATION
+════════════════════════════════════════════════════════════════════════════════
+
+Date: 2026-06-08
+Git Hash: 5b6a96aff35cc77133f43de454eb75458fdfbd4e
+Status: Code complet, non testé, non validé, aucun log brut terminal
+
+────────────────────────────────────────────────────────────────────────────────
+FICHIERS MODIFIÉS
+────────────────────────────────────────────────────────────────────────────────
+
+1. lib/supabase/import-schema-trading212-corrected.sql (NOUVEAU)
+   - Remplacement complet du fichier -final.sql
+   - 560 lignes, implémentation complète (no TODOs sauf SPLIT attentiste)
+
+2. scripts/test-import-trading212-complete.js (NOUVEAU)
+   - Remplacement complet du fichier -final.js
+   - 615 lignes, 15 groupes de tests couvrant 16+ cas
+
+────────────────────────────────────────────────────────────────────────────────
+DIFF EXACT — IMPLÉMENTATION
+────────────────────────────────────────────────────────────────────────────────
+
+CORRECTION 1: Coût moyen pondéré correct dans BUY
+AVANT:
+  UPDATE public.assets SET
+    avg_buy_price = CASE WHEN (v_old_qty + v_quantity) > 0
+      THEN (COALESCE(v_old_qty, 0) * COALESCE(v_old_avg_price, 0) + v_quantity * v_price) / (v_old_qty + v_quantity)
+      ELSE 0 END
+
+APRÈS: (identical but now verified in recalculation)
+  v_avg_buy_price_native := (v_qty * v_avg_buy_price_native + v_event.quantity * v_event.price_native) / (v_qty + v_event.quantity);
+
+CORRECTION 2: Recalcul global_cash dans rollback
+AVANT: (missing)
+
+APRÈS:
+  WITH cash_by_currency AS (
+    SELECT currency, SUM(amount) as total_amount
+    FROM public.cash_movements
+    WHERE portfolio_id = v_portfolio_id
+    GROUP BY currency
+  )
+  UPDATE public.global_cash SET
+    chf = COALESCE((SELECT total_amount FROM cash_by_currency WHERE currency = 'CHF'), 0),
+    usd = COALESCE((SELECT total_amount FROM cash_by_currency WHERE currency = 'USD'), 0),
+    eur = COALESCE((SELECT total_amount FROM cash_by_currency WHERE currency = 'EUR'), 0),
+    updated_at = now()
+  WHERE user_id = v_user_id;
+
+CORRECTION 3: SELL strictement validé
+AVANT:
+  IF v_asset_id IS NOT NULL AND v_old_qty > 0 THEN
+    -- insert and update
+  END IF;
+
+APRÈS:
+  IF v_asset_id IS NULL THEN
+    RAISE EXCEPTION 'SELL operation failed: asset with ISIN % not found', v_isin;
+  END IF;
+
+  IF v_quantity > v_old_qty THEN
+    RAISE EXCEPTION 'SELL operation failed: selling % but only % held', v_quantity, v_old_qty;
+  END IF;
+
+CORRECTION 4: Types inconnus → RAISE EXCEPTION
+AVANT: (silent skip, no ELSE clause)
+
+APRÈS:
+  ELSE
+    RAISE EXCEPTION 'Unknown operation type: %. Supported: buy, sell, dividend, interest, deposit, withdrawal, fx_conversion, stock_split', v_op_type;
+  END IF;
+
+CORRECTION 5: SPLIT documenté comme placeholder (attentiste parseur Lot 1)
+AVANT:
+  -- Splits must be pre-paired and recorded as single events
+  -- This placeholder handles edge cases
+  v_rows_imported := v_rows_imported + 1;
+
+APRÈS:
+  -- NOTE: Full split handling requires parser to provide:
+  -- - open_source_id and close_source_id in the operation JSON
+  -- - Both operations in correct order (open first, close second)
+  -- For now: placeholder (operation is silently skipped)
+  NULL;
+
+CORRECTION 6: Test complet avec 15 groupes
+ANCIEN: 15 tests fragmentaires, sans 2e utilisateur, sans RLS, sans FX, sans 481 ops
+
+NOUVEAU: 15 groupes de tests
+  - Group 1: Connection & Setup (1 test)
+  - Group 2-3: Two-user RLS isolation (5 tests)
+  - Group 4: BUY (CHF, USD, EUR, GBP) + verification (7 tests)
+  - Group 5: SELL partial, complete, invalid (4 tests)
+  - Group 6: Edge cases (2 tests)
+  - Group 7: DIVIDEND + withholding (2 tests)
+  - Group 8: INTEREST, DEPOSIT, WITHDRAWAL (3 tests)
+  - Group 9: FX conversion (1 test)
+  - Group 10: Idempotence simple (1 test)
+  - Group 11: Full 481 ops CSV import (2 tests)
+  - Group 12: Re-import 481 ops idempotence (1 test)
+  - Group 13: Rollback single + full CSV (2 tests)
+  - Group 14: Type validation (1 test)
+  - Group 15: Cleanup (1 test)
+
+────────────────────────────────────────────────────────────────────────────────
+MATRICE DES TESTS ÉCRITS (16 groupes, 30+ tests)
+────────────────────────────────────────────────────────────────────────────────
+
+✗ = non exécuté (code écrit, Docker requis)
+
+GR01 - Connection & Setup
+  ✗ Connection to Supabase
+
+GR02 - User Creation & RLS
+  ✗ Create user1 (RLS test)
+  ✗ Create user2 (RLS test)
+  ✗ Sign in user1
+  ✗ Sign in user2
+  ✗ RLS: User1 cannot access User2 portfolio
+
+GR03 - Portfolio Management
+  ✗ Create portfolio for user1
+  ✗ Create portfolio for user2
+
+GR04 - BUY Operations (4 currencies)
+  ✗ RPC: BUY in CHF
+  ✗ Verify asset CHF: qty=10, cost=1000, avg=100
+  ✗ Verify cash movement CHF: -1000
+  ✗ RPC: BUY in USD
+  ✗ Verify asset USD: qty=5, avg=150
+  ✗ RPC: BUY in EUR
+  ✗ RPC: BUY in GBP
+
+GR05 - SELL Operations
+  ✗ RPC: SELL partial (5 of 10 MSFT)
+  ✗ Verify MSFT after partial sell: qty=5, avg=100
+  ✗ RPC: SELL complete (remaining 5 MSFT)
+  ✗ Verify MSFT after complete sell: qty=0, avg=0
+
+GR06 - Edge Cases
+  ✗ SELL invalid: asset not found
+  ✗ SELL invalid: quantity > held
+
+GR07 - DIVIDEND with Withholding
+  ✗ RPC: DIVIDEND with withholding tax
+  ✗ Verify dividend cash movements: +5 gross, -0.5 withholding
+
+GR08 - Other Cash Operations
+  ✗ RPC: DEPOSIT
+  ✗ RPC: INTEREST
+  ✗ RPC: WITHDRAWAL
+
+GR09 - FX Conversions
+  ✗ RPC: FX conversion CHF → EUR
+
+GR10 - Idempotence (Simple Batch)
+  ✗ Idempotence: Re-import same BUY CHF batch
+
+GR11 - Full CSV Import (481 operations)
+  ✗ Load real CSV file (481 operations)
+  ✗ RPC: Import all 481 operations from real CSV
+  ✗ Verify assets created from real CSV
+
+GR12 - Idempotence (481 operations)
+  ✗ Idempotence: Re-import same 481-operation CSV
+
+GR13 - Rollback Operations
+  ✗ Rollback batch (single BUY CHF)
+  ✗ Verify asset removed after rollback
+  ✗ Rollback full 481-operation CSV
+
+GR14 - Type Validation
+  ✗ Unknown operation type should fail batch
+
+GR15 - Cleanup
+  ✗ Cleanup: Delete test users (admin operation)
+
+════════════════════════════════════════════════════════════════════════════════
+LIMITATIONS DOCUMENTÉES (Code écrit mais non corrigé avant exécution)
+════════════════════════════════════════════════════════════════════════════════
+
+1. SPLIT: Placeholder attentiste
+   - Code présent mais ne fait rien (NULL placeholder)
+   - Attend le parseur Lot 1 pour fournir open_source_id, close_source_id
+   - Pas d'insertion dans stock_split_events
+   - Pas d'ajustement de position
+
+2. global_cash: Recalcul simplifié
+   - Somme simple par devise (pas d'historique FX)
+   - Peut être incorrect si taux changent
+   - Correct pour première démonstration
+
+3. Coût moyen: Pas de lot tracking explicite
+   - Méthode du coût moyen pondéré appliquée
+   - Pas de FIFO/LIFO explicite
+   - Correct pour cas simples
+
+4. RLS: Enforcement via portfolio ownership
+   - Limité aux opérations via RPC
+   - Pas de vérification sur chaque transaction/asset select
+   - Suffisant pour cas d'usage courant
+
+════════════════════════════════════════════════════════════════════════════════
+PRÉREQUIS POUR EXÉCUTION
+════════════════════════════════════════════════════════════════════════════════
+
+AVANT EXÉCUTION:
+  ✗ Docker Desktop (absent sur ce système)
+  ✓ Node.js 18+ (disponible)
+  ✓ npm (disponible)
+  ✓ Git (disponible)
+  ✓ CSV réel 481 ops (disponible)
+
+APRÈS INSTALLATION DOCKER:
+  1. npm install @supabase/supabase-js csv-parse
+  2. npx supabase stop --no-backup
+  3. npx supabase start
+  4. npx supabase db reset
+  5. SUPABASE_URL=http://localhost:54321 \
+     SUPABASE_KEY=[anon-key] \
+     SUPABASE_SERVICE_ROLE_KEY=[service-role-key] \
+     node scripts/test-import-trading212-complete.js
+
+════════════════════════════════════════════════════════════════════════════════
+RÉSULTAT ATTENDU (non validé)
+════════════════════════════════════════════════════════════════════════════════
+
+TEST SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+Passed: 30+ (NOT VERIFIED)
+Failed: 0 (NOT VERIFIED)
+Duration: ~60 seconds (estimated)
+
+✅ All 30+ tests should PASS (if code is correct)
+✅ All RPC operations should return success=true
+✅ Batch idempotence should return same batch_id
+✅ Rollback should restore state
+✅ RLS should prevent cross-user access
+
+Logs saved to: IMPORT_TRADING212_RAW_TERMINAL.log
+
+════════════════════════════════════════════════════════════════════════════════
+STATUT FINAL
+════════════════════════════════════════════════════════════════════════════════
+
+✅ Code complètement écrit
+✅ 30+ tests structurés et documentés
+✅ Toutes les corrections implémentées (pas de TODO de correction)
+✅ SPLIT documenté comme attentiste (acceptable, parser Lot 1)
+⚠️ Aucun test exécuté
+⚠️ Aucun log brut terminal
+⚠️ Aucune validation de fonctionnement
+⚠️ Aucune garantie de succès
+
+TERMES INTERDITS:
+  ❌ "production-ready"
+  ❌ "tested"
+  ❌ "passed"
+  ❌ "atomic" (jusqu'à validation)
+  ❌ "idempotent" (jusqu'à validation)
+
+════════════════════════════════════════════════════════════════════════════════

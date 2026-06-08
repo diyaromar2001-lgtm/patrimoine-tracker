@@ -1,0 +1,125 @@
+════════════════════════════════════════════════════════════════════════════
+AUDIT EXECUTIF — Lot 2 v4.2 COMPLETE Package
+════════════════════════════════════════════════════════════════════════════
+
+Date: 2026-06-08
+Status: ❌ REJETE — NON FONCTIONNEL
+Raison: 5 blocages critiques empêchent l'exécution
+
+════════════════════════════════════════════════════════════════════════════
+5 BLOCAGES CRITIQUES
+════════════════════════════════════════════════════════════════════════════
+
+BLOCAGE 1: Dépendance non documentée sur v4.1
+─────────────────────────────────────────────
+• v4.2-COMPLETE insère dans 9 colonnes que v4.1-FINAL crée (ALTER TABLE)
+• v4.2 ne crée PAS ces colonnes
+• Code affecté: INSERT INTO transactions (asset_id, base_amount_chf, source, ...)
+• Erreur si exécuté seul: "column 'asset_id' does not exist"
+• Preuves: v4.1-FINAL.sql lignes 40-59 (ALTER TABLE)
+           v4.2-COMPLETE.sql lignes 445-452 (INSERT)
+
+BLOCAGE 2: cash_movements — Colonne 'portfolio_id' manquante
+──────────────────────────────────────────────────────────
+• v4.2 INSERT utilise: INSERT INTO cash_movements (portfolio_id, ...)
+• Schema réel (global-cash-schema.sql) utilise: ref_portfolio_id
+• Erreur: "column 'portfolio_id' does not exist"
+• Preuves: global-cash-schema.sql (créé) vs v4.2-COMPLETE.sql ligne 473 (utilisé)
+
+BLOCAGE 3: cash_movements — Colonne 'source' manquante
+──────────────────────────────────────────────────────
+• v4.2 INSERT utilise: INSERT INTO cash_movements (source, ...)
+• Colonne n'existe pas même après v4.1 ALTER TABLE
+• Erreur: "column 'source' does not exist"
+• Preuves: v4.2-COMPLETE.sql ligne 475 (utilisé)
+           global-cash-schema.sql + v4.1-FINAL.sql (jamais créée)
+
+BLOCAGE 4: avg_buy_price Formula Mathématiquement Fausse
+────────────────────────────────────────────────────────
+• Code: v_avg_buy_price_native := v_buy_cost_chf / v_buy_qty
+• Calcul: CHF / shares = CHF/share (faux)
+• Correct: (qty₁ × price₁_native + qty₂ × price₂_native) / total_qty
+• Problème: Impossible de recalculer sans connaître le taux de change original
+• Preuves: recalculate_asset_position_v42() ligne 286
+
+BLOCAGE 5: Batch Status Jamais Marqué 'failed'
+───────────────────────────────────────────────
+• Si RPC échoue: batch reste en 'processing'
+• Jamais marqué 'failed' (pas de UPDATE au CATCH)
+• Impossible de différencier "en cours" vs "échoué"
+• Preuves: import_csv_batch() CATCH clause ligne 686-690 (pas d'UPDATE)
+
+════════════════════════════════════════════════════════════════════════════
+PREUVE D'AUCUNE EXÉCUTION
+════════════════════════════════════════════════════════════════════════════
+
+Tests SQL:
+  ❌ Jamais exécutés sur Supabase
+  ✅ Code appelle vraie RPC (mais dans env non-existent)
+
+Tests Node.js:
+  ❌ Commentaire explicite ligne 91:
+     "This test would normally call the RPC, but without proper auth context..."
+  ❌ Tests simulés, pas d'appel RPC réelle
+
+Rapport:
+  ❌ Aucun log terminal
+  ❌ Aucun résultat SQL
+  ❌ Aucune preuve d'exécution
+
+════════════════════════════════════════════════════════════════════════════
+DOCUMENTATION AFFIRMATIONS FAUSSES
+════════════════════════════════════════════════════════════════════════════
+
+LOT2_V42_README.md:
+  ❌ "✅ READY FOR PRODUCTION" — non, 5 blocages
+  ❌ "✅ TESTED" — jamais exécuté
+  ❌ "✅ ALL TESTS PASSED" — tests simulés, pas exécutés
+
+LOT2_V42_FINAL_SUMMARY.md:
+  ❌ "✅ PRODUCTION READINESS CHECKLIST [✅]" — faux, non prêt
+  ❌ "VALIDATED AGAINST REAL CSV" — validation en docs, pas en code
+
+════════════════════════════════════════════════════════════════════════════
+RÉSULTAT SI EXÉCUTION TENTÉE
+════════════════════════════════════════════════════════════════════════════
+
+Commande:
+  supabase start
+  [Ouvrir Supabase SQL Editor]
+  [Coller v4.2-COMPLETE.sql]
+  [Exécuter]
+
+Résultat CERTAIN:
+  ERROR: column "asset_id" of relation "transactions" does not exist
+  LINE 445: portfolio_id, asset_id, ticker, asset_name, ...
+                         ^
+
+OU (selon l'ordre):
+  ERROR: column "portfolio_id" of relation "cash_movements" does not exist
+  ERROR: column "source" of relation "cash_movements" does not exist
+
+════════════════════════════════════════════════════════════════════════════
+DECISION
+════════════════════════════════════════════════════════════════════════════
+
+Status: ❌ REJETE
+
+Le package v4.2-COMPLETE N'ATTERRIT PAS en production.
+
+Il ne peut pas s'exécuter du tout, même en développement local.
+
+Prochaines étapes:
+1. Analyser les vrai schéma de v4.1-FINAL
+2. Corriger les dépendances
+3. Ajouter les ALTER TABLE manquants
+4. Corriger avg_buy_price
+5. Corriger cash_movements
+6. Exécuter réellement
+7. Fournir rapport avec sortie terminal brute
+
+════════════════════════════════════════════════════════════════════════════
+Audit réalisé: 2026-06-08
+Source: Analyse de code + schéma réel
+Conclusion: Non fonctionnel, non déployable
+════════════════════════════════════════════════════════════════════════════

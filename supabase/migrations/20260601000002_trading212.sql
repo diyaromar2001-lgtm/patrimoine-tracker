@@ -544,52 +544,8 @@ BEGIN
   v_rows_total := jsonb_array_length(p_operations);
 
   BEGIN
-    -- FIRST PASS: Process stock splits (requires open_source_id and close_source_id in operation JSON)
-    -- Expected format from parser (Lot 1):
-    -- { type: "stock_split", date, ticker, isin, open_source_id, close_source_id,
-    --   qty_before, qty_after, price_before, price_after, sourceId? }
-    -- If sourceId is not provided, use open_source_id as fallback
-    FOR v_idx IN 0..(v_rows_total - 1) LOOP
-      v_op := p_operations -> v_idx;
-      v_op_type := LOWER(COALESCE(v_op ->> 'type', ''));
-
-      IF v_op_type = 'stock_split' THEN
-        v_date := COALESCE((v_op ->> 'date')::date, CURRENT_DATE);
-        v_ticker := COALESCE(v_op ->> 'ticker', '');
-        v_isin := COALESCE(v_op ->> 'isin', '');
-        v_name := COALESCE(v_op ->> 'name', '');
-
-        -- SPLIT PROCESSING: Create stock_split_events entry
-        SELECT id INTO v_asset_id FROM public.assets
-        WHERE portfolio_id = p_portfolio_id AND isin = v_isin LIMIT 1;
-
-        IF v_asset_id IS NOT NULL THEN
-          -- Insert split event (with idempotence on pair of source IDs)
-          INSERT INTO public.stock_split_events (
-            asset_id, portfolio_id, event_date,
-            open_source_id, close_source_id, import_batch_id,
-            qty_before, qty_after, price_before, price_after, cost_basis_chf
-          ) VALUES (
-            v_asset_id, p_portfolio_id, v_date,
-            COALESCE(v_op ->> 'open_source_id', 'SPLIT_' || v_idx),
-            COALESCE(v_op ->> 'close_source_id', 'SPLIT_' || v_idx || '_CLOSE'),
-            v_batch_id,
-            (v_op ->> 'qty_before')::numeric,
-            (v_op ->> 'qty_after')::numeric,
-            (v_op ->> 'price_before')::numeric,
-            (v_op ->> 'price_after')::numeric,
-            COALESCE((SELECT cost_basis_chf FROM public.assets WHERE id = v_asset_id), 0)
-          ) ON CONFLICT (portfolio_id, open_source_id, close_source_id) DO NOTHING;
-
-          -- Recalculate asset position (handles split transformation via chronological replay)
-          PERFORM public.recalculate_asset_position(v_asset_id, p_portfolio_id);
-
-          v_rows_imported := v_rows_imported + 1;
-        END IF;
-      END IF;
-    END LOOP;
-
-    -- SECOND PASS: Process all operations
+    -- FIRST PASS: Process all non-stock-split operations
+    -- This ensures assets are created before stock splits are processed
     FOR v_idx IN 0..(v_rows_total - 1) LOOP
       v_op := p_operations -> v_idx;
 
@@ -600,8 +556,12 @@ BEGIN
       v_name := COALESCE(v_op ->> 'name', '');
       v_source_id := COALESCE(v_op ->> 'sourceId', '');
 
+      -- Skip stock_split in first pass (processed in second pass after assets are created)
+      IF v_op_type = 'stock_split' THEN
+        NULL;  -- Skip for now
+
       -- BUY: Increase qty and cost basis
-      IF v_op_type = 'buy' THEN
+      ELSIF v_op_type = 'buy' THEN
         v_quantity := (v_op ->> 'quantity')::numeric;
         v_price := (v_op ->> 'price')::numeric;
         v_price_currency := v_op ->> 'priceCurrency';
@@ -729,10 +689,32 @@ BEGIN
         v_withholding_tax := COALESCE((v_op ->> 'withholdingTax')::numeric, 0);
         v_dividend_gross_chf := v_total_amount;
 
-        SELECT id INTO v_asset_id FROM public.assets
-        WHERE portfolio_id = p_portfolio_id AND isin = v_isin;
+        -- Handle dividend_adjustment differently: it's a cash-only operation (no asset required)
+        IF v_op_type = 'dividend_adjustment' THEN
+          -- Dividend adjustment is pure cash (tax adjustment, not asset-related)
+          INSERT INTO public.cash_movements (
+            portfolio_id, user_id, type, currency, amount,
+            source, source_external_id, import_batch_id, date
+          ) VALUES (
+            p_portfolio_id, v_user_id, v_op_type, COALESCE(v_total_currency, 'CHF'), v_dividend_gross_chf,
+            p_broker, v_source_id, v_batch_id, v_date
+          ) ON CONFLICT (portfolio_id, source, source_external_id) DO NOTHING;
 
-        IF v_asset_id IS NOT NULL THEN
+          GET DIAGNOSTICS v_inserted = ROW_COUNT;
+          IF v_inserted > 0 THEN
+            v_rows_imported := v_rows_imported + 1;
+          END IF;
+
+        ELSE
+          -- dividend and dividend_tax_exempted: asset-based operations
+          SELECT id INTO v_asset_id FROM public.assets
+          WHERE portfolio_id = p_portfolio_id AND isin = v_isin;
+
+          -- CRITICAL: Dividend without asset must FAIL the batch, not silently skip
+          IF v_asset_id IS NULL THEN
+            RAISE EXCEPTION 'Dividend operation failed: asset with ISIN % not found in portfolio. Ensure security was purchased before dividend date.', v_isin;
+          END IF;
+
           INSERT INTO public.transactions (
             portfolio_id, asset_id, ticker, asset_name, asset_class, type,
             quantity, price, currency, base_amount_chf, source, source_external_id,
@@ -828,6 +810,60 @@ BEGIN
       END IF;
 
     END LOOP;
+
+    -- SECOND PASS: Process stock splits (now that all assets are created)
+    FOR v_idx IN 0..(v_rows_total - 1) LOOP
+      v_op := p_operations -> v_idx;
+      v_op_type := LOWER(COALESCE(v_op ->> 'type', ''));
+
+      IF v_op_type = 'stock_split' THEN
+        v_date := COALESCE((v_op ->> 'date')::date, CURRENT_DATE);
+        v_ticker := COALESCE(v_op ->> 'ticker', '');
+        v_isin := COALESCE(v_op ->> 'isin', '');
+        v_name := COALESCE(v_op ->> 'name', '');
+
+        -- SPLIT PROCESSING: Create stock_split_events entry
+        SELECT id INTO v_asset_id FROM public.assets
+        WHERE portfolio_id = p_portfolio_id AND isin = v_isin LIMIT 1;
+
+        -- CRITICAL: Stock split without asset must FAIL the batch (strict mode)
+        IF v_asset_id IS NULL THEN
+          RAISE EXCEPTION 'Stock split failed: asset with ISIN % not found. Splits require existing position.', v_isin;
+        END IF;
+
+        -- Insert split event (with idempotence on pair of source IDs)
+        INSERT INTO public.stock_split_events (
+          asset_id, portfolio_id, event_date,
+          open_source_id, close_source_id, import_batch_id,
+          qty_before, qty_after, price_before, price_after, cost_basis_chf
+        ) VALUES (
+          v_asset_id, p_portfolio_id, v_date,
+          COALESCE(v_op ->> 'open_source_id', 'SPLIT_' || v_idx),
+          COALESCE(v_op ->> 'close_source_id', 'SPLIT_' || v_idx || '_CLOSE'),
+          v_batch_id,
+          (v_op ->> 'qty_before')::numeric,
+          (v_op ->> 'qty_after')::numeric,
+          (v_op ->> 'price_before')::numeric,
+          (v_op ->> 'price_after')::numeric,
+          COALESCE((SELECT cost_basis_chf FROM public.assets WHERE id = v_asset_id), 0)
+        ) ON CONFLICT (portfolio_id, open_source_id, close_source_id) DO NOTHING;
+
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+        IF v_inserted > 0 THEN
+          -- Recalculate asset position (handles split transformation via chronological replay)
+          PERFORM public.recalculate_asset_position(v_asset_id, p_portfolio_id);
+
+          v_rows_imported := v_rows_imported + 1;
+        END IF;
+      END IF;
+    END LOOP;
+
+    -- CRITICAL: Verify all events were imported
+    -- Mode STRICT: If expected != actual, raise exception to identify missing events
+    IF v_rows_imported != v_rows_total THEN
+      RAISE EXCEPTION 'Import incomplete: expected % logical events, but only % were persisted. Check that assets exist for all dividend operations and no UNIQUE constraint conflicts occurred.', v_rows_total, v_rows_imported;
+    END IF;
 
     -- Mark batch as successful
     UPDATE public.import_batches SET

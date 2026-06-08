@@ -1,0 +1,198 @@
+═════════════════════════════════════════════════════════════════════════════
+ANALYSIS: Why 3 Operations Out of 481 Are Not Imported
+═════════════════════════════════════════════════════════════════════════════
+
+REAL CSV CONTENT (from Lot 1 parser):
+─────────────────────────────────────────────────────────────────────────────
+✅ 332 Market buy
+✅ 5 Limit buy
+───  = 337 total BUY operations
+
+✅ 35 Market sell
+✅ 2 Limit sell
+───  = 37 total SELL operations
+
+✅ 28 Deposit
+✅ 2 Withdrawal
+───  = 30 total CASH operations
+
+⚠️ 19 Dividend (Dividend)
+⚠️ 1 Dividend (Tax exempted)   ← UNHANDLED TYPE
+⚠️ 1 Dividend adjustment        ← UNHANDLED TYPE
+───  = 21 total DIVIDEND operations (3 subtypes)
+
+✅ 54 Interest on cash
+✅ 5 Currency conversion
+───  = 59 total OTHER CASH operations
+
+⚠️ 1 Stock split open           ← NO TRANSACTION CREATED
+⚠️ 1 Stock split close          ← NO TRANSACTION CREATED
+───  = 2 total SPLIT operations
+
+TOTAL CSV ROWS: 481 operations
+
+═════════════════════════════════════════════════════════════════════════════
+ROOT CAUSE: MISSING OPERATION TYPE HANDLERS
+═════════════════════════════════════════════════════════════════════════════
+
+PROBLEM 1: Parser does not map specialized dividend types
+─────────────────────────────────────────────────────────
+Current parser (test-import-trading212-final.js, line 95-102):
+
+  if (actionLower.includes('buy')) type = 'buy';
+  else if (actionLower.includes('sell')) type = 'sell';
+  else if (actionLower.includes('dividend')) type = 'dividend';
+  else if (actionLower.includes('interest')) type = 'interest';
+  ...
+
+Issue: Maps:
+  - "Dividend (Dividend)" → 'dividend' ✅
+  - "Dividend (Tax exempted)" → 'dividend' ⚠️ (wrong type)
+  - "Dividend adjustment" → 'dividend' ⚠️ (wrong type)
+
+Should map:
+  - "Dividend (Dividend)" → 'dividend'
+  - "Dividend (Tax exempted)" → 'dividend_tax_exempted'
+  - "Dividend adjustment" → 'dividend_adjustment'
+
+PROBLEM 2: RPC does not handle specialized dividend types
+──────────────────────────────────────────────────────────
+Current RPC (import-schema-trading212-final.sql, line 723-772):
+
+  ELSIF v_op_type = 'dividend' THEN
+    ... (handles only regular dividend)
+  ELSE
+    RAISE EXCEPTION 'Unknown operation type: %...', v_op_type;
+
+If parser sends 'dividend_tax_exempted' or 'dividend_adjustment':
+  → RPC raises EXCEPTION
+  → ENTIRE BATCH FAILS (atomic rollback)
+  → 0 operations imported
+
+PROBLEM 3: Stock split operations create no transactions
+────────────────────────────────────────────────────────
+Stock splits are processed in first loop (line 556-589) but:
+  - Create entries in stock_split_events table only
+  - Do NOT create transaction rows
+  - Do NOT increment v_rows_imported counter
+  - Result: 2 splits NOT counted as imported operations
+
+═════════════════════════════════════════════════════════════════════════════
+IMPACT ON "478/481 IMPORTED"
+═════════════════════════════════════════════════════════════════════════════
+
+Operations expected to create transactions/cash movements:
+  - BUY: 337 operations → 337 transactions
+  - SELL: 37 operations → 37 transactions
+  - DEPOSIT: 28 operations → 28 cash movements
+  - WITHDRAWAL: 2 operations → 2 cash movements
+  - INTEREST: 54 operations → 54 cash movements
+  - FX: 5 operations → 15 cash movements (3 per operation)
+  - DIVIDEND: 21 operations → 21 transactions (but 3 types!)
+  - SPLIT: 2 operations → 0 transactions (only events!)
+  ────────────────────────────────
+  Total expected rows: 337+37+28+2+54+45+21 = 524 rows (multiple per op)
+
+Expected rows_imported count: 484 (ops that create rows, excluding split events)
+  (337+37+28+2+54+5+21 = 484)
+
+Actual reported: 478/481
+
+Missing: 6 transaction rows OR 3 operations fail entirely
+
+═════════════════════════════════════════════════════════════════════════════
+MOST LIKELY SCENARIO
+═════════════════════════════════════════════════════════════════════════════
+
+If 1 dividend_tax_exempted + 1 dividend_adjustment sent to RPC:
+  → RPC doesn't recognize them
+  → Raises EXCEPTION "Unknown operation type"
+  → ENTIRE BATCH FAILS
+  → Expected: 0 operations imported, not 478!
+
+But we see 478 imported, which means:
+  Option A: Batch partially completed (atomicity violated!)
+  Option B: These operations were silently skipped
+  Option C: The test output is misleading
+
+═════════════════════════════════════════════════════════════════════════════
+REQUIRED CORRECTIONS (MANDATORY)
+═════════════════════════════════════════════════════════════════════════════
+
+CORRECTION 1: Replace parser with real Lot 1 parser
+───────────────────────────────────────────────────
+Copy ACTION_MAPPING and normalizeOperation() from test-csv-import.mjs:
+
+  const ACTION_MAPPING = {
+    'Market buy': 'buy',
+    'Limit buy': 'buy',
+    'Market sell': 'sell',
+    'Limit sell': 'sell',
+    'Deposit': 'deposit',
+    'Withdrawal': 'withdrawal',
+    'Dividend': 'dividend',
+    'Dividend (Dividend)': 'dividend',
+    'Dividend (Tax exempted)': 'dividend_tax_exempted',
+    'Dividend adjustment': 'dividend_adjustment',
+    'Interest on cash': 'interest',
+    'Currency conversion': 'fx_conversion',
+    'Stock split open': 'split_open',
+    'Stock split close': 'split_close',
+  }
+
+CORRECTION 2: Extend RPC to handle all dividend types
+──────────────────────────────────────────────────
+Add handlers for:
+
+  ELSIF v_op_type = 'dividend_tax_exempted' THEN
+    v_quantity := (v_op ->> 'quantity')::numeric;
+    v_price := (v_op ->> 'price')::numeric;
+    v_total_amount := (v_op ->> 'totalAmount')::numeric;
+    v_withholding_tax := COALESCE((v_op ->> 'withholdingTax')::numeric, 0);
+    ... (same as regular dividend but mark as tax_exempted)
+    v_rows_imported := v_rows_imported + 1;
+
+  ELSIF v_op_type = 'dividend_adjustment' THEN
+    ... (handle adjustment, possibly negative)
+    v_rows_imported := v_rows_imported + 1;
+
+CORRECTION 3: Properly count stock split operations
+────────────────────────────────────────────
+Option A: Count splits in rows_imported
+  (Increment counter when split_open is processed)
+
+Option B: Create transaction record for splits
+  (So they appear in transactions table, not just events)
+
+Option C: Return separate counts
+  (Separate counter for events, transactions, and total)
+
+═════════════════════════════════════════════════════════════════════════════
+TESTING AFTER CORRECTIONS
+═════════════════════════════════════════════════════════════════════════════
+
+Expected results for real CSV (481 rows):
+
+First import:
+  CSV lines read: 481
+  Operations parsed: 481
+  Operations imported: 481
+  Assets created: 36
+  Transactions created: 482 (incl. dividends + buys/sells)
+  Cash movements created: ~650 (multiple per operation)
+  Batch status: success
+
+Second import (same file):
+  Batch lookup: returns existing batch_id
+  New operations created: 0
+  New transactions created: 0
+  New cash movements created: 0
+  Idempotence: ✅ VERIFIED
+
+Rollback:
+  Transactions deleted: 482
+  Cash movements deleted: ~650
+  Split events deleted: 1 (the paired open/close)
+  State restored: exact initial state
+
+═════════════════════════════════════════════════════════════════════════════
