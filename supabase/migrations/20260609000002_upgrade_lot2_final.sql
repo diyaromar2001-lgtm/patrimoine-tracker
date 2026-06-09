@@ -79,13 +79,26 @@ ALTER TABLE IF EXISTS public.transactions
   ADD COLUMN IF NOT EXISTS realized_pnl_chf numeric DEFAULT 0,
   ADD COLUMN IF NOT EXISTS source_subtype text;
 
--- Production may have realized_pnl_chf NOT NULL (from an earlier schema version).
--- The correct semantic is: NULL = P&L not calculable (non-CHF or no cost basis).
--- DROP NOT NULL so our RPC can store NULL without violating the constraint.
--- DROP DEFAULT so the column no longer silently coerces unknown P&L to 0.
+-- Production may carry NOT NULL constraints on several columns from earlier schema versions.
+-- The RPC legitimately writes NULL to all of them in specific cases:
+--   realized_pnl_chf:         NULL when proceeds or cost basis are non-CHF
+--   gross_amount_chf:         NULL for non-CHF dividends
+--   base_amount_chf:          NULL when account currency != CHF
+--   net_amount_chf:           not set by import RPC; NULL when not computable
+--   withholding_tax_currency: NULL when no withholding tax is recorded
+--   transaction_fees_currency: NULL when no fees are recorded
+-- DROP DEFAULT removes DEFAULT 0 so unknown values stay NULL, not a fabricated zero.
+-- DROP DEFAULT on a column that has no default is a silent no-op in PostgreSQL.
 ALTER TABLE public.transactions
-  ALTER COLUMN realized_pnl_chf DROP NOT NULL,
-  ALTER COLUMN realized_pnl_chf DROP DEFAULT;
+  ALTER COLUMN realized_pnl_chf         DROP NOT NULL,
+  ALTER COLUMN realized_pnl_chf         DROP DEFAULT,
+  ALTER COLUMN gross_amount_chf         DROP NOT NULL,
+  ALTER COLUMN gross_amount_chf         DROP DEFAULT,
+  ALTER COLUMN base_amount_chf          DROP NOT NULL,
+  ALTER COLUMN net_amount_chf           DROP NOT NULL,
+  ALTER COLUMN net_amount_chf           DROP DEFAULT,
+  ALTER COLUMN withholding_tax_currency  DROP NOT NULL,
+  ALTER COLUMN transaction_fees_currency DROP NOT NULL;
 
 DO $$
 BEGIN

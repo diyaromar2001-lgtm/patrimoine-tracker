@@ -49,10 +49,10 @@ CREATE TABLE IF NOT EXISTS public.transactions (
   date date,
   created_at timestamptz NOT NULL DEFAULT now(),
   asset_id uuid REFERENCES public.assets(id),
-  gross_amount_chf numeric,
+  gross_amount_chf numeric NOT NULL DEFAULT 0,  -- mirrors production: NOT NULL before migration
   fees_chf numeric,
   net_amount_chf numeric,
-  realized_pnl_chf numeric NOT NULL DEFAULT 0  -- mirrors production: NOT NULL before migration
+  realized_pnl_chf numeric NOT NULL DEFAULT 0   -- mirrors production: NOT NULL before migration
 );
 
 CREATE TABLE IF NOT EXISTS public.cash_movements (

@@ -162,53 +162,85 @@ jobs:
             END IF;
 
             -- Verify security
-            -- Verify realized_pnl_chf is nullable (production had NOT NULL; migration must drop it)
-            IF (SELECT is_nullable FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'transactions'
-                  AND column_name = 'realized_pnl_chf') != 'YES' THEN
-              RAISE EXCEPTION 'realized_pnl_chf is still NOT NULL — DROP NOT NULL did not apply';
-            END IF;
+            -- Quick nullable check for all columns the import RPC legitimately sets to NULL
+            DECLARE
+              v_col text;
+              v_nullable text;
+            BEGIN
+              FOREACH v_col IN ARRAY ARRAY['realized_pnl_chf','gross_amount_chf','base_amount_chf',
+                                           'net_amount_chf','withholding_tax_currency','transaction_fees_currency']
+              LOOP
+                SELECT is_nullable INTO v_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'transactions'
+                  AND column_name = v_col;
+                IF v_nullable != 'YES' THEN
+                  RAISE EXCEPTION 'Column % is still NOT NULL — DROP NOT NULL did not apply', v_col;
+                END IF;
+              END LOOP;
+            END;
 
             RAISE NOTICE 'All verification checks passed';
           END $$;
           EOF
           echo "✓ All components verified"
 
-      - name: Verify realized_pnl_chf nullable (explicit)
+      - name: Verify nullable columns (detailed)
         run: |
           PGPASSWORD=postgres psql \
             -v ON_ERROR_STOP=1 \
             -h localhost \
             -U postgres \
             -d test_db << 'EOF'
-          SELECT
-            column_name,
-            is_nullable,
-            column_default
+          -- Show current state for audit trail
+          SELECT column_name, is_nullable, column_default
           FROM information_schema.columns
           WHERE table_schema = 'public'
             AND table_name = 'transactions'
-            AND column_name = 'realized_pnl_chf';
+            AND column_name IN (
+              'realized_pnl_chf','gross_amount_chf','base_amount_chf',
+              'net_amount_chf','withholding_tax_currency','transaction_fees_currency'
+            )
+          ORDER BY column_name;
+
           DO $$
-          DECLARE v_nullable text; v_default text;
+          DECLARE
+            v_col     text;
+            v_nullable text;
+            v_default  text;
           BEGIN
-            SELECT is_nullable, column_default
-            INTO v_nullable, v_default
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = 'transactions'
-              AND column_name = 'realized_pnl_chf';
-            IF v_nullable != 'YES' THEN
-              RAISE EXCEPTION 'FAIL: realized_pnl_chf is_nullable=% (expected YES)', v_nullable;
-            END IF;
-            IF v_default IS NOT NULL THEN
-              RAISE EXCEPTION 'FAIL: realized_pnl_chf still has DEFAULT=% (expected none)', v_default;
-            END IF;
-            RAISE NOTICE 'realized_pnl_chf: is_nullable=YES, column_default=NULL ✓';
+            -- Columns that must be nullable AND have no DEFAULT (NULL = unknown, not zero)
+            FOREACH v_col IN ARRAY ARRAY['realized_pnl_chf','gross_amount_chf','net_amount_chf']
+            LOOP
+              SELECT is_nullable, column_default
+              INTO v_nullable, v_default
+              FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'transactions'
+                AND column_name = v_col;
+              IF v_nullable != 'YES' THEN
+                RAISE EXCEPTION 'FAIL: % is_nullable=% (expected YES)', v_col, v_nullable;
+              END IF;
+              IF v_default IS NOT NULL THEN
+                RAISE EXCEPTION 'FAIL: % still has DEFAULT=% (expected none — NULL must stay NULL)', v_col, v_default;
+              END IF;
+              RAISE NOTICE '%: is_nullable=YES, column_default=NULL ✓', v_col;
+            END LOOP;
+
+            -- Columns that must be nullable (no DEFAULT to drop — text columns added as nullable)
+            FOREACH v_col IN ARRAY ARRAY['base_amount_chf','withholding_tax_currency','transaction_fees_currency']
+            LOOP
+              SELECT is_nullable INTO v_nullable
+              FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'transactions'
+                AND column_name = v_col;
+              IF v_nullable != 'YES' THEN
+                RAISE EXCEPTION 'FAIL: % is_nullable=% (expected YES)', v_col, v_nullable;
+              END IF;
+              RAISE NOTICE '%: is_nullable=YES ✓', v_col;
+            END LOOP;
           END $$;
           EOF
-          echo "✓ realized_pnl_chf nullable and no DEFAULT verified"
+          echo "✓ All nullable columns verified"
 
       - name: Verify data preservation
         run: |
