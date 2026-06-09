@@ -387,7 +387,11 @@ BEGIN
     END IF;
   END LOOP;
 
-  IF v_qty < 0 THEN v_qty := 0; END IF;
+  -- Point 4: do NOT silently clamp – expose data anomalies with a WARNING.
+  IF v_qty < 0 THEN
+    RAISE WARNING 'recalculate_asset_position: qty went negative (%) for asset % – check for oversell or missing BUY. Clamping to 0.', v_qty, p_asset_id;
+    v_qty := 0;
+  END IF;
   IF v_cost_basis_chf < 0 THEN v_cost_basis_chf := 0; END IF;
 
   UPDATE public.assets SET
@@ -400,7 +404,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-GRANT EXECUTE ON FUNCTION public.recalculate_asset_position(uuid, uuid) TO authenticated;
+-- Point 2: recalculate_asset_position is called only by SECURITY DEFINER RPCs.
+-- Direct access by authenticated users would bypass portfolio ownership checks.
+REVOKE ALL ON FUNCTION public.recalculate_asset_position(uuid, uuid) FROM authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────────
 -- SECTION 6: MAIN RPC — IMPORT_CSV_BATCH (COMPLETE, CORRECT IMPLEMENTATION)
@@ -453,6 +459,18 @@ DECLARE
   v_to_currency text;
   v_from_amount numeric;
   v_to_amount numeric;
+  -- ── Position tracking (oversell guard + realized P&L) ──────────────────────
+  v_ticker_positions   jsonb    := '{}'; -- {ticker: {qty, cost, avg}} running state in PASS 2
+  v_op_rec             record;           -- record variable for the chronological PASS 2 loop
+  v_running_qty        numeric  := 0;
+  v_running_cost_chf   numeric  := 0;
+  v_running_avg_native numeric  := 0;
+  v_cost_per_unit_chf  numeric  := 0;
+  v_cost_sold_chf      numeric  := 0;
+  v_realized_pnl_chf   numeric  := 0;
+  v_base_amount_chf    numeric;
+  v_wht_currency       text;
+  v_split_ratio        numeric;  -- for in-memory split tracking in PASS 2
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
@@ -461,6 +479,14 @@ BEGIN
   END IF;
 
   v_rows_total := jsonb_array_length(p_operations);
+
+  -- Point 1: verify portfolio belongs to the calling user before any write
+  IF NOT EXISTS (
+    SELECT 1 FROM public.portfolios WHERE id = p_portfolio_id AND user_id = v_user_id
+  ) THEN
+    RETURN QUERY SELECT NULL::uuid, false, 0, 0, 'Portfolio not found or access denied'::text;
+    RETURN;
+  END IF;
 
   BEGIN
     SELECT id, (status != 'pending') INTO v_batch_id, v_batch_exists
@@ -530,19 +556,45 @@ BEGIN
     END LOOP;
 
     -- ════════════════════════════════════════════════════════════════════════════
-    -- PASS 2: PROCESS ALL OTHER OPERATIONS (in true date order)
+    -- PASS 2: PROCESS ALL OTHER OPERATIONS IN STRICT CHRONOLOGICAL ORDER
+    --   Sorted oldest-first so oversell checks and P&L use the correct running
+    --   position at each moment in time.
     -- ════════════════════════════════════════════════════════════════════════════
 
-    FOR v_idx IN 0..(v_rows_total - 1) LOOP
-      v_op := p_operations->v_idx;
-      v_op_type := v_op->>'type';
-
-      IF v_op_type = 'stock_split' THEN
-        CONTINUE;
-      END IF;
-
-      v_date := (v_op->>'date')::date;
+    FOR v_op_rec IN
+      -- Include stock_splits in date order so in-memory position tracking reflects
+      -- split ratio changes between buys and sells (prevents false oversell rejections).
+      SELECT ops.value
+      FROM jsonb_array_elements(p_operations) AS ops(value)
+      ORDER BY (ops.value->>'date')::date ASC,
+               COALESCE(ops.value->>'sourceId', '') ASC
+    LOOP
+      v_op        := v_op_rec.value;
+      v_op_type   := v_op->>'type';
+      v_date      := (v_op->>'date')::date;
       v_source_id := v_op->>'sourceId';
+
+      -- stock_splits were already inserted in PASS 1; here we only update in-memory
+      -- position tracking so subsequent oversell checks and P&L calculations are correct.
+      IF v_op_type = 'stock_split' THEN
+        v_ticker := v_op->>'ticker';
+        IF v_ticker_positions ? v_ticker THEN
+          v_running_qty        := (v_ticker_positions->v_ticker->>'qty')::numeric;
+          v_running_cost_chf   := (v_ticker_positions->v_ticker->>'cost')::numeric;
+          v_running_avg_native := (v_ticker_positions->v_ticker->>'avg')::numeric;
+          v_split_ratio := CASE
+            WHEN COALESCE((v_op->>'qty_before')::numeric, 0) > 0
+            THEN (v_op->>'qty_after')::numeric / (v_op->>'qty_before')::numeric
+            ELSE 1 END;
+          v_running_qty        := v_running_qty * v_split_ratio;
+          v_running_avg_native := CASE WHEN v_split_ratio > 0
+            THEN v_running_avg_native / v_split_ratio ELSE v_running_avg_native END;
+          -- cost_basis_chf is invariant under splits (same total CHF value)
+          v_ticker_positions := jsonb_set(v_ticker_positions, ARRAY[v_ticker, 'qty'], to_jsonb(v_running_qty));
+          v_ticker_positions := jsonb_set(v_ticker_positions, ARRAY[v_ticker, 'avg'], to_jsonb(v_running_avg_native));
+        END IF;
+        CONTINUE; -- no DB work needed here
+      END IF;
 
       IF v_op_type IN ('buy', 'sell') THEN
         v_ticker         := v_op->>'ticker';
@@ -555,6 +607,9 @@ BEGIN
         v_total_currency := COALESCE(v_op->>'totalCurrency', 'CHF');         -- B3/cash fix
         v_name           := COALESCE(v_op->>'name', v_ticker);
 
+        -- Point 6: base_amount_chf stores only CHF amounts; NULL for non-CHF accounts
+        v_base_amount_chf := CASE WHEN v_total_currency = 'CHF' THEN v_total_amount ELSE NULL END;
+
         SELECT id INTO v_asset_id FROM public.assets
         WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
 
@@ -564,22 +619,83 @@ BEGIN
           RETURNING id INTO v_asset_id;
         END IF;
 
-        INSERT INTO public.transactions (
-          portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
-          source, source_external_id, import_batch_id, base_amount_chf
-        ) VALUES (
-          p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', v_op_type, v_quantity, v_price, v_price_currency, v_date,
-          p_broker, v_source_id, v_batch_id, v_total_amount
-        ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+        -- Initialize in-memory running position for this ticker on first encounter.
+        -- Seed from the assets table which reflects pre-import state + PASS 1 splits.
+        IF NOT (v_ticker_positions ? v_ticker) THEN
+          v_running_qty := 0; v_running_cost_chf := 0; v_running_avg_native := 0;
+          SELECT COALESCE(a.quantity, 0), COALESCE(a.cost_basis_chf, 0), COALESCE(a.avg_buy_price, 0)
+          INTO v_running_qty, v_running_cost_chf, v_running_avg_native
+          FROM public.assets a WHERE a.id = v_asset_id;
+          v_ticker_positions := v_ticker_positions || jsonb_build_object(
+            v_ticker, jsonb_build_object(
+              'qty',  to_jsonb(v_running_qty),
+              'cost', to_jsonb(v_running_cost_chf),
+              'avg',  to_jsonb(v_running_avg_native)
+            )
+          );
+        END IF;
+
+        v_running_qty        := (v_ticker_positions->v_ticker->>'qty')::numeric;
+        v_running_cost_chf   := (v_ticker_positions->v_ticker->>'cost')::numeric;
+        v_running_avg_native := (v_ticker_positions->v_ticker->>'avg')::numeric;
+
+        -- Point 4: refuse oversell – no silent clamping
+        IF v_op_type = 'sell' AND v_quantity > v_running_qty THEN
+          RAISE EXCEPTION 'OVERSELL rejected: ticker=%, attempting to sell % but only % currently held',
+            v_ticker, v_quantity, v_running_qty;
+        END IF;
+
+        -- Point 3: compute realized P&L for SELL (historical cost-basis method, in CHF)
+        IF v_op_type = 'sell' THEN
+          v_cost_per_unit_chf := CASE WHEN v_running_qty > 0
+            THEN v_running_cost_chf / v_running_qty ELSE 0 END;
+          v_cost_sold_chf    := v_quantity * v_cost_per_unit_chf;
+          v_realized_pnl_chf := COALESCE(v_base_amount_chf, 0) - v_cost_sold_chf;
+        ELSE
+          v_realized_pnl_chf := 0;
+        END IF;
+
+        IF v_op_type = 'sell' THEN
+          INSERT INTO public.transactions (
+            portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
+            source, source_external_id, import_batch_id, base_amount_chf, realized_pnl_chf
+          ) VALUES (
+            p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'sell', v_quantity, v_price, v_price_currency, v_date,
+            p_broker, v_source_id, v_batch_id, v_base_amount_chf, v_realized_pnl_chf
+          ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+        ELSE
+          INSERT INTO public.transactions (
+            portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
+            source, source_external_id, import_batch_id, base_amount_chf
+          ) VALUES (
+            p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'buy', v_quantity, v_price, v_price_currency, v_date,
+            p_broker, v_source_id, v_batch_id, v_base_amount_chf
+          ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+        END IF;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
         IF v_inserted > 0 THEN
+          -- Update in-memory running position
+          IF v_op_type = 'buy' THEN
+            v_running_avg_native := CASE WHEN v_running_qty > 0
+              THEN (v_running_qty * v_running_avg_native + v_quantity * v_price) / (v_running_qty + v_quantity)
+              ELSE v_price END;
+            v_running_qty      := v_running_qty + v_quantity;
+            v_running_cost_chf := v_running_cost_chf + COALESCE(v_base_amount_chf, 0);
+          ELSIF v_op_type = 'sell' THEN
+            v_running_qty      := v_running_qty - v_quantity;
+            v_running_cost_chf := GREATEST(0, v_running_cost_chf - v_cost_sold_chf);
+          END IF;
+          v_ticker_positions := jsonb_set(v_ticker_positions, ARRAY[v_ticker, 'qty'],  to_jsonb(v_running_qty));
+          v_ticker_positions := jsonb_set(v_ticker_positions, ARRAY[v_ticker, 'cost'], to_jsonb(v_running_cost_chf));
+          v_ticker_positions := jsonb_set(v_ticker_positions, ARRAY[v_ticker, 'avg'],  to_jsonb(v_running_avg_native));
+
           INSERT INTO public.cash_movements (
             user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
           ) VALUES (
             v_user_id, p_portfolio_id,
             CASE WHEN v_op_type = 'buy' THEN 'buy_deduction' ELSE 'sell_credit' END,
-            v_total_currency,                                                -- B3 fix: account currency (CHF), not price currency
+            v_total_currency,                                                -- B3 fix: account currency, not price currency
             CASE WHEN v_op_type = 'buy' THEN -v_total_amount ELSE v_total_amount END,
             p_broker, v_source_id, v_batch_id, v_date
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
@@ -594,7 +710,9 @@ BEGIN
         v_ticker          := v_op->>'ticker';
         v_withholding_tax := COALESCE((v_op->>'withholdingTax')::numeric, 0);
         v_total_currency  := COALESCE(v_op->>'totalCurrency', 'CHF');         -- B5 fix: use real currency
-        -- B4 fix: no 'grossAmount' field in JSON; gross = net received + withholding
+        -- Point 5: withholding tax currency from parser field withholdingTaxCurrency
+        v_wht_currency    := COALESCE(NULLIF(v_op->>'withholdingTaxCurrency', ''), v_total_currency);
+        -- B4 fix: no 'grossAmount' field; gross = net received (totalAmount) + tax withheld
         v_dividend_gross_chf := COALESCE((v_op->>'totalAmount')::numeric, 0) + v_withholding_tax;
         v_name            := COALESCE(v_op->>'name', v_ticker);
 
@@ -609,10 +727,12 @@ BEGIN
 
         INSERT INTO public.transactions (
           portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
-          source, source_external_id, import_batch_id, gross_amount_chf, withholding_tax_amount, source_subtype
+          source, source_external_id, import_batch_id, gross_amount_chf, withholding_tax_amount,
+          withholding_tax_currency, source_subtype
         ) VALUES (
           p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'dividend', 0, 0, v_total_currency, v_date,
-          p_broker, v_source_id, v_batch_id, v_dividend_gross_chf, v_withholding_tax, v_op_type
+          p_broker, v_source_id, v_batch_id, v_dividend_gross_chf, v_withholding_tax,
+          v_wht_currency, v_op_type
         ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
@@ -628,7 +748,8 @@ BEGIN
             INSERT INTO public.cash_movements (
               user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
             ) VALUES (
-              v_user_id, p_portfolio_id, 'fee', v_total_currency, -v_withholding_tax,
+              -- Point 5: withholding deduction in the tax's actual currency (v_wht_currency)
+              v_user_id, p_portfolio_id, 'fee', v_wht_currency, -v_withholding_tax,
               p_broker, v_source_id || ':wht', v_batch_id, v_date, 'withholding_tax'
             ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
           END IF;
@@ -637,12 +758,13 @@ BEGIN
         END IF;
 
       ELSIF v_op_type = 'interest' THEN
-        v_interest_amount := (v_op->>'totalAmount')::numeric;                -- B6 fix: was 'amount'
+        v_interest_amount := COALESCE((v_op->>'totalAmount')::numeric, 0);   -- B6 fix: was 'amount'
+        v_total_currency  := COALESCE(v_op->>'totalCurrency', 'CHF');         -- Point 5: actual currency, not hardcoded CHF
 
         INSERT INTO public.cash_movements (
           user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
         ) VALUES (
-          v_user_id, p_portfolio_id, 'revenue_credit', 'CHF', v_interest_amount,
+          v_user_id, p_portfolio_id, 'revenue_credit', v_total_currency, v_interest_amount,
           p_broker, v_source_id, v_batch_id, v_date, 'interest'
         ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
@@ -670,9 +792,9 @@ BEGIN
 
       ELSIF v_op_type IN ('currency_conversion', 'fx_conversion') THEN       -- B8 fix: parser outputs 'fx_conversion'
         v_from_currency := v_op->>'fromCurrency';
-        v_to_currency := v_op->>'toCurrency';
-        v_from_amount := (v_op->>'fromAmount')::numeric;
-        v_to_amount := (v_op->>'toAmount')::numeric;
+        v_to_currency   := v_op->>'toCurrency';
+        v_from_amount   := (v_op->>'fromAmount')::numeric;
+        v_to_amount     := (v_op->>'toAmount')::numeric;
 
         INSERT INTO public.cash_movements (
           user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
@@ -694,7 +816,7 @@ BEGIN
         END IF;
 
       ELSE
-        RAISE EXCEPTION 'Unknown operation type: %. Supported: buy, sell, dividend, dividend_tax_exempted, dividend_adjustment, interest, deposit, withdrawal, currency_conversion, stock_split', v_op_type;
+        RAISE EXCEPTION 'Unknown operation type: %. Supported: buy, sell, dividend, dividend_tax_exempted, dividend_adjustment, interest, deposit, withdrawal, currency_conversion, fx_conversion, stock_split', v_op_type;
       END IF;
     END LOOP;
 
@@ -733,9 +855,14 @@ BEGIN
       v_batch_id, true, v_rows_imported, v_rows_total, NULL::text;
 
   EXCEPTION WHEN OTHERS THEN
+    -- Point 7: BEGIN...EXCEPTION creates an implicit SAVEPOINT at the top of the BEGIN block.
+    -- On exception PostgreSQL automatically ROLLBACK TO that savepoint, undoing all DML
+    -- (transactions, cash_movements, assets, stock_split_events, import_batches).
+    -- The DELETE statements below are defensive safety nets (normally no-ops after rollback).
     DELETE FROM public.transactions WHERE import_batch_id = v_batch_id;
     DELETE FROM public.cash_movements WHERE import_batch_id = v_batch_id;
     DELETE FROM public.stock_split_events WHERE import_batch_id = v_batch_id;
+    -- Orphan assets created only by this batch are cleaned up by the implicit savepoint rollback.
 
     UPDATE public.import_batches SET
       status = 'failed',
@@ -751,7 +878,10 @@ $$ LANGUAGE plpgsql;
 
 REVOKE ALL ON FUNCTION public.import_csv_batch(uuid, text, text, text, jsonb) FROM public;
 REVOKE ALL ON FUNCTION public.import_csv_batch(uuid, text, text, text, jsonb) FROM anon;
-GRANT EXECUTE ON FUNCTION public.import_csv_batch(uuid, text, text, text, jsonb) TO authenticated;
+-- Points 2/7: authenticated users must go through create_portfolio_and_import_trading212
+-- (which is SECURITY DEFINER and enforces atomicity + portfolio creation in one transaction).
+-- Direct superuser/migration runner calls are still possible (postgres bypasses REVOKE).
+REVOKE ALL ON FUNCTION public.import_csv_batch(uuid, text, text, text, jsonb) FROM authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────────
 -- SECTION 7: ATOMIC RPC — CREATE_PORTFOLIO_AND_IMPORT_TRADING212
@@ -778,7 +908,8 @@ RETURNS TABLE(
   error_message text
 )
 SECURITY DEFINER
-SET search_path = 'public'
+-- Point 8: empty search_path forces full qualification of every object.
+SET search_path = ''
 AS $$
 DECLARE
   v_user_id uuid;

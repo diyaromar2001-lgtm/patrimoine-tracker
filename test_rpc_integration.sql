@@ -575,9 +575,311 @@ BEGIN
 END $$;
 
 -- =============================================================================
+-- TEST 12: CROSS-USER ACCESS REJECTED
+-- Portfolio owned by user B — import as user A must be refused.
+-- =============================================================================
+\echo ''
+\echo '=== T12: CROSS-USER (portfolio of user B rejected for user A) ==='
+
+DO $$
+DECLARE
+  v_other_pid uuid;
+  v_other_uid uuid := '22222222-2222-2222-2222-222222222222';
+  v_ok  boolean; v_err text;
+BEGIN
+  -- Create a portfolio owned by a different user directly (bypassing RPC)
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (v_other_uid, 'T12_OTHER_USER', 'CHF') RETURNING id INTO v_other_pid;
+
+  -- Attempt import as current user '11111111-...' — must be rejected
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_other_pid, 'trading_212', 't12.csv', 'ck-t12',
+    jsonb_build_array(jsonb_build_object(
+      'type','deposit','date','2025-01-01','sourceId','T12-DEP',
+      'totalAmount',100,'totalCurrency','CHF'
+    ))
+  );
+
+  IF v_ok THEN
+    RAISE EXCEPTION 'T12 FAIL: cross-user access should be denied but success=true';
+  END IF;
+  IF v_err NOT ILIKE '%access denied%' AND v_err NOT ILIKE '%not found%' THEN
+    RAISE EXCEPTION 'T12 FAIL: unexpected error message: %', v_err;
+  END IF;
+
+  RAISE NOTICE '✅ T12 CROSS_USER blocked: "%"', LEFT(v_err, 80);
+END $$;
+
+-- =============================================================================
+-- TEST 13: OVERSELL REFUSED
+-- BUY 5 GOOG; then try SELL 10 — must return success=false with OVERSELL error.
+-- =============================================================================
+\echo ''
+\echo '=== T13: OVERSELL (sell 10 > held 5 must be refused) ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_ok  boolean; v_err text;
+BEGIN
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (auth.uid(), 'T13_OVERSELL', 'CHF') RETURNING id INTO v_pid;
+
+  -- Setup: BUY 5 shares
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t13a.csv','ck-t13a',
+    jsonb_build_array(jsonb_build_object(
+      'type','buy','date','2025-01-01','sourceId','T13-BUY',
+      'ticker','GOOG','name','Alphabet',
+      'quantity',5,'price',100,
+      'priceCurrency','USD','exchangeRate',1.0,
+      'totalAmount',500,'totalCurrency','CHF'
+    ))
+  );
+  IF NOT v_ok THEN RAISE EXCEPTION 'T13 setup BUY failed: %', v_err; END IF;
+
+  -- Attempt: SELL 10 (5 more than held)
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t13b.csv','ck-t13b',
+    jsonb_build_array(jsonb_build_object(
+      'type','sell','date','2025-02-01','sourceId','T13-SELL',
+      'ticker','GOOG','name','Alphabet',
+      'quantity',10,'price',110,
+      'priceCurrency','USD','exchangeRate',1.0,
+      'totalAmount',1100,'totalCurrency','CHF'
+    ))
+  );
+
+  IF v_ok THEN
+    RAISE EXCEPTION 'T13 FAIL: oversell should be refused but success=true';
+  END IF;
+  IF v_err NOT ILIKE '%OVERSELL%' AND v_err NOT ILIKE '%held%' THEN
+    RAISE EXCEPTION 'T13 FAIL: expected oversell error, got: %', v_err;
+  END IF;
+
+  RAISE NOTICE '✅ T13 OVERSELL refused: "%"', LEFT(v_err, 80);
+END $$;
+
+-- =============================================================================
+-- TEST 14: REALIZED P&L PERSISTED
+-- Uses T9_CHRON portfolio: SELL 8 AAPL, cost_per=76, proceeds=720
+-- Expected realized_pnl_chf = 720 - 8×76 = 112 CHF
+-- =============================================================================
+\echo ''
+\echo '=== T14: REALIZED_PNL persisted (112 CHF from T9 SELL) ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_pnl numeric;
+BEGIN
+  SELECT id INTO v_pid FROM public.portfolios
+  WHERE user_id = auth.uid() AND name = 'T9_CHRON' LIMIT 1;
+  IF v_pid IS NULL THEN RAISE EXCEPTION 'T14: T9_CHRON portfolio not found'; END IF;
+
+  SELECT realized_pnl_chf INTO v_pnl FROM public.transactions
+  WHERE portfolio_id = v_pid AND type = 'sell' AND ticker = 'AAPL'
+    AND source_external_id = 'T9-SELL';
+
+  IF v_pnl IS NULL THEN
+    RAISE EXCEPTION 'T14 FAIL: realized_pnl_chf is NULL (not persisted)';
+  END IF;
+  IF v_pnl != 112 THEN
+    RAISE EXCEPTION 'T14 FAIL: expected=112 got=%', v_pnl;
+  END IF;
+
+  RAISE NOTICE '✅ T14 REALIZED_PNL = % CHF', v_pnl;
+END $$;
+
+-- =============================================================================
+-- TEST 15: USD DIVIDEND — currency stored as USD, withholding_tax_currency=USD
+-- JNJ dividend: totalAmount=12.00 USD, withholdingTax=3.00 USD
+-- Expected: tx.currency=USD, tx.withholding_tax_currency=USD, gross=15.00
+--           cm.currency=USD (not hardcoded CHF)
+-- =============================================================================
+\echo ''
+\echo '=== T15: USD_DIVIDEND (currency=USD, wht_currency=USD, no fake CHF) ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_ok  boolean; v_err text;
+  v_ccy text; v_wht_ccy text; v_gross numeric;
+  v_cm_ccy text;
+BEGIN
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (auth.uid(), 'T15_USD_DIV', 'CHF') RETURNING id INTO v_pid;
+
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t15.csv','ck-t15',
+    jsonb_build_array(
+      jsonb_build_object(
+        'type','buy','date','2025-01-01','sourceId','T15-BUY',
+        'ticker','JNJ','name','Johnson & Johnson',
+        'quantity',10,'price',150,
+        'priceCurrency','USD','exchangeRate',1.0,
+        'totalAmount',1500,'totalCurrency','CHF'
+      ),
+      jsonb_build_object(
+        'type','dividend','date','2025-03-01','sourceId','T15-DIV',
+        'ticker','JNJ','name','Johnson & Johnson',
+        'totalAmount',12.00,'totalCurrency','USD',
+        'withholdingTax',3.00,'withholdingTaxCurrency','USD'
+      )
+    )
+  );
+  IF NOT v_ok THEN RAISE EXCEPTION 'T15 import failed: %', v_err; END IF;
+
+  SELECT currency, withholding_tax_currency, gross_amount_chf
+  INTO v_ccy, v_wht_ccy, v_gross
+  FROM public.transactions
+  WHERE portfolio_id = v_pid AND type = 'dividend' AND source_external_id = 'T15-DIV';
+
+  IF v_ccy != 'USD'     THEN RAISE EXCEPTION 'T15 FAIL tx.currency: exp=USD got=%',   v_ccy;     END IF;
+  IF v_wht_ccy != 'USD' THEN RAISE EXCEPTION 'T15 FAIL wht_currency: exp=USD got=%',  v_wht_ccy; END IF;
+  IF v_gross != 15.00   THEN RAISE EXCEPTION 'T15 FAIL gross: exp=15.00 got=%',        v_gross;   END IF;
+
+  SELECT currency INTO v_cm_ccy FROM public.cash_movements
+  WHERE ref_portfolio_id = v_pid AND source_external_id = 'T15-DIV' AND type = 'revenue_credit';
+  IF v_cm_ccy != 'USD' THEN RAISE EXCEPTION 'T15 FAIL cm.currency: exp=USD got=%', v_cm_ccy; END IF;
+
+  RAISE NOTICE '✅ T15 USD_DIVIDEND tx.currency=% wht_currency=% gross=% cm_ccy=%',
+    v_ccy, v_wht_ccy, v_gross, v_cm_ccy;
+END $$;
+
+-- =============================================================================
+-- TEST 16: USD INTEREST — stored in USD, NOT hardcoded CHF
+-- =============================================================================
+\echo ''
+\echo '=== T16: USD_INTEREST (totalCurrency=USD kept, not forced to CHF) ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_ok  boolean; v_err text;
+  v_amt numeric; v_ccy text;
+BEGIN
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (auth.uid(), 'T16_USD_INT', 'CHF') RETURNING id INTO v_pid;
+
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t16.csv','ck-t16',
+    jsonb_build_array(jsonb_build_object(
+      'type','interest','date','2025-04-01','sourceId','T16-INT',
+      'totalAmount',5.50,'totalCurrency','USD'
+    ))
+  );
+  IF NOT v_ok THEN RAISE EXCEPTION 'T16 import failed: %', v_err; END IF;
+
+  SELECT amount, currency INTO v_amt, v_ccy FROM public.cash_movements
+  WHERE ref_portfolio_id = v_pid AND source_external_id = 'T16-INT';
+
+  IF v_amt != 5.50  THEN RAISE EXCEPTION 'T16 FAIL amount: exp=5.50 got=%',  v_amt; END IF;
+  IF v_ccy != 'USD' THEN RAISE EXCEPTION 'T16 FAIL currency: exp=USD got=%', v_ccy; END IF;
+
+  RAISE NOTICE '✅ T16 USD_INTEREST amount=% currency=%', v_amt, v_ccy;
+END $$;
+
+-- =============================================================================
+-- TEST 17: EUR ACCOUNT — base_amount_chf must be NULL for non-CHF totalCurrency
+-- Importing a EUR-account BUY (totalCurrency=EUR) must NOT write a fake CHF value.
+-- =============================================================================
+\echo ''
+\echo '=== T17: EUR_ACCOUNT (base_amount_chf=NULL when totalCurrency<>CHF) ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_ok  boolean; v_err text;
+  v_base numeric;
+BEGIN
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (auth.uid(), 'T17_EUR_ACCT', 'EUR') RETURNING id INTO v_pid;
+
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t17.csv','ck-t17',
+    jsonb_build_array(jsonb_build_object(
+      'type','buy','date','2025-01-01','sourceId','T17-BUY',
+      'ticker','SAP','name','SAP SE',
+      'quantity',10,'price',150,
+      'priceCurrency','EUR','exchangeRate',1.0,
+      'totalAmount',1500,'totalCurrency','EUR'
+    ))
+  );
+  IF NOT v_ok THEN RAISE EXCEPTION 'T17 import failed: %', v_err; END IF;
+
+  SELECT base_amount_chf INTO v_base FROM public.transactions
+  WHERE portfolio_id = v_pid AND type = 'buy' AND source_external_id = 'T17-BUY';
+
+  IF v_base IS NOT NULL THEN
+    RAISE EXCEPTION 'T17 FAIL: base_amount_chf should be NULL for EUR account, got=%', v_base;
+  END IF;
+
+  RAISE NOTICE '✅ T17 EUR_ACCOUNT base_amount_chf=NULL (no fake CHF written)';
+END $$;
+
+-- =============================================================================
+-- TEST 18: NO PHANTOM ASSETS AFTER OVERSELL IN SINGLE BATCH
+-- A batch with BUY 3 then SELL 10 must rollback completely — no assets, no txns.
+-- =============================================================================
+\echo ''
+\echo '=== T18: NO_PHANTOM_ASSETS after oversell mid-batch ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_ok  boolean; v_err text;
+  v_assets integer; v_txns integer;
+BEGIN
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (auth.uid(), 'T18_OVERSELL_PHANTOM', 'CHF') RETURNING id INTO v_pid;
+
+  -- Single batch: valid BUY 3 then impossible SELL 10 → full rollback
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t18.csv','ck-t18',
+    jsonb_build_array(
+      jsonb_build_object(
+        'type','buy','date','2025-01-01','sourceId','T18-BUY',
+        'ticker','AMZN','name','Amazon',
+        'quantity',3,'price',200,
+        'priceCurrency','USD','exchangeRate',1.0,
+        'totalAmount',600,'totalCurrency','CHF'
+      ),
+      jsonb_build_object(
+        'type','sell','date','2025-02-01','sourceId','T18-SELL',
+        'ticker','AMZN','name','Amazon',
+        'quantity',10,'price',210,
+        'priceCurrency','USD','exchangeRate',1.0,
+        'totalAmount',2100,'totalCurrency','CHF'
+      )
+    )
+  );
+
+  IF v_ok THEN RAISE EXCEPTION 'T18 FAIL: oversell batch should fail'; END IF;
+  IF v_err NOT ILIKE '%OVERSELL%' THEN
+    RAISE EXCEPTION 'T18 FAIL: expected OVERSELL error, got: %', v_err;
+  END IF;
+
+  SELECT COUNT(*) INTO v_assets FROM public.assets WHERE portfolio_id = v_pid;
+  SELECT COUNT(*) INTO v_txns   FROM public.transactions WHERE portfolio_id = v_pid;
+
+  IF v_assets != 0 THEN RAISE EXCEPTION 'T18 FAIL phantom assets: found %', v_assets; END IF;
+  IF v_txns   != 0 THEN RAISE EXCEPTION 'T18 FAIL phantom txns: found %',   v_txns;   END IF;
+
+  RAISE NOTICE '✅ T18 NO_PHANTOM: assets=% txns=% after oversell rollback', v_assets, v_txns;
+END $$;
+
+-- =============================================================================
 \echo ''
 \echo '════════════════════════════════════════════════════════════════'
-\echo '✅ ALL 11 RPC INTEGRATION TESTS PASSED'
+\echo '✅ ALL 18 RPC INTEGRATION TESTS PASSED'
 \echo '   T1  BUY  (priceCurrency, totalAmount, totalCurrency)'
 \echo '   T2  SELL (qty reduced, avg unchanged, cash CHF)'
 \echo '   T3  DIVIDEND (gross=net+wht: 8.50+1.50=10.00)'
@@ -588,5 +890,12 @@ END $$;
 \echo '   T8  STOCK_SPLIT (snake_case fields + asset recalc)'
 \echo '   T9  CHRONOLOGICAL BUY→SPLIT→BUY→SELL (qty=12 avg=76 cost=912)'
 \echo '   T10 IDEMPOTENCE'
-\echo '   T11 ROLLBACK (no orphaned data)'
+\echo '   T11 ROLLBACK (no orphaned data after invalid type)'
+\echo '   T12 CROSS-USER portfolio access refused'
+\echo '   T13 OVERSELL refused (sell > held quantity)'
+\echo '   T14 REALIZED_PNL persisted for SELL (112 CHF)'
+\echo '   T15 USD DIVIDEND: currency=USD, wht_currency=USD, no fake CHF'
+\echo '   T16 USD INTEREST: stored in USD, not forced to CHF'
+\echo '   T17 EUR ACCOUNT: base_amount_chf=NULL for non-CHF totalCurrency'
+\echo '   T18 NO PHANTOM ASSETS after oversell rollback'
 \echo '════════════════════════════════════════════════════════════════'
