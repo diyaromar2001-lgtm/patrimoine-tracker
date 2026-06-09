@@ -82,12 +82,12 @@ ALTER TABLE IF EXISTS public.transactions
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'transactions' AND constraint_name = 'transactions_portfolio_source_external_unique'
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'transactions' AND indexname = 'transactions_portfolio_source_unique'
   ) THEN
-    ALTER TABLE public.transactions
-      ADD CONSTRAINT transactions_portfolio_source_external_unique
-      UNIQUE (portfolio_id, source, source_external_id);
+    CREATE UNIQUE INDEX transactions_portfolio_source_unique
+      ON public.transactions(portfolio_id, source, source_external_id)
+      WHERE source_external_id IS NOT NULL;
   END IF;
 END $$;
 
