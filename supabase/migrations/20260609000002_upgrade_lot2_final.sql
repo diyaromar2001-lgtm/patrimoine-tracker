@@ -563,7 +563,7 @@ BEGIN
         ) VALUES (
           p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', v_op_type, v_quantity, v_price, v_price_currency, v_date,
           p_broker, v_source_id, v_batch_id, v_total_amount
-        ) ON CONFLICT (portfolio_id, source, source_external_id) DO NOTHING;
+        ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
         IF v_inserted > 0 THEN
@@ -602,7 +602,7 @@ BEGIN
         ) VALUES (
           p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'dividend', 0, 0, 'CHF', v_date,
           p_broker, v_source_id, v_batch_id, v_dividend_gross_chf, v_withholding_tax, v_op_type
-        ) ON CONFLICT (portfolio_id, source, source_external_id) DO NOTHING;
+        ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
         IF v_inserted > 0 THEN
