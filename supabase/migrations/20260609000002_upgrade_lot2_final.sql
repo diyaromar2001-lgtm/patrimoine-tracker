@@ -768,11 +768,11 @@ AS $$
 DECLARE
   v_user_id uuid;
   v_portfolio_id uuid;
-  v_batch_id uuid;
-  v_import_success boolean;
-  v_rows_imported integer;
-  v_rows_total integer;
-  v_error_message text;
+  v_result_batch_id uuid;
+  v_result_success boolean;
+  v_result_rows_imported integer;
+  v_result_rows_total integer;
+  v_result_error_message text;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
@@ -790,14 +790,14 @@ BEGIN
     ON CONFLICT (user_id) DO NOTHING;
 
     SELECT *
-    INTO v_batch_id, v_import_success, v_rows_imported, v_rows_total, v_error_message
+    INTO v_result_batch_id, v_result_success, v_result_rows_imported, v_result_rows_total, v_result_error_message
     FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations);
 
-    IF NOT v_import_success THEN
-      RAISE EXCEPTION 'Import failed: %', v_error_message;
+    IF NOT v_result_success THEN
+      RAISE EXCEPTION 'Import failed: %', v_result_error_message;
     END IF;
 
-    RETURN QUERY SELECT v_portfolio_id, v_batch_id, true, v_rows_imported, v_rows_total, NULL::text;
+    RETURN QUERY SELECT v_portfolio_id, v_result_batch_id, true, v_result_rows_imported, v_result_rows_total, NULL::text;
 
   EXCEPTION WHEN OTHERS THEN
     RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, format('Portfolio creation failed: %s', SQLERRM)::text;
