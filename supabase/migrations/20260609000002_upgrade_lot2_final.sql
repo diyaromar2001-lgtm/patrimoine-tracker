@@ -789,9 +789,10 @@ BEGIN
     VALUES (v_user_id, 0, 0, 0)
     ON CONFLICT (user_id) DO NOTHING;
 
-    SELECT *
+    SELECT icb.batch_id, icb.success, icb.rows_imported, icb.rows_total, icb.error_message
     INTO v_result_batch_id, v_result_success, v_result_rows_imported, v_result_rows_total, v_result_error_message
-    FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations);
+    FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations)
+         AS icb(batch_id, success, rows_imported, rows_total, error_message);
 
     IF NOT v_result_success THEN
       RAISE EXCEPTION 'Import failed: %', v_result_error_message;
