@@ -5,6 +5,8 @@
  * Uses crypto.subtle for SHA-256 checksums
  */
 
+import { parseCSVRecord } from "./trading212-parser-shared"
+
 // ─── ACTION MAPPING ────────────────────────────────────────────────────────
 const ACTION_MAPPING: Record<string, string> = {
   "Market buy": "buy",
@@ -24,21 +26,22 @@ const ACTION_MAPPING: Record<string, string> = {
 }
 
 // ─── CSV LINE PARSING ─────────────────────────────────────────────────────
-function parseCSVLine(line: string): Record<string, string> {
-  const headers = [
-    "Action", "Time", "ISIN", "Ticker", "Name", "Notes", "ID",
-    "No. of shares", "Price / share", "Currency (Price / share)", "Exchange rate",
-    "Result", "Currency (Result)", "Total", "Currency (Total)",
-    "Withholding tax", "Currency (Withholding tax)",
-    "Currency conversion from amount", "Currency (Currency conversion from amount)",
-    "Currency conversion to amount", "Currency (Currency conversion to amount)",
-    "Currency conversion fee", "Currency (Currency conversion fee)",
-  ]
+// Delegates to the RFC 4180-compliant parseCSVRecord from the shared module.
+const T212_HEADERS = [
+  "Action", "Time", "ISIN", "Ticker", "Name", "Notes", "ID",
+  "No. of shares", "Price / share", "Currency (Price / share)", "Exchange rate",
+  "Result", "Currency (Result)", "Total", "Currency (Total)",
+  "Withholding tax", "Currency (Withholding tax)",
+  "Currency conversion from amount", "Currency (Currency conversion from amount)",
+  "Currency conversion to amount", "Currency (Currency conversion to amount)",
+  "Currency conversion fee", "Currency (Currency conversion fee)",
+]
 
+function parseCSVLine(record: string): Record<string, string> {
+  const fields = parseCSVRecord(record)
   const result: Record<string, string> = {}
-  const fields = line.split(",")
-  headers.forEach((header, i) => {
-    result[header] = (fields[i] || "").trim()
+  T212_HEADERS.forEach((header, i) => {
+    result[header] = fields[i] ?? ""
   })
   return result
 }
@@ -143,7 +146,7 @@ async function computeChecksum(content: string): Promise<string> {
 export async function parseTrading212CSVContent(fileContent: string) {
   const fileChecksum = await computeChecksum(fileContent)
 
-  const lines = fileContent.split("\n").filter((l) => l.trim())
+  const lines = fileContent.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((l) => l.trim())
 
   if (lines.length < 2) {
     throw new Error("CSV must contain at least header + 1 operation")

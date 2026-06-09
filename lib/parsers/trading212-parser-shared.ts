@@ -27,22 +27,87 @@ export const ACTION_MAPPING: Record<string, string> = {
   "Stock split close": "split_close",
 }
 
-// ─── CSV LINE PARSING ─────────────────────────────────────────────────────
-export function parseCSVLine(line: string): Record<string, string> {
-  const headers = [
-    "Action", "Time", "ISIN", "Ticker", "Name", "Notes", "ID",
-    "No. of shares", "Price / share", "Currency (Price / share)", "Exchange rate",
-    "Result", "Currency (Result)", "Total", "Currency (Total)",
-    "Withholding tax", "Currency (Withholding tax)",
-    "Currency conversion from amount", "Currency (Currency conversion from amount)",
-    "Currency conversion to amount", "Currency (Currency conversion to amount)",
-    "Currency conversion fee", "Currency (Currency conversion fee)",
-  ]
+// ─── RFC 4180 CSV TOKENISER ───────────────────────────────────────────────
+/**
+ * Parse a single CSV record (one logical row, already extracted from the
+ * file) into an ordered array of field values.  Handles:
+ *   • Quoted fields:  "Roper Technologies, Inc."  → Roper Technologies, Inc.
+ *   • Escaped quotes: "She said ""hello"""        → She said "hello"
+ *   • Unquoted fields with leading/trailing whitespace (trimmed)
+ *   • Empty fields (adjacent commas, trailing comma)
+ *
+ * @param record  One logical CSV row (no embedded newlines; CRLF already stripped)
+ */
+export function parseCSVRecord(record: string): string[] {
+  const fields: string[] = []
+  const n = record.length
 
+  // Empty record → empty array (callers filter blank lines before calling)
+  if (n === 0) return fields
+
+  let i = 0
+
+  while (true) {
+    if (i < n && record[i] === '"') {
+      // ── Quoted field ────────────────────────────────────────────────────
+      i++ // skip opening quote
+      let value = ""
+      while (i < n) {
+        if (record[i] === '"') {
+          if (i + 1 < n && record[i + 1] === '"') {
+            // Escaped double-quote "" → literal "
+            value += '"'
+            i += 2
+          } else {
+            // Closing quote
+            i++
+            break
+          }
+        } else {
+          value += record[i++]
+        }
+      }
+      fields.push(value)
+      // Skip comma separator
+      if (i < n && record[i] === ',') {
+        i++
+        // Trailing comma → one more empty field then done
+        if (i === n) { fields.push(""); break }
+      }
+    } else {
+      // ── Unquoted field ──────────────────────────────────────────────────
+      const start = i
+      while (i < n && record[i] !== ',') i++
+      fields.push(record.slice(start, i).trim())
+      if (i < n && record[i] === ',') {
+        i++
+        // Trailing comma → one more empty field then done
+        if (i === n) { fields.push(""); break }
+      }
+    }
+
+    if (i >= n) break
+  }
+
+  return fields
+}
+
+// ─── CSV LINE PARSING ─────────────────────────────────────────────────────
+const T212_HEADERS = [
+  "Action", "Time", "ISIN", "Ticker", "Name", "Notes", "ID",
+  "No. of shares", "Price / share", "Currency (Price / share)", "Exchange rate",
+  "Result", "Currency (Result)", "Total", "Currency (Total)",
+  "Withholding tax", "Currency (Withholding tax)",
+  "Currency conversion from amount", "Currency (Currency conversion from amount)",
+  "Currency conversion to amount", "Currency (Currency conversion to amount)",
+  "Currency conversion fee", "Currency (Currency conversion fee)",
+]
+
+export function parseCSVLine(record: string): Record<string, string> {
+  const fields = parseCSVRecord(record)
   const result: Record<string, string> = {}
-  const fields = line.split(",")
-  headers.forEach((header, i) => {
-    result[header] = (fields[i] || "").trim()
+  T212_HEADERS.forEach((header, i) => {
+    result[header] = fields[i] ?? ""
   })
   return result
 }
@@ -140,7 +205,8 @@ export function pairStockSplits(operations: any[]) {
  * Returns raw operations before checksum
  */
 export function parseCSVLines(fileContent: string) {
-  const lines = fileContent.split("\n").filter((l) => l.trim())
+  // Normalise CRLF → LF, then split; filter genuinely blank lines only
+  const lines = fileContent.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((l) => l.trim())
 
   if (lines.length < 2) {
     throw new Error("CSV must contain at least header + 1 operation")
