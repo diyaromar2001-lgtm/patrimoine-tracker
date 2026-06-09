@@ -227,121 +227,22 @@ jobs:
       - name: Test RPC with auth context
         if: success()
         run: |
+          set -o pipefail
           PGPASSWORD=postgres psql \
             -v ON_ERROR_STOP=1 \
             -h localhost \
             -U postgres \
-            -d test_db << 'EOF'
-          DO $$
-          DECLARE
-            v_user_id uuid := '550e8400-e29b-41d4-a716-446655440001'::uuid;
-            v_portfolio_id uuid;
-            v_batch_id uuid;
-            v_success boolean;
-            v_rows_imported integer;
-            v_asset_id uuid;
-            v_tx_count integer;
-            v_cm_count integer;
-          BEGIN
-            PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
-
-            -- Test 1: BUY operation
-            SELECT portfolio_id INTO v_portfolio_id FROM public.portfolios LIMIT 1;
-
-            RAISE NOTICE '=== TEST 1: BUY operation ===';
-            SELECT batch_id, success, rows_imported INTO v_batch_id, v_success, v_rows_imported
-            FROM public.import_csv_batch(
-              v_portfolio_id,
-              'trading_212',
-              'test_buy.csv',
-              'test_checksum_buy',
-              '[{"type":"buy","date":"2026-01-01","ticker":"AAPL","quantity":10,"price":150,"currency":"USD","exchangeRate":1.1,"name":"Apple Inc","sourceId":"buy_001"}]'::jsonb
-            );
-
-            IF v_success THEN
-              SELECT COUNT(*) INTO v_tx_count FROM public.transactions WHERE type='buy' AND source='trading_212';
-              SELECT COUNT(*) INTO v_cm_count FROM public.cash_movements WHERE type='buy' AND source='trading_212';
-              RAISE NOTICE 'BUY: SUCCESS - transactions=%d, cash_movements=%d', v_tx_count, v_cm_count;
-              IF v_tx_count = 0 OR v_cm_count = 0 THEN
-                RAISE EXCEPTION 'BUY test: missing expected records (tx=%d, cm=%d)', v_tx_count, v_cm_count;
-              END IF;
-            ELSE
-              RAISE EXCEPTION 'BUY import failed';
-            END IF;
-
-            -- Test 2: SELL operation
-            RAISE NOTICE '=== TEST 2: SELL operation ===';
-            SELECT batch_id, success INTO v_batch_id, v_success
-            FROM public.import_csv_batch(
-              v_portfolio_id,
-              'trading_212',
-              'test_sell.csv',
-              'test_checksum_sell',
-              '[{"type":"sell","date":"2026-01-02","ticker":"AAPL","quantity":5,"price":155,"currency":"USD","exchangeRate":1.1,"name":"Apple Inc","sourceId":"sell_001"}]'::jsonb
-            );
-            IF v_success THEN
-              RAISE NOTICE 'SELL: SUCCESS';
-            ELSE
-              RAISE EXCEPTION 'SELL import failed';
-            END IF;
-
-            -- Test 3: DIVIDEND
-            RAISE NOTICE '=== TEST 3: DIVIDEND ===';
-            SELECT batch_id, success INTO v_batch_id, v_success
-            FROM public.import_csv_batch(
-              v_portfolio_id,
-              'trading_212',
-              'test_div.csv',
-              'test_checksum_div',
-              '[{"type":"dividend","date":"2026-01-03","ticker":"AAPL","grossAmount":25,"withholdingTax":2.5,"name":"Apple Inc","sourceId":"div_001"}]'::jsonb
-            );
-            IF v_success THEN
-              SELECT COUNT(*) INTO v_cm_count FROM public.cash_movements WHERE type='dividend' AND source='trading_212';
-              RAISE NOTICE 'DIVIDEND: SUCCESS - cash_movements=%d', v_cm_count;
-            ELSE
-              RAISE EXCEPTION 'DIVIDEND import failed';
-            END IF;
-
-            -- Test 4: DEPOSIT
-            RAISE NOTICE '=== TEST 4: DEPOSIT ===';
-            SELECT batch_id, success INTO v_batch_id, v_success
-            FROM public.import_csv_batch(
-              v_portfolio_id,
-              'trading_212',
-              'test_dep.csv',
-              'test_checksum_dep',
-              '[{"type":"deposit","date":"2026-01-04","amount":1000,"currency":"USD","sourceId":"dep_001"}]'::jsonb
-            );
-            IF v_success THEN
-              RAISE NOTICE 'DEPOSIT: SUCCESS';
-            ELSE
-              RAISE EXCEPTION 'DEPOSIT import failed';
-            END IF;
-
-            -- Test 5: Idempotence - same deposit again
-            RAISE NOTICE '=== TEST 5: Idempotence (duplicate deposit) ===';
-            SELECT batch_id, success, rows_imported INTO v_batch_id, v_success, v_rows_imported
-            FROM public.import_csv_batch(
-              v_portfolio_id,
-              'trading_212',
-              'test_dep.csv',
-              'test_checksum_dep',
-              '[{"type":"deposit","date":"2026-01-04","amount":1000,"currency":"USD","sourceId":"dep_001"}]'::jsonb
-            );
-            IF v_success AND v_rows_imported = 0 THEN
-              RAISE NOTICE 'IDEMPOTENCE: SUCCESS - no duplicate created';
-            ELSE
-              RAISE EXCEPTION 'IDEMPOTENCE: FAILED - expected 0 rows, got %d', v_rows_imported;
-            END IF;
-
-            RAISE NOTICE '=== ALL RPC TESTS PASSED ===';
-          END $$;
-          EOF
-          echo "✓ RPC tests passed"
+            -d test_db \
+            -f test_rpc_integration.sql \
+            2>&1 | tee /tmp/rpc-tests.log
+          echo "✓ RPC tests completed"
 
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-logs
-          path: /tmp/test*.log
+          path: |
+            /tmp/test1.log
+            /tmp/test2.log
+            /tmp/rpc-tests.log
