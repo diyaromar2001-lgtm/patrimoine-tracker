@@ -754,14 +754,7 @@ CREATE OR REPLACE FUNCTION public.create_portfolio_and_import_trading212(
   p_file_checksum text,
   p_operations jsonb
 )
-RETURNS TABLE(
-  portfolio_id uuid,
-  batch_id uuid,
-  success boolean,
-  rows_imported integer,
-  rows_total integer,
-  error_message text
-)
+RETURNS record
 SECURITY DEFINER
 SET search_path = 'public'
 AS $$
@@ -773,11 +766,11 @@ DECLARE
   v_result_rows_imported integer;
   v_result_rows_total integer;
   v_result_error_message text;
+  v_result record;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
-    RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, 'Not authenticated'::text;
-    RETURN;
+    RETURN ROW(NULL::uuid, NULL::uuid, false, 0, 0, 'Not authenticated'::text);
   END IF;
 
   BEGIN
@@ -798,10 +791,10 @@ BEGIN
       RAISE EXCEPTION 'Import failed: %', v_result_error_message;
     END IF;
 
-    RETURN QUERY SELECT v_portfolio_id, v_result_batch_id, true, v_result_rows_imported, v_result_rows_total, NULL::text;
+    RETURN ROW(v_portfolio_id, v_result_batch_id, true, v_result_rows_imported, v_result_rows_total, NULL::text);
 
   EXCEPTION WHEN OTHERS THEN
-    RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, format('Portfolio creation failed: %s', SQLERRM)::text;
+    RETURN ROW(NULL::uuid, NULL::uuid, false, 0, 0, format('Portfolio creation failed: %s', SQLERRM)::text);
   END;
 END;
 $$ LANGUAGE plpgsql;
