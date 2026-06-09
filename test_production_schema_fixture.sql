@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
   currency text DEFAULT 'CHF',
   fx_rate_to_chf numeric DEFAULT 1,
   total_chf numeric,
-  transaction_date date,
+  date date,
   created_at timestamptz NOT NULL DEFAULT now(),
   asset_id uuid REFERENCES public.assets(id),
   gross_amount_chf numeric,
@@ -126,7 +126,7 @@ BEGIN
 
   -- Insérer 20 transactions historiques
   FOR i IN 1..20 LOOP
-    INSERT INTO public.transactions (id, portfolio_id, asset_id, ticker, asset_name, type, quantity, price, gross_amount_chf, net_amount_chf, transaction_date)
+    INSERT INTO public.transactions (id, portfolio_id, asset_id, ticker, asset_name, type, quantity, price, gross_amount_chf, net_amount_chf, date)
     SELECT gen_random_uuid(), v_portfolio_id, id, 'TICK1', 'Asset 1', CASE WHEN i % 3 = 0 THEN 'buy' WHEN i % 3 = 1 THEN 'sell' ELSE 'dividend' END,
       i, 100, i * 100, i * 100, NOW()::date - (20 - i) * interval '1 day'
     FROM public.assets WHERE portfolio_id = v_portfolio_id AND ticker = 'TICK1'
