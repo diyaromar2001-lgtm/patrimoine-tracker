@@ -34,7 +34,7 @@ interface ImportProps {
     file: File,
     analysis: ImportAnalysis,
     operations: any[]
-  ) => Promise<{ portfolioId: string; batchId: string }>
+  ) => Promise<{ portfolioId: string; batchId: string; rowsImported?: number; rowsTotal?: number }>
 }
 
 // ─── Manual Portfolio Creation ────────────────────────────────────────────────
@@ -526,7 +526,7 @@ export function PortfolioCreationModal({
               </button>
 
               <button
-                onClick={() => setMode("import")}
+                onClick={() => { setMode("import"); setImportError("") }}
                 className="w-full flex items-center justify-between p-4 rounded-lg border hover:bg-zinc-800/40 transition-colors"
                 style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}
               >
@@ -685,9 +685,11 @@ export function PortfolioCreationModal({
                           setImportResults({
                             portfolioId: results.portfolioId,
                             batchId: results.batchId,
-                            operationsImported: analysis.logicalEvents,
+                            // Prefer the RPC-confirmed count; fall back to client-side estimate
+                            operationsImported: results.rowsImported ?? analysis.logicalEvents,
                             assetsCreated: analysis.assetCount,
-                            cashMovements: analysis.eventsByType["deposit"] || 0 + (analysis.eventsByType["withdrawal"] || 0),
+                            // Fix operator-precedence bug: || binds tighter than the implicit +0
+                            cashMovements: (analysis.eventsByType["deposit"] || 0) + (analysis.eventsByType["withdrawal"] || 0),
                             dividends: analysis.eventsByType["dividend"] || 0,
                             splits: analysis.splitsDetected,
                           })
@@ -722,7 +724,9 @@ export function PortfolioCreationModal({
                   <div className="rounded-lg border p-4 flex items-start gap-3" style={{ backgroundColor: "#ef444418", borderColor: "#ef444430" }}>
                     <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" style={{ color: "#ef4444" }} />
                     <div className="text-sm" style={{ color: "#ef4444" }}>
-                      <p className="font-semibold">Erreur lors de l'import</p>
+                      <p className="font-semibold">
+                        {importError.includes("déjà été importé") ? "Fichier déjà importé" : "Erreur lors de l'import"}
+                      </p>
                       <p className="mt-1">{importError}</p>
                     </div>
                   </div>
