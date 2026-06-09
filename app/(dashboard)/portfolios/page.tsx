@@ -1021,7 +1021,6 @@ export default function PortfoliosPage() {
             className="flex items-center gap-1.5 px-4 py-3.5 text-sm font-medium text-zinc-500 hover:text-zinc-200 transition-colors whitespace-nowrap"
           >
             <Plus className="h-3.5 w-3.5" /> Nouveau
-            <span className="text-[10px] text-yellow-400">IMPORT-BUILD-976B0A1</span>
           </button>
         </div>
       </div>
