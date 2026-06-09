@@ -48,6 +48,7 @@ SELECT
   batch_id,
   success,
   rows_imported,
+  rows_total,
   error_message
 FROM public.create_portfolio_and_import_trading212(
   'CI Trading212 Test',
