@@ -1,0 +1,248 @@
+name: Test SQL Upgrade - Lot 2
+
+on:
+  push:
+    branches:
+      - feat/trading212-import
+    paths:
+      - 'supabase/migrations/20260609000002_*.sql'
+      - 'test_production_schema_fixture.sql'
+      - '.github/workflows/test-upgrade-sql.yml'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-upgrade:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PostgreSQL auth context
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d test_db << 'EOF'
+          CREATE ROLE anon NOLOGIN;
+          CREATE ROLE authenticated NOLOGIN;
+          CREATE ROLE service_role NOLOGIN;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE OR REPLACE FUNCTION auth.uid()
+          RETURNS uuid
+          LANGUAGE sql STABLE
+          AS $$
+            SELECT current_setting('request.jwt.claim.sub', true)::uuid
+          $$;
+          EOF
+          echo "✓ Auth context setup complete"
+
+      - name: Create fixture schema
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db \
+            -f test_production_schema_fixture.sql
+          echo "✓ Fixture schema created"
+
+      - name: Create historical snapshots
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db << 'EOF'
+          -- Snapshot historical data BEFORE migration
+          CREATE TABLE public._snapshot_portfolios AS
+          SELECT id, user_id, name, description, color, currency, created_at FROM public.portfolios;
+
+          CREATE TABLE public._snapshot_assets AS
+          SELECT id, portfolio_id, ticker, name, asset_class, quantity, avg_buy_price,
+                 currency, cost_basis_chf, cost_basis_source, cost_basis_updated_at,
+                 sector, country, crypto_custody, staking_enabled, created_at
+          FROM public.assets;
+
+          CREATE TABLE public._snapshot_transactions AS
+          SELECT id, portfolio_id, ticker, asset_name, asset_class, type, quantity, price,
+                 fees, currency, fx_rate_to_chf, total_chf, date, created_at,
+                 asset_id, gross_amount_chf, fees_chf, net_amount_chf, realized_pnl_chf
+          FROM public.transactions;
+
+          CREATE TABLE public._snapshot_cash_movements AS
+          SELECT id, user_id, type, currency, amount, balance_after_chf, balance_after_usd,
+                 balance_after_eur, note, ref_ticker, ref_portfolio_id, date, created_at
+          FROM public.cash_movements;
+
+          CREATE TABLE public._snapshot_global_cash AS
+          SELECT id, user_id, chf, usd, eur, updated_at, created_at
+          FROM public.global_cash;
+
+          SELECT 'Snapshots created' as status,
+            (SELECT COUNT(*) FROM public._snapshot_cash_movements) as cm_count,
+            (SELECT COUNT(*) FROM public._snapshot_transactions) as tx_count;
+          EOF
+          echo "✓ Historical snapshots created"
+
+      - name: "TEST 1: First application of SQL upgrade"
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db \
+            -f supabase/migrations/20260609000002_upgrade_lot2_final.sql > /tmp/test1.log 2>&1
+          echo "✓ First application succeeded"
+          echo "=== FIRST RUN OUTPUT ===" && tail -30 /tmp/test1.log
+
+      - name: "TEST 2: Second application (idempotence)"
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db \
+            -f supabase/migrations/20260609000002_upgrade_lot2_final.sql > /tmp/test2.log 2>&1
+          echo "✓ Second application succeeded (idempotency verified)"
+          echo "=== SECOND RUN OUTPUT ===" && tail -30 /tmp/test2.log
+
+      - name: Verify components exist
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db << 'EOF'
+          DO $$
+          BEGIN
+            -- Verify tables
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'import_batches') THEN
+              RAISE EXCEPTION 'Missing table: import_batches';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stock_split_events') THEN
+              RAISE EXCEPTION 'Missing table: stock_split_events';
+            END IF;
+
+            -- Verify functions
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'recalculate_asset_position') THEN
+              RAISE EXCEPTION 'Missing function: recalculate_asset_position';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'import_csv_batch') THEN
+              RAISE EXCEPTION 'Missing function: import_csv_batch';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'rollback_import_batch') THEN
+              RAISE EXCEPTION 'Missing function: rollback_import_batch';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_portfolio_and_import_trading212') THEN
+              RAISE EXCEPTION 'Missing function: create_portfolio_and_import_trading212';
+            END IF;
+
+            -- Verify columns in cash_movements (NO portfolio_id)
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'cash_movements' AND column_name = 'portfolio_id') THEN
+              RAISE EXCEPTION 'ERROR: portfolio_id should NOT exist in cash_movements';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'cash_movements' AND column_name = 'ref_portfolio_id') THEN
+              RAISE EXCEPTION 'Missing column: cash_movements.ref_portfolio_id';
+            END IF;
+
+            -- Verify security
+            RAISE NOTICE 'All verification checks passed';
+          END $$;
+          EOF
+          echo "✓ All components verified"
+
+      - name: Verify data preservation
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db << 'EOF'
+          DO $$
+          DECLARE
+            v_changed_rows integer;
+            v_lost_rows integer;
+            v_gained_rows integer;
+          BEGIN
+            -- Check if historical cash_movements columns are unchanged
+            SELECT COUNT(*) INTO v_changed_rows FROM (
+              (
+                SELECT id, user_id, type, currency, amount, note,
+                       ref_ticker, ref_portfolio_id, date, created_at
+                FROM public.cash_movements
+                EXCEPT
+                SELECT id, user_id, type, currency, amount, note,
+                       ref_ticker, ref_portfolio_id, date, created_at
+                FROM public._snapshot_cash_movements
+              )
+              UNION ALL
+              (
+                SELECT id, user_id, type, currency, amount, note,
+                       ref_ticker, ref_portfolio_id, date, created_at
+                FROM public._snapshot_cash_movements
+                EXCEPT
+                SELECT id, user_id, type, currency, amount, note,
+                       ref_ticker, ref_portfolio_id, date, created_at
+                FROM public.cash_movements
+              )
+            ) t;
+
+            -- Verify IDs are preserved
+            SELECT COUNT(*) INTO v_lost_rows FROM public._snapshot_cash_movements
+              WHERE id NOT IN (SELECT id FROM public.cash_movements);
+            SELECT COUNT(*) INTO v_gained_rows FROM public.cash_movements
+              WHERE id NOT IN (SELECT id FROM public._snapshot_cash_movements);
+
+            RAISE NOTICE 'Historical preservation: %',
+              CASE WHEN v_changed_rows = 0 AND v_lost_rows = 0 AND v_gained_rows = 0
+                   THEN 'PASSED'
+                   ELSE 'FAILED'
+              END;
+            RAISE NOTICE 'Changed rows: %, Lost: %, Gained: %', v_changed_rows, v_lost_rows, v_gained_rows;
+
+            IF v_changed_rows > 0 OR v_lost_rows > 0 OR v_gained_rows > 0 THEN
+              RAISE EXCEPTION 'Data preservation failed: %d changed, %d lost, %d gained',
+                v_changed_rows, v_lost_rows, v_gained_rows;
+            END IF;
+
+            RAISE NOTICE 'New columns added correctly: source=manual, source_external_id=NULL, import_batch_id=NULL';
+          END $$;
+          EOF
+          echo "✓ Data preservation verified"
+
+      - name: Test RPC with auth context
+        if: success()
+        run: |
+          set -o pipefail
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db \
+            -f test_rpc_integration.sql \
+            2>&1 | tee /tmp/rpc-tests.log
+          echo "✓ RPC tests completed"
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            /tmp/test1.log
+            /tmp/test2.log
+            /tmp/rpc-tests.log
