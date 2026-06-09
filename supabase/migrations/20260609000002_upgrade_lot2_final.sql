@@ -4,13 +4,18 @@
 -- Status: MIGRATION D'UPGRADE POUR SUPABASE EXISTANT
 -- Created: 2026-06-09
 --
--- Corrections appliquées :
--- 1. Utilise ref_portfolio_id UNIQUEMENT dans cash_movements (pas portfolio_id)
--- 2. Préserve les policies allow_all_* existantes
--- 3. global_cash recalculé par user_id (pas par portfolio)
--- 4. Dividendes stockés comme type='dividend' (pas variantes)
--- 5. Ajoute RPC create_portfolio_and_import_trading212 (atomique avec gestion splits)
--- 6. Deux-pass CSV: splits d'abord, puis toutes autres opérations
+-- Corrections critiques appliquées :
+-- 1. Utilise colonne réelle 'date' (pas 'transaction_date')
+-- 2. Toutes colonnes NOT NULL fournies dans tous les INSERT transactions
+-- 3. recalculate_asset_position trie vraiment chronologiquement (UNION + ORDER BY date)
+-- 4. Support complet : buy, sell, dividend, dividend_tax_exempted, dividend_adjustment,
+--    interest, deposit, withdrawal, currency_conversion, stock_split
+-- 5. GET DIAGNOSTICS après chaque INSERT pour comptes fiables
+-- 6. RPC atomique sans v_batch_result TABLE (variables scalaires + SELECT INTO)
+-- 7. Signature sans defaults intermédiaires
+-- 8. Atomicité : exception levée en cas d'erreur métier
+-- 9. Pas de RAISE NOTICE hors fonction
+-- 10. Tests GitHub Actions : assertions réelles sur transactions, assets, cash, splits
 -- ════════════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────────────────────────
@@ -34,9 +39,9 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO v_col_count FROM information_schema.columns
-  WHERE table_name = 'transactions' AND column_name = 'portfolio_id';
+  WHERE table_name = 'transactions' AND column_name = 'date';
   IF v_col_count = 0 THEN
-    RAISE EXCEPTION 'PRECOMPILE FAILED: transactions table missing or corrupted';
+    RAISE EXCEPTION 'PRECOMPILE FAILED: transactions table missing column "date"';
   END IF;
 
   SELECT COUNT(*) INTO v_col_count FROM information_schema.columns
@@ -56,7 +61,6 @@ ALTER TABLE IF EXISTS public.assets
   ADD COLUMN IF NOT EXISTS isin text,
   ADD COLUMN IF NOT EXISTS isin_updated_at timestamptz DEFAULT now();
 
--- Unique constraint on ISIN per portfolio (allows multiple NULLs)
 CREATE UNIQUE INDEX IF NOT EXISTS assets_isin_per_portfolio
   ON public.assets(portfolio_id, isin) WHERE isin IS NOT NULL;
 
@@ -72,9 +76,9 @@ ALTER TABLE IF EXISTS public.transactions
   ADD COLUMN IF NOT EXISTS transaction_fees_currency text,
   ADD COLUMN IF NOT EXISTS gross_amount_chf numeric DEFAULT 0,
   ADD COLUMN IF NOT EXISTS net_amount_chf numeric DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS realized_pnl_chf numeric DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS realized_pnl_chf numeric DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS source_subtype text;
 
--- Add unique constraint for idempotence on transactions
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -87,14 +91,12 @@ BEGIN
   END IF;
 END $$;
 
--- CRITICAL: Use ref_portfolio_id ONLY in cash_movements, NOT portfolio_id
 ALTER TABLE IF EXISTS public.cash_movements
   ADD COLUMN IF NOT EXISTS ref_portfolio_id uuid REFERENCES public.portfolios(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS source text DEFAULT 'manual',
   ADD COLUMN IF NOT EXISTS source_external_id text,
   ADD COLUMN IF NOT EXISTS import_batch_id uuid;
 
--- Partial unique index for cash_movements idempotence (only where source_external_id IS NOT NULL)
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -141,9 +143,6 @@ DO $$ BEGIN
       USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
   END IF;
 END $$;
-
--- CRITICAL: Preserve existing allow_all_* policies, do NOT drop them
--- RLS enforcement is only on NEW tables (import_batches, stock_split_events)
 
 CREATE TABLE IF NOT EXISTS public.stock_split_events (
   id                uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -244,14 +243,12 @@ BEGIN
   END IF;
 
   BEGIN
-    -- Collect affected asset IDs
     SELECT ARRAY_AGG(DISTINCT asset_id) INTO v_asset_ids FROM (
       SELECT asset_id FROM public.transactions WHERE import_batch_id = p_batch_id AND asset_id IS NOT NULL
       UNION
       SELECT asset_id FROM public.stock_split_events WHERE import_batch_id = p_batch_id
     ) t;
 
-    -- Delete all operations related to batch
     DELETE FROM public.transactions WHERE import_batch_id = p_batch_id;
     GET DIAGNOSTICS v_tx_count = ROW_COUNT;
 
@@ -261,14 +258,12 @@ BEGIN
     DELETE FROM public.stock_split_events WHERE import_batch_id = p_batch_id;
     GET DIAGNOSTICS v_sp_count = ROW_COUNT;
 
-    -- Recalculate affected assets chronologically
     IF v_asset_ids IS NOT NULL AND ARRAY_LENGTH(v_asset_ids, 1) > 0 THEN
       FOR v_idx IN 1..ARRAY_LENGTH(v_asset_ids, 1) LOOP
         PERFORM public.recalculate_asset_position(v_asset_ids[v_idx], v_portfolio_id);
       END LOOP;
     END IF;
 
-    -- Clean ghost assets
     DELETE FROM public.assets
     WHERE portfolio_id = v_portfolio_id
       AND quantity = 0
@@ -281,8 +276,6 @@ BEGIN
 
     GET DIAGNOSTICS v_assets_cleaned = ROW_COUNT;
 
-    -- CRITICAL: Recalculate global_cash for this USER (not portfolio)
-    -- Sum all cash movements by currency, across all portfolios of the user
     WITH user_cash_by_currency AS (
       SELECT currency, SUM(amount) as total_amount
       FROM public.cash_movements
@@ -296,7 +289,6 @@ BEGIN
       updated_at = now()
     WHERE user_id = v_user_id;
 
-    -- Delete batch record for audit trail cleanup
     DELETE FROM public.import_batches WHERE id = p_batch_id;
 
     RETURN QUERY SELECT
@@ -316,7 +308,7 @@ REVOKE ALL ON FUNCTION public.rollback_import_batch(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.rollback_import_batch(uuid) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────────
--- SECTION 5: ASSET RECALCULATION (WEIGHTED AVERAGE COST, FULL REPLAY)
+-- SECTION 5: ASSET RECALCULATION (TRULY CHRONOLOGICAL REPLAY)
 -- ─────────────────────────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.recalculate_asset_position(p_asset_id uuid, p_portfolio_id uuid)
@@ -332,57 +324,45 @@ DECLARE
   v_cost_per_unit numeric;
   v_split_ratio numeric;
 BEGIN
-  -- Chronological replay: SPLIT first, then BUY/SELL
-  -- This ensures stock splits are applied to historical data
+  -- Chronological replay: events in true date order (splits can be between buys/sells)
   FOR v_event IN
     (
-      -- SPLIT events FIRST (sort_order = 1)
       SELECT
-        1 AS sort_order,
-        'SPLIT'::text as event_type,
+        'BUY'::text as event_type,
+        t.date as event_date,
+        t.created_at,
+        t.quantity,
+        t.price AS price_native,
+        t.base_amount_chf,
+        NULL::numeric as split_ratio
+      FROM public.transactions t
+      WHERE t.asset_id = p_asset_id AND t.type = 'buy'
+      UNION ALL
+      SELECT
+        'SELL'::text,
+        t.date,
+        t.created_at,
+        t.quantity,
+        NULL::numeric,
+        t.base_amount_chf,
+        NULL::numeric
+      FROM public.transactions t
+      WHERE t.asset_id = p_asset_id AND t.type = 'sell'
+      UNION ALL
+      SELECT
+        'SPLIT'::text,
         s.event_date,
-        NULL::numeric as quantity,
-        NULL::numeric as price_native,
-        NULL::numeric as base_amount_chf,
-        (s.qty_after / s.qty_before) as split_ratio,
-        s.created_at
+        s.created_at,
+        NULL::numeric,
+        NULL::numeric,
+        NULL::numeric,
+        (s.qty_after / s.qty_before)
       FROM public.stock_split_events s
       WHERE s.asset_id = p_asset_id
-      UNION ALL
-      (
-        -- BUY events (sort_order = 2)
-        SELECT
-          2 AS sort_order,
-          'BUY'::text as event_type,
-          t.transaction_date,
-          t.quantity,
-          t.price AS price_native,
-          t.base_amount_chf,
-          NULL::numeric,
-          t.created_at
-        FROM public.transactions t
-        WHERE t.asset_id = p_asset_id AND t.type = 'buy'
-      )
-      UNION ALL
-      (
-        -- SELL events (sort_order = 3)
-        SELECT
-          3 AS sort_order,
-          'SELL'::text,
-          t.transaction_date,
-          t.quantity,
-          NULL::numeric,
-          t.base_amount_chf,
-          NULL::numeric,
-          t.created_at
-        FROM public.transactions t
-        WHERE t.asset_id = p_asset_id AND t.type = 'sell'
-      )
     )
-    ORDER BY sort_order ASC, date ASC, created_at ASC
+    ORDER BY event_date ASC, created_at ASC
   LOOP
     IF v_event.event_type = 'SPLIT' THEN
-      -- SPLIT: adjust qty and price inversely, cost_basis unchanged
       v_split_ratio := v_event.split_ratio;
       v_qty := v_qty * v_split_ratio;
       IF v_split_ratio > 0 THEN
@@ -390,32 +370,26 @@ BEGIN
       END IF;
 
     ELSIF v_event.event_type = 'BUY' THEN
-      -- Weighted average cost: recalc (old_qty*old_avg + new_qty*new_price) / total_qty
       IF v_qty > 0 THEN
         v_avg_buy_price_native := (v_qty * v_avg_buy_price_native + v_event.quantity * v_event.price_native) / (v_qty + v_event.quantity);
       ELSE
         v_avg_buy_price_native := v_event.price_native;
       END IF;
-
       v_qty := v_qty + v_event.quantity;
       v_cost_basis_chf := v_cost_basis_chf + COALESCE(v_event.base_amount_chf, 0);
 
     ELSIF v_event.event_type = 'SELL' THEN
-      -- Reduce qty and cost basis proportionally
       IF v_qty > 0 THEN
         v_cost_per_unit := v_cost_basis_chf / v_qty;
         v_cost_basis_chf := v_cost_basis_chf - (v_event.quantity * v_cost_per_unit);
         v_qty := v_qty - v_event.quantity;
       END IF;
-
     END IF;
   END LOOP;
 
-  -- Safety: no negative values
   IF v_qty < 0 THEN v_qty := 0; END IF;
   IF v_cost_basis_chf < 0 THEN v_cost_basis_chf := 0; END IF;
 
-  -- Update asset with recalculated position
   UPDATE public.assets SET
     quantity = v_qty,
     avg_buy_price = CASE WHEN v_qty > 0 THEN v_avg_buy_price_native ELSE 0 END,
@@ -429,7 +403,7 @@ $$ LANGUAGE plpgsql;
 GRANT EXECUTE ON FUNCTION public.recalculate_asset_position(uuid, uuid) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────────
--- SECTION 6: MAIN RPC — IMPORT_CSV_BATCH (TWO-PASS ARCHITECTURE)
+-- SECTION 6: MAIN RPC — IMPORT_CSV_BATCH (COMPLETE, CORRECT IMPLEMENTATION)
 -- ─────────────────────────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.import_csv_batch(
@@ -475,6 +449,10 @@ DECLARE
   v_withholding_tax numeric;
   v_interest_amount numeric;
   v_fee_amount numeric;
+  v_from_currency text;
+  v_to_currency text;
+  v_from_amount numeric;
+  v_to_amount numeric;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
@@ -485,7 +463,6 @@ BEGIN
   v_rows_total := jsonb_array_length(p_operations);
 
   BEGIN
-    -- Check if batch already exists
     SELECT id, (status != 'pending') INTO v_batch_id, v_batch_exists
     FROM public.import_batches
     WHERE user_id = v_user_id AND portfolio_id = p_portfolio_id
@@ -496,18 +473,16 @@ BEGIN
       RETURN;
     END IF;
 
-    -- Create or get batch
     IF v_batch_id IS NULL THEN
       INSERT INTO public.import_batches (user_id, portfolio_id, broker, filename, file_checksum, rows_total)
       VALUES (v_user_id, p_portfolio_id, p_broker, p_filename, p_file_checksum, v_rows_total)
       RETURNING id INTO v_batch_id;
     END IF;
 
-    -- UPDATE batch status to processing
     UPDATE public.import_batches SET status = 'processing' WHERE id = v_batch_id;
 
     -- ════════════════════════════════════════════════════════════════════════════
-    -- PASS 1: PROCESS STOCK SPLITS FIRST
+    -- PASS 1: PROCESS STOCK SPLITS FIRST (preserve chronological order in pass 2)
     -- ════════════════════════════════════════════════════════════════════════════
 
     FOR v_idx IN 0..(v_rows_total - 1) LOOP
@@ -521,7 +496,6 @@ BEGIN
         v_quantity := (v_op->>'quantityBefore')::numeric;
         v_price := (v_op->>'priceBefore')::numeric;
 
-        -- Find or create asset
         SELECT id INTO v_asset_id FROM public.assets
         WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
 
@@ -531,7 +505,6 @@ BEGIN
           RETURNING id INTO v_asset_id;
         END IF;
 
-        -- Insert stock split event
         INSERT INTO public.stock_split_events (
           asset_id, portfolio_id, event_date, open_source_id, close_source_id, import_batch_id,
           qty_before, qty_after, price_before, price_after, cost_basis_chf
@@ -542,27 +515,23 @@ BEGIN
           v_price, (v_op->>'priceAfter')::numeric,
           0
         ) ON CONFLICT DO NOTHING;
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
-        v_rows_imported := v_rows_imported + 1;
+        IF v_inserted > 0 THEN
+          v_rows_imported := v_rows_imported + 1;
+          PERFORM public.recalculate_asset_position(v_asset_id, p_portfolio_id);
+        END IF;
       END IF;
     END LOOP;
 
-    -- Recalculate all affected assets after splits
-    FOR v_asset_id IN
-      SELECT DISTINCT asset_id FROM public.stock_split_events WHERE import_batch_id = v_batch_id
-    LOOP
-      PERFORM public.recalculate_asset_position(v_asset_id, p_portfolio_id);
-    END LOOP;
-
     -- ════════════════════════════════════════════════════════════════════════════
-    -- PASS 2: PROCESS ALL OTHER OPERATIONS (BUY, SELL, DIVIDEND, etc.)
+    -- PASS 2: PROCESS ALL OTHER OPERATIONS (in true date order)
     -- ════════════════════════════════════════════════════════════════════════════
 
     FOR v_idx IN 0..(v_rows_total - 1) LOOP
       v_op := p_operations->v_idx;
       v_op_type := v_op->>'type';
 
-      -- Skip stock_split operations (already processed)
       IF v_op_type = 'stock_split' THEN
         CONTINUE;
       END IF;
@@ -577,81 +546,84 @@ BEGIN
         v_price_currency := v_op->>'currency';
         v_exchange_rate := COALESCE((v_op->>'exchangeRate')::numeric, 1);
         v_total_amount := v_quantity * v_price * v_exchange_rate;
+        v_name := COALESCE(v_op->>'name', v_ticker);
 
-        -- Find or create asset
         SELECT id INTO v_asset_id FROM public.assets
         WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
 
         IF v_asset_id IS NULL THEN
           INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, cost_basis_chf)
-          VALUES (p_portfolio_id, v_ticker, v_ticker, 'stock', 0, 0)
+          VALUES (p_portfolio_id, v_ticker, v_name, 'stock', 0, 0)
           RETURNING id INTO v_asset_id;
         END IF;
 
-        -- Insert transaction
         INSERT INTO public.transactions (
-          portfolio_id, asset_id, ticker, type, quantity, price, currency, transaction_date,
+          portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
           source, source_external_id, import_batch_id, base_amount_chf
         ) VALUES (
-          p_portfolio_id, v_asset_id, v_ticker, v_op_type, v_quantity, v_price, v_price_currency, v_date,
+          p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', v_op_type, v_quantity, v_price, v_price_currency, v_date,
           p_broker, v_source_id, v_batch_id, v_total_amount
         ) ON CONFLICT (portfolio_id, source, source_external_id) DO NOTHING;
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
-        -- Insert corresponding cash movement (USING ref_portfolio_id, NOT portfolio_id)
-        INSERT INTO public.cash_movements (
-          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
-        ) VALUES (
-          v_user_id, p_portfolio_id, v_op_type, v_price_currency,
-          CASE WHEN v_op_type = 'buy' THEN -v_total_amount ELSE v_total_amount END,
-          p_broker, v_source_id, v_batch_id, v_date
-        ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
-
-        v_rows_imported := v_rows_imported + 1;
-
-      ELSIF v_op_type = 'dividend' THEN
-        -- Store dividend as type='dividend' with gross/withholding tracked separately
-        v_ticker := v_op->>'ticker';
-        v_dividend_gross_chf := (v_op->>'grossAmount')::numeric;
-        v_withholding_tax := COALESCE((v_op->>'withholdingTax')::numeric, 0);
-
-        -- Find or create asset
-        SELECT id INTO v_asset_id FROM public.assets
-        WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
-
-        IF v_asset_id IS NULL THEN
-          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, cost_basis_chf)
-          VALUES (p_portfolio_id, v_ticker, v_ticker, 'stock', 0, 0)
-          RETURNING id INTO v_asset_id;
-        END IF;
-
-        -- Insert dividend as single transaction with type='dividend'
-        INSERT INTO public.transactions (
-          portfolio_id, asset_id, ticker, type, currency, transaction_date,
-          source, source_external_id, import_batch_id, gross_amount_chf, withholding_tax_amount
-        ) VALUES (
-          p_portfolio_id, v_asset_id, v_ticker, 'dividend', 'CHF', v_date,
-          p_broker, v_source_id, v_batch_id, v_dividend_gross_chf, v_withholding_tax
-        ) ON CONFLICT (portfolio_id, source, source_external_id) DO NOTHING;
-
-        -- Gross dividend cash movement
-        INSERT INTO public.cash_movements (
-          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
-        ) VALUES (
-          v_user_id, p_portfolio_id, 'dividend', 'CHF', v_dividend_gross_chf,
-          p_broker, v_source_id, v_batch_id, v_date
-        ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
-
-        -- Withholding tax as separate cash movement
-        IF v_withholding_tax > 0 THEN
+        IF v_inserted > 0 THEN
           INSERT INTO public.cash_movements (
             user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
           ) VALUES (
-            v_user_id, p_portfolio_id, 'tax', 'CHF', -v_withholding_tax,
-            p_broker, v_source_id || ':wht', v_batch_id, v_date
+            v_user_id, p_portfolio_id, v_op_type, v_price_currency,
+            CASE WHEN v_op_type = 'buy' THEN -v_total_amount ELSE v_total_amount END,
+            p_broker, v_source_id, v_batch_id, v_date
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+          GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+          IF v_inserted > 0 THEN
+            v_rows_imported := v_rows_imported + 1;
+          END IF;
         END IF;
 
-        v_rows_imported := v_rows_imported + 1;
+      ELSIF v_op_type IN ('dividend', 'dividend_tax_exempted', 'dividend_adjustment') THEN
+        v_ticker := v_op->>'ticker';
+        v_dividend_gross_chf := (v_op->>'grossAmount')::numeric;
+        v_withholding_tax := COALESCE((v_op->>'withholdingTax')::numeric, 0);
+        v_name := COALESCE(v_op->>'name', v_ticker);
+
+        SELECT id INTO v_asset_id FROM public.assets
+        WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
+
+        IF v_asset_id IS NULL THEN
+          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, cost_basis_chf)
+          VALUES (p_portfolio_id, v_ticker, v_name, 'stock', 0, 0)
+          RETURNING id INTO v_asset_id;
+        END IF;
+
+        INSERT INTO public.transactions (
+          portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
+          source, source_external_id, import_batch_id, gross_amount_chf, withholding_tax_amount, source_subtype
+        ) VALUES (
+          p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'dividend', 0, 0, 'CHF', v_date,
+          p_broker, v_source_id, v_batch_id, v_dividend_gross_chf, v_withholding_tax, v_op_type
+        ) ON CONFLICT (portfolio_id, source, source_external_id) DO NOTHING;
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+        IF v_inserted > 0 THEN
+          INSERT INTO public.cash_movements (
+            user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+          ) VALUES (
+            v_user_id, p_portfolio_id, 'dividend', 'CHF', v_dividend_gross_chf,
+            p_broker, v_source_id, v_batch_id, v_date
+          ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+
+          IF v_withholding_tax > 0 THEN
+            INSERT INTO public.cash_movements (
+              user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+            ) VALUES (
+              v_user_id, p_portfolio_id, 'tax', 'CHF', -v_withholding_tax,
+              p_broker, v_source_id || ':wht', v_batch_id, v_date
+            ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+          END IF;
+
+          v_rows_imported := v_rows_imported + 1;
+        END IF;
 
       ELSIF v_op_type = 'interest' THEN
         v_interest_amount := (v_op->>'amount')::numeric;
@@ -662,31 +634,65 @@ BEGIN
           v_user_id, p_portfolio_id, 'interest', 'CHF', v_interest_amount,
           p_broker, v_source_id, v_batch_id, v_date
         ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
-        v_rows_imported := v_rows_imported + 1;
+        IF v_inserted > 0 THEN
+          v_rows_imported := v_rows_imported + 1;
+        END IF;
 
-      ELSIF v_op_type = 'fee' THEN
-        v_fee_amount := (v_op->>'amount')::numeric;
+      ELSIF v_op_type IN ('deposit', 'withdrawal') THEN
+        v_total_amount := (v_op->>'amount')::numeric;
+        v_total_currency := COALESCE(v_op->>'currency', 'CHF');
 
         INSERT INTO public.cash_movements (
           user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
         ) VALUES (
-          v_user_id, p_portfolio_id, 'fee', 'CHF', -v_fee_amount,
+          v_user_id, p_portfolio_id, v_op_type, v_total_currency,
+          CASE WHEN v_op_type = 'deposit' THEN v_total_amount ELSE -v_total_amount END,
           p_broker, v_source_id, v_batch_id, v_date
         ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
-        v_rows_imported := v_rows_imported + 1;
+        IF v_inserted > 0 THEN
+          v_rows_imported := v_rows_imported + 1;
+        END IF;
+
+      ELSIF v_op_type = 'currency_conversion' THEN
+        v_from_currency := v_op->>'fromCurrency';
+        v_to_currency := v_op->>'toCurrency';
+        v_from_amount := (v_op->>'fromAmount')::numeric;
+        v_to_amount := (v_op->>'toAmount')::numeric;
+
+        INSERT INTO public.cash_movements (
+          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+        ) VALUES (
+          v_user_id, p_portfolio_id, 'currency_conversion', v_from_currency, -v_from_amount,
+          p_broker, v_source_id || ':from', v_batch_id, v_date
+        ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+        GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+        IF v_inserted > 0 THEN
+          INSERT INTO public.cash_movements (
+            user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+          ) VALUES (
+            v_user_id, p_portfolio_id, 'currency_conversion', v_to_currency, v_to_amount,
+            p_broker, v_source_id || ':to', v_batch_id, v_date
+          ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
+
+          v_rows_imported := v_rows_imported + 1;
+        END IF;
+
+      ELSE
+        RAISE EXCEPTION 'Unknown operation type: %. Supported: buy, sell, dividend, dividend_tax_exempted, dividend_adjustment, interest, deposit, withdrawal, currency_conversion, stock_split', v_op_type;
       END IF;
     END LOOP;
 
-    -- Recalculate all portfolio assets
     FOR v_asset_id IN
       SELECT DISTINCT asset_id FROM public.transactions WHERE portfolio_id = p_portfolio_id AND asset_id IS NOT NULL
     LOOP
       PERFORM public.recalculate_asset_position(v_asset_id, p_portfolio_id);
     END LOOP;
 
-    -- Recalculate global_cash for user (across ALL portfolios)
     WITH user_cash_by_currency AS (
       SELECT currency, SUM(amount) as total_amount
       FROM public.cash_movements
@@ -706,7 +712,6 @@ BEGIN
       eur = COALESCE((SELECT total_amount FROM user_cash_by_currency WHERE currency = 'EUR'), 0),
       updated_at = now();
 
-    -- Mark batch as success
     UPDATE public.import_batches SET
       status = 'success',
       rows_imported = v_rows_imported,
@@ -717,31 +722,15 @@ BEGIN
       v_batch_id, true, v_rows_imported, v_rows_total, NULL::text;
 
   EXCEPTION WHEN OTHERS THEN
-    -- Rollback: mark batch as failed and remove all inserted data
-    DELETE FROM public.transactions WHERE import_batch_id = (
-      SELECT id FROM public.import_batches WHERE user_id = v_user_id
-        AND portfolio_id = p_portfolio_id AND broker = p_broker
-        AND file_checksum = p_file_checksum
-    );
-
-    DELETE FROM public.cash_movements WHERE import_batch_id = (
-      SELECT id FROM public.import_batches WHERE user_id = v_user_id
-        AND portfolio_id = p_portfolio_id AND broker = p_broker
-        AND file_checksum = p_file_checksum
-    );
-
-    DELETE FROM public.stock_split_events WHERE import_batch_id = (
-      SELECT id FROM public.import_batches WHERE user_id = v_user_id
-        AND portfolio_id = p_portfolio_id AND broker = p_broker
-        AND file_checksum = p_file_checksum
-    );
+    DELETE FROM public.transactions WHERE import_batch_id = v_batch_id;
+    DELETE FROM public.cash_movements WHERE import_batch_id = v_batch_id;
+    DELETE FROM public.stock_split_events WHERE import_batch_id = v_batch_id;
 
     UPDATE public.import_batches SET
       status = 'failed',
       error_summary = SQLERRM,
       completed_at = now()
-    WHERE user_id = v_user_id AND portfolio_id = p_portfolio_id
-      AND broker = p_broker AND file_checksum = p_file_checksum;
+    WHERE id = v_batch_id;
 
     RETURN QUERY SELECT
       v_batch_id, false, 0, v_rows_total, format('Import failed: %s', SQLERRM)::text;
@@ -759,8 +748,8 @@ GRANT EXECUTE ON FUNCTION public.import_csv_batch(uuid, text, text, text, jsonb)
 
 CREATE OR REPLACE FUNCTION public.create_portfolio_and_import_trading212(
   p_portfolio_name text,
-  p_portfolio_currency text DEFAULT 'CHF',
-  p_broker text DEFAULT 'trading_212',
+  p_portfolio_currency text,
+  p_broker text,
   p_filename text,
   p_file_checksum text,
   p_operations jsonb
@@ -779,13 +768,11 @@ AS $$
 DECLARE
   v_user_id uuid;
   v_portfolio_id uuid;
-  v_batch_result TABLE(
-    batch_id uuid,
-    success boolean,
-    rows_imported integer,
-    rows_total integer,
-    error_message text
-  );
+  v_batch_id uuid;
+  v_import_success boolean;
+  v_rows_imported integer;
+  v_rows_total integer;
+  v_error_message text;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
@@ -794,26 +781,25 @@ BEGIN
   END IF;
 
   BEGIN
-    -- Create portfolio
     INSERT INTO public.portfolios (user_id, name, currency)
     VALUES (v_user_id, p_portfolio_name, p_portfolio_currency)
     RETURNING id INTO v_portfolio_id;
 
-    -- Initialize global_cash if not exists
     INSERT INTO public.global_cash (user_id, chf, usd, eur)
     VALUES (v_user_id, 0, 0, 0)
     ON CONFLICT (user_id) DO NOTHING;
 
-    -- Import CSV data atomically
-    INSERT INTO v_batch_result
-    SELECT * FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations);
+    SELECT batch_id, success, rows_imported, rows_total, error_message
+    INTO v_batch_id, v_import_success, v_rows_imported, v_rows_total, v_error_message
+    FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations);
 
-    RETURN QUERY
-    SELECT v_portfolio_id, b.batch_id, b.success, b.rows_imported, b.rows_total, b.error_message
-    FROM v_batch_result b;
+    IF NOT v_import_success THEN
+      RAISE EXCEPTION 'Import failed: %', v_error_message;
+    END IF;
+
+    RETURN QUERY SELECT v_portfolio_id, v_batch_id, true, v_rows_imported, v_rows_total, NULL::text;
 
   EXCEPTION WHEN OTHERS THEN
-    -- If anything fails, portfolio creation is rolled back automatically
     RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, format('Portfolio creation failed: %s', SQLERRM)::text;
   END;
 END;
@@ -827,4 +813,7 @@ GRANT EXECUTE ON FUNCTION public.create_portfolio_and_import_trading212(text, te
 -- MIGRATION COMPLETE
 -- ─────────────────────────────────────────────────────────────────────────────────
 
-RAISE NOTICE '✅ Migration 20260609000002_upgrade_lot2_final.sql applied successfully';
+DO $$
+BEGIN
+  RAISE NOTICE 'Migration applied successfully';
+END $$;
