@@ -763,7 +763,7 @@ RETURNS TABLE(
   error_message text
 )
 SECURITY DEFINER
-SET search_path = ''
+SET search_path = 'public'
 AS $$
 DECLARE
   v_user_id uuid;
