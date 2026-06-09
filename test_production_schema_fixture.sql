@@ -140,7 +140,7 @@ BEGIN
       gen_random_uuid(),
       v_user_id,
       CASE WHEN i <= 53 THEN v_portfolio_id ELSE NULL END,
-      CASE WHEN i % 4 = 0 THEN 'deposit' WHEN i % 4 = 1 THEN 'withdrawal' WHEN i % 4 = 2 THEN 'dividend' ELSE 'fee' END,
+      CASE WHEN i % 4 = 0 THEN 'deposit' WHEN i % 4 = 1 THEN 'withdrawal' WHEN i % 4 = 2 THEN 'revenue_credit' ELSE 'fee' END,
       CASE WHEN i % 4 = 1 THEN -(500 + i * 10) ELSE (500 + i * 10) END,
       NOW()::date - (90 - i) * interval '1 day'
     );
