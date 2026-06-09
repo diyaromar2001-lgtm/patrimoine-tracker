@@ -27,8 +27,7 @@ export function usePortfolioImport() {
 
       const { data, error } = await supabase.rpc("create_portfolio_and_import_trading212", {
         p_portfolio_name: portfolioName,
-        p_portfolio_description: `Import Trading 212 - ${file.name}`,
-        p_portfolio_color: "#3b82f6",
+        p_portfolio_currency: "CHF",
         p_broker: "trading_212",
         p_filename: file.name,
         p_file_checksum: fileChecksum,
