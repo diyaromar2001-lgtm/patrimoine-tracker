@@ -493,15 +493,16 @@ BEGIN
         v_date := (v_op->>'date')::date;
         v_ticker := v_op->>'ticker';
         v_source_id := v_op->>'sourceId';
-        v_quantity := (v_op->>'quantityBefore')::numeric;
-        v_price := (v_op->>'priceBefore')::numeric;
+        -- B9 fix: parser uses snake_case (qty_before, price_before, etc.)
+        v_quantity := (v_op->>'qty_before')::numeric;
+        v_price    := (v_op->>'price_before')::numeric;
 
         SELECT id INTO v_asset_id FROM public.assets
         WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
 
         IF v_asset_id IS NULL THEN
-          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, cost_basis_chf)
-          VALUES (p_portfolio_id, v_ticker, v_ticker, 'stock', 0, 0)
+          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, avg_buy_price, cost_basis_chf)
+          VALUES (p_portfolio_id, v_ticker, v_ticker, 'stock', 0, 0, 0)
           RETURNING id INTO v_asset_id;
         END IF;
 
@@ -509,10 +510,14 @@ BEGIN
           asset_id, portfolio_id, event_date, open_source_id, close_source_id, import_batch_id,
           qty_before, qty_after, price_before, price_after, cost_basis_chf
         ) VALUES (
-          v_asset_id, p_portfolio_id, v_date, v_source_id, v_source_id || ':close',
+          v_asset_id, p_portfolio_id, v_date,
+          COALESCE(v_op->>'open_source_id', v_source_id),
+          COALESCE(v_op->>'close_source_id', v_source_id || ':close'),
           v_batch_id,
-          v_quantity, (v_op->>'quantityAfter')::numeric,
-          v_price, (v_op->>'priceAfter')::numeric,
+          v_quantity,
+          (v_op->>'qty_after')::numeric,
+          v_price,
+          (v_op->>'price_after')::numeric,
           0
         ) ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
@@ -540,20 +545,22 @@ BEGIN
       v_source_id := v_op->>'sourceId';
 
       IF v_op_type IN ('buy', 'sell') THEN
-        v_ticker := v_op->>'ticker';
-        v_quantity := (v_op->>'quantity')::numeric;
-        v_price := (v_op->>'price')::numeric;
-        v_price_currency := v_op->>'currency';
-        v_exchange_rate := COALESCE((v_op->>'exchangeRate')::numeric, 1);
-        v_total_amount := v_quantity * v_price * v_exchange_rate;
-        v_name := COALESCE(v_op->>'name', v_ticker);
+        v_ticker         := v_op->>'ticker';
+        v_quantity       := (v_op->>'quantity')::numeric;
+        v_price          := (v_op->>'price')::numeric;
+        v_price_currency := v_op->>'priceCurrency';                          -- B1 fix: was 'currency'
+        v_exchange_rate  := COALESCE((v_op->>'exchangeRate')::numeric, 1);
+        v_total_amount   := COALESCE((v_op->>'totalAmount')::numeric,        -- B2 fix: use CSV Total directly
+                              v_quantity * v_price * v_exchange_rate);
+        v_total_currency := COALESCE(v_op->>'totalCurrency', 'CHF');         -- B3/cash fix
+        v_name           := COALESCE(v_op->>'name', v_ticker);
 
         SELECT id INTO v_asset_id FROM public.assets
         WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
 
         IF v_asset_id IS NULL THEN
-          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, cost_basis_chf)
-          VALUES (p_portfolio_id, v_ticker, v_name, 'stock', 0, 0)
+          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, avg_buy_price, cost_basis_chf)
+          VALUES (p_portfolio_id, v_ticker, v_name, 'stock', 0, 0, 0)
           RETURNING id INTO v_asset_id;
         END IF;
 
@@ -572,7 +579,7 @@ BEGIN
           ) VALUES (
             v_user_id, p_portfolio_id,
             CASE WHEN v_op_type = 'buy' THEN 'buy_deduction' ELSE 'sell_credit' END,
-            v_price_currency,
+            v_total_currency,                                                -- B3 fix: account currency (CHF), not price currency
             CASE WHEN v_op_type = 'buy' THEN -v_total_amount ELSE v_total_amount END,
             p_broker, v_source_id, v_batch_id, v_date
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
@@ -584,17 +591,19 @@ BEGIN
         END IF;
 
       ELSIF v_op_type IN ('dividend', 'dividend_tax_exempted', 'dividend_adjustment') THEN
-        v_ticker := v_op->>'ticker';
-        v_dividend_gross_chf := (v_op->>'grossAmount')::numeric;
+        v_ticker          := v_op->>'ticker';
         v_withholding_tax := COALESCE((v_op->>'withholdingTax')::numeric, 0);
-        v_name := COALESCE(v_op->>'name', v_ticker);
+        v_total_currency  := COALESCE(v_op->>'totalCurrency', 'CHF');         -- B5 fix: use real currency
+        -- B4 fix: no 'grossAmount' field in JSON; gross = net received + withholding
+        v_dividend_gross_chf := COALESCE((v_op->>'totalAmount')::numeric, 0) + v_withholding_tax;
+        v_name            := COALESCE(v_op->>'name', v_ticker);
 
         SELECT id INTO v_asset_id FROM public.assets
         WHERE portfolio_id = p_portfolio_id AND ticker = v_ticker;
 
         IF v_asset_id IS NULL THEN
-          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, cost_basis_chf)
-          VALUES (p_portfolio_id, v_ticker, v_name, 'stock', 0, 0)
+          INSERT INTO public.assets (portfolio_id, ticker, name, asset_class, quantity, avg_buy_price, cost_basis_chf)
+          VALUES (p_portfolio_id, v_ticker, v_name, 'stock', 0, 0, 0)
           RETURNING id INTO v_asset_id;
         END IF;
 
@@ -602,7 +611,7 @@ BEGIN
           portfolio_id, asset_id, ticker, asset_name, asset_class, type, quantity, price, currency, date,
           source, source_external_id, import_batch_id, gross_amount_chf, withholding_tax_amount, source_subtype
         ) VALUES (
-          p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'dividend', 0, 0, 'CHF', v_date,
+          p_portfolio_id, v_asset_id, v_ticker, v_name, 'stock', 'dividend', 0, 0, v_total_currency, v_date,
           p_broker, v_source_id, v_batch_id, v_dividend_gross_chf, v_withholding_tax, v_op_type
         ) ON CONFLICT (portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
@@ -611,7 +620,7 @@ BEGIN
           INSERT INTO public.cash_movements (
             user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
           ) VALUES (
-            v_user_id, p_portfolio_id, 'revenue_credit', 'CHF', v_dividend_gross_chf,
+            v_user_id, p_portfolio_id, 'revenue_credit', v_total_currency, v_dividend_gross_chf,
             p_broker, v_source_id, v_batch_id, v_date, v_op_type
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
 
@@ -619,7 +628,7 @@ BEGIN
             INSERT INTO public.cash_movements (
               user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
             ) VALUES (
-              v_user_id, p_portfolio_id, 'fee', 'CHF', -v_withholding_tax,
+              v_user_id, p_portfolio_id, 'fee', v_total_currency, -v_withholding_tax,
               p_broker, v_source_id || ':wht', v_batch_id, v_date, 'withholding_tax'
             ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
           END IF;
@@ -628,7 +637,7 @@ BEGIN
         END IF;
 
       ELSIF v_op_type = 'interest' THEN
-        v_interest_amount := (v_op->>'amount')::numeric;
+        v_interest_amount := (v_op->>'totalAmount')::numeric;                -- B6 fix: was 'amount'
 
         INSERT INTO public.cash_movements (
           user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
@@ -643,8 +652,8 @@ BEGIN
         END IF;
 
       ELSIF v_op_type IN ('deposit', 'withdrawal') THEN
-        v_total_amount := (v_op->>'amount')::numeric;
-        v_total_currency := COALESCE(v_op->>'currency', 'CHF');
+        v_total_amount   := (v_op->>'totalAmount')::numeric;                 -- B7 fix: was 'amount'
+        v_total_currency := COALESCE(v_op->>'totalCurrency', 'CHF');         -- B7 fix: was 'currency'
 
         INSERT INTO public.cash_movements (
           user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
@@ -659,7 +668,7 @@ BEGIN
           v_rows_imported := v_rows_imported + 1;
         END IF;
 
-      ELSIF v_op_type = 'currency_conversion' THEN
+      ELSIF v_op_type IN ('currency_conversion', 'fx_conversion') THEN       -- B8 fix: parser outputs 'fx_conversion'
         v_from_currency := v_op->>'fromCurrency';
         v_to_currency := v_op->>'toCurrency';
         v_from_amount := (v_op->>'fromAmount')::numeric;
