@@ -5,9 +5,18 @@ const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
 
 export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON)
 
+// 400 days in seconds — keeps the session alive across browser restarts
+const COOKIE_MAX_AGE = 400 * 24 * 60 * 60
+
 export function createClient() {
   if (!isSupabaseConfigured) return null
-  return createBrowserClient(SUPABASE_URL, SUPABASE_ANON)
+  return createBrowserClient(SUPABASE_URL, SUPABASE_ANON, {
+    cookieOptions: {
+      maxAge: COOKIE_MAX_AGE,
+      sameSite: "lax",
+      secure: true,
+    },
+  })
 }
 
 /** Sign out and redirect to /login */
