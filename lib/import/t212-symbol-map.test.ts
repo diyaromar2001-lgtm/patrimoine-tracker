@@ -54,8 +54,35 @@ describe("resolveQuoteSymbol", () => {
     expect(resolveQuoteSymbol("UBSG")).toBe("UBSG.SW")
   })
 
-  test("ROG → ROG.SW (Roche Holding on SIX)", () => {
-    expect(resolveQuoteSymbol("ROG")).toBe("ROG.SW")
+  // ROG.SW was removed: Roche Holding restructured share classes Dec 2024,
+  // ROG.SW returns HTTP 404 on Yahoo Finance.  Do NOT add it back without a
+  // confirmed working symbol.
+  test("ROG → undefined (ROG.SW returns HTTP 404 since Roche Dec-2024 restructuring)", () => {
+    expect(resolveQuoteSymbol("ROG")).toBeUndefined()
+  })
+
+  // ── ROP = Roper Technologies (NYSE) — must NEVER map to Roche or ROG.SW ──
+  //
+  // Root cause of "Roche" being stored as name for ROP: T212 CSV uses a naïve
+  // comma-split parser; "Roper Technologies, Inc." gets truncated at the comma
+  // so only "Roper Technologies" reaches the Name field, or T212 itself had
+  // stale/incorrect metadata for this position in a past CSV export.
+  // ROP is a plain NYSE ticker — no exchange suffix needed for Yahoo Finance.
+
+  test("ROP → undefined (Roper Technologies is a plain US ticker, no alias needed)", () => {
+    expect(resolveQuoteSymbol("ROP")).toBeUndefined()
+  })
+
+  test("ROP must NOT resolve to ROG.SW (Roche Holding)", () => {
+    expect(resolveQuoteSymbol("ROP")).not.toBe("ROG.SW")
+  })
+
+  test("ROP must NOT appear anywhere in T212_TICKER_TO_YAHOO values as Roche-related", () => {
+    // Ensure no mapping accidentally routes ROP to a Roche symbol
+    expect(T212_TICKER_TO_YAHOO["ROP"]).toBeUndefined()
+    const values = Object.values(T212_TICKER_TO_YAHOO)
+    // ROG.SW must not exist in the map (it's broken / returns 404)
+    expect(values).not.toContain("ROG.SW")
   })
 
   // ── US stocks — no alias needed ──────────────────────────────────────────
