@@ -708,7 +708,7 @@ DECLARE
   v_pid uuid;
   v_ok  boolean; v_err text;
   v_ccy text; v_wht_ccy text; v_gross numeric;
-  v_cm_ccy text;
+  v_cm_ccy text; v_cm_amt numeric;
 BEGIN
   INSERT INTO public.portfolios (user_id, name, currency)
   VALUES (auth.uid(), 'T15_USD_DIV', 'CHF') RETURNING id INTO v_pid;
@@ -741,14 +741,20 @@ BEGIN
 
   IF v_ccy != 'USD'     THEN RAISE EXCEPTION 'T15 FAIL tx.currency: exp=USD got=%',   v_ccy;     END IF;
   IF v_wht_ccy != 'USD' THEN RAISE EXCEPTION 'T15 FAIL wht_currency: exp=USD got=%',  v_wht_ccy; END IF;
-  IF v_gross != 15.00   THEN RAISE EXCEPTION 'T15 FAIL gross: exp=15.00 got=%',        v_gross;   END IF;
+  -- Fix 3: gross_amount_chf must be NULL for non-CHF dividends (not a fake USD value)
+  IF v_gross IS NOT NULL THEN
+    RAISE EXCEPTION 'T15 FAIL gross_amount_chf: exp=NULL for USD dividend, got=%', v_gross;
+  END IF;
 
-  SELECT currency INTO v_cm_ccy FROM public.cash_movements
+  -- Cash movement must carry the correct native USD amount (not NULL)
+  SELECT amount, currency INTO v_cm_amt, v_cm_ccy
+  FROM public.cash_movements
   WHERE ref_portfolio_id = v_pid AND source_external_id = 'T15-DIV' AND type = 'revenue_credit';
-  IF v_cm_ccy != 'USD' THEN RAISE EXCEPTION 'T15 FAIL cm.currency: exp=USD got=%', v_cm_ccy; END IF;
+  IF v_cm_ccy != 'USD'  THEN RAISE EXCEPTION 'T15 FAIL cm.currency: exp=USD got=%',    v_cm_ccy; END IF;
+  IF v_cm_amt != 15.00  THEN RAISE EXCEPTION 'T15 FAIL cm.amount: exp=15.00 got=%',    v_cm_amt; END IF;
 
-  RAISE NOTICE '✅ T15 USD_DIVIDEND tx.currency=% wht_currency=% gross=% cm_ccy=%',
-    v_ccy, v_wht_ccy, v_gross, v_cm_ccy;
+  RAISE NOTICE '✅ T15 USD_DIVIDEND tx.currency=% wht_currency=% gross_amount_chf=NULL(correct) cm=15.00USD',
+    v_ccy, v_wht_ccy;
 END $$;
 
 -- =============================================================================
@@ -877,9 +883,132 @@ BEGIN
 END $$;
 
 -- =============================================================================
+-- TEST 19: SELL EUR — realized_pnl_chf must be NULL (no fake CHF)
+-- EUR account: totalCurrency='EUR' → base_amount_chf=NULL → pnl=NULL.
+-- =============================================================================
+\echo ''
+\echo '=== T19: SELL_EUR realized_pnl_chf=NULL (no fake CHF P&L) ==='
+
+DO $$
+DECLARE
+  v_pid uuid;
+  v_ok  boolean; v_err text;
+  v_pnl numeric;
+  v_pnl_is_null boolean;
+BEGIN
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (auth.uid(), 'T19_EUR_SELL', 'EUR') RETURNING id INTO v_pid;
+
+  SELECT success, error_message INTO v_ok, v_err
+  FROM public.import_csv_batch(
+    v_pid,'trading_212','t19.csv','ck-t19',
+    jsonb_build_array(
+      jsonb_build_object(
+        'type','buy','date','2025-01-01','sourceId','T19-BUY',
+        'ticker','SAP','name','SAP SE',
+        'quantity',10,'price',150,
+        'priceCurrency','EUR','exchangeRate',1.0,
+        'totalAmount',1500,'totalCurrency','EUR'
+      ),
+      jsonb_build_object(
+        'type','sell','date','2025-06-01','sourceId','T19-SELL',
+        'ticker','SAP','name','SAP SE',
+        'quantity',5,'price',160,
+        'priceCurrency','EUR','exchangeRate',1.0,
+        'totalAmount',800,'totalCurrency','EUR'
+      )
+    )
+  );
+  IF NOT v_ok THEN RAISE EXCEPTION 'T19 import failed: %', v_err; END IF;
+
+  SELECT realized_pnl_chf INTO v_pnl FROM public.transactions
+  WHERE portfolio_id = v_pid AND type = 'sell' AND source_external_id = 'T19-SELL';
+
+  -- base_amount_chf=NULL for EUR sell → P&L cannot be computed in CHF
+  IF v_pnl IS NOT NULL THEN
+    RAISE EXCEPTION 'T19 FAIL: realized_pnl_chf should be NULL for EUR sell, got=%', v_pnl;
+  END IF;
+
+  RAISE NOTICE '✅ T19 SELL_EUR realized_pnl_chf=NULL (no fake CHF written)';
+END $$;
+
+-- =============================================================================
+-- TEST 20: DOUBLE ATOMIC IMPORT — same checksum must be refused without
+-- creating a second portfolio, new transactions, or new cash movements.
+-- =============================================================================
+\echo ''
+\echo '=== T20: DOUBLE_ATOMIC_IMPORT (same checksum refused, no phantom portfolio) ==='
+
+DO $$
+DECLARE
+  v_r1 record;
+  v_r2 record;
+  v_portfolio_count integer;
+  v_tx_count integer;
+  v_cm_count integer;
+BEGIN
+  -- First import
+  SELECT * INTO v_r1 FROM public.create_portfolio_and_import_trading212(
+    'T20_DEDUP','CHF','trading_212','t20.csv','ck-t20',
+    jsonb_build_array(jsonb_build_object(
+      'type','buy','date','2025-01-01','sourceId','T20-BUY',
+      'ticker','NVDA','name','Nvidia',
+      'quantity',3,'price',800,
+      'priceCurrency','USD','exchangeRate',1.0,
+      'totalAmount',2400,'totalCurrency','CHF'
+    ))
+  );
+  IF NOT v_r1.success THEN
+    RAISE EXCEPTION 'T20 first import failed: %', v_r1.error_message;
+  END IF;
+
+  -- Second import — same checksum → must be refused
+  SELECT * INTO v_r2 FROM public.create_portfolio_and_import_trading212(
+    'T20_DEDUP_2','CHF','trading_212','t20.csv','ck-t20',   -- same ck-t20
+    jsonb_build_array(jsonb_build_object(
+      'type','buy','date','2025-01-01','sourceId','T20-BUY',
+      'ticker','NVDA','name','Nvidia',
+      'quantity',3,'price',800,
+      'priceCurrency','USD','exchangeRate',1.0,
+      'totalAmount',2400,'totalCurrency','CHF'
+    ))
+  );
+  IF COALESCE(v_r2.success, false) THEN
+    RAISE EXCEPTION 'T20 FAIL: second import should be refused but success=true';
+  END IF;
+  IF v_r2.error_message NOT ILIKE '%already imported%' THEN
+    RAISE EXCEPTION 'T20 FAIL: wrong error message: %', v_r2.error_message;
+  END IF;
+
+  -- Only ONE portfolio named T20_DEDUP (second attempt did not create T20_DEDUP_2)
+  SELECT COUNT(*) INTO v_portfolio_count FROM public.portfolios
+  WHERE user_id = auth.uid() AND name IN ('T20_DEDUP', 'T20_DEDUP_2');
+  IF v_portfolio_count != 1 THEN
+    RAISE EXCEPTION 'T20 FAIL: expected 1 portfolio, found %', v_portfolio_count;
+  END IF;
+
+  -- Only ONE transaction (T20-BUY from first import)
+  SELECT COUNT(*) INTO v_tx_count FROM public.transactions
+  WHERE portfolio_id = v_r1.portfolio_id AND ticker = 'NVDA';
+  IF v_tx_count != 1 THEN
+    RAISE EXCEPTION 'T20 FAIL: expected 1 transaction, found %', v_tx_count;
+  END IF;
+
+  -- Only ONE cash movement
+  SELECT COUNT(*) INTO v_cm_count FROM public.cash_movements
+  WHERE ref_portfolio_id = v_r1.portfolio_id AND source_external_id = 'T20-BUY';
+  IF v_cm_count != 1 THEN
+    RAISE EXCEPTION 'T20 FAIL: expected 1 cash movement, found %', v_cm_count;
+  END IF;
+
+  RAISE NOTICE '✅ T20 DOUBLE_ATOMIC_IMPORT refused: msg="%" portfolios=% txns=% cms=%',
+    v_r2.error_message, v_portfolio_count, v_tx_count, v_cm_count;
+END $$;
+
+-- =============================================================================
 \echo ''
 \echo '════════════════════════════════════════════════════════════════'
-\echo '✅ ALL 18 RPC INTEGRATION TESTS PASSED'
+\echo '✅ ALL 20 RPC INTEGRATION TESTS PASSED'
 \echo '   T1  BUY  (priceCurrency, totalAmount, totalCurrency)'
 \echo '   T2  SELL (qty reduced, avg unchanged, cash CHF)'
 \echo '   T3  DIVIDEND (gross=net+wht: 8.50+1.50=10.00)'
@@ -898,4 +1027,6 @@ END $$;
 \echo '   T16 USD INTEREST: stored in USD, not forced to CHF'
 \echo '   T17 EUR ACCOUNT: base_amount_chf=NULL for non-CHF totalCurrency'
 \echo '   T18 NO PHANTOM ASSETS after oversell rollback'
+\echo '   T19 SELL EUR: realized_pnl_chf=NULL (no fake CHF P&L)'
+\echo '   T20 DOUBLE ATOMIC IMPORT: same checksum refused, no phantom portfolio'
 \echo '════════════════════════════════════════════════════════════════'

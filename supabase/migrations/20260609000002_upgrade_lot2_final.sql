@@ -645,14 +645,19 @@ BEGIN
             v_ticker, v_quantity, v_running_qty;
         END IF;
 
-        -- Point 3: compute realized P&L for SELL (historical cost-basis method, in CHF)
+        -- Fix 2: realized P&L is only meaningful when both proceeds AND cost basis are in CHF.
+        -- Store NULL instead of a fabricated zero when conversion is impossible.
         IF v_op_type = 'sell' THEN
           v_cost_per_unit_chf := CASE WHEN v_running_qty > 0
             THEN v_running_cost_chf / v_running_qty ELSE 0 END;
-          v_cost_sold_chf    := v_quantity * v_cost_per_unit_chf;
-          v_realized_pnl_chf := COALESCE(v_base_amount_chf, 0) - v_cost_sold_chf;
+          v_cost_sold_chf := v_quantity * v_cost_per_unit_chf;
+          IF v_base_amount_chf IS NULL OR v_running_cost_chf = 0 THEN
+            v_realized_pnl_chf := NULL;   -- non-CHF or no cost basis: cannot compute P&L
+          ELSE
+            v_realized_pnl_chf := v_base_amount_chf - v_cost_sold_chf;
+          END IF;
         ELSE
-          v_realized_pnl_chf := 0;
+          v_realized_pnl_chf := NULL;
         END IF;
 
         IF v_op_type = 'sell' THEN
@@ -712,8 +717,11 @@ BEGIN
         v_total_currency  := COALESCE(v_op->>'totalCurrency', 'CHF');         -- B5 fix: use real currency
         -- Point 5: withholding tax currency from parser field withholdingTaxCurrency
         v_wht_currency    := COALESCE(NULLIF(v_op->>'withholdingTaxCurrency', ''), v_total_currency);
-        -- B4 fix: no 'grossAmount' field; gross = net received (totalAmount) + tax withheld
-        v_dividend_gross_chf := COALESCE((v_op->>'totalAmount')::numeric, 0) + v_withholding_tax;
+        -- B4 fix: gross = net received (totalAmount) + withheld; stored in totalCurrency
+        -- v_total_amount = native gross (any currency) — used for cash_movements amount
+        v_total_amount    := COALESCE((v_op->>'totalAmount')::numeric, 0) + v_withholding_tax;
+        -- Fix 3: gross_amount_chf column only stores CHF; NULL for non-CHF dividends
+        v_dividend_gross_chf := CASE WHEN v_total_currency = 'CHF' THEN v_total_amount ELSE NULL END;
         v_name            := COALESCE(v_op->>'name', v_ticker);
 
         SELECT id INTO v_asset_id FROM public.assets
@@ -740,7 +748,8 @@ BEGIN
           INSERT INTO public.cash_movements (
             user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
           ) VALUES (
-            v_user_id, p_portfolio_id, 'revenue_credit', v_total_currency, v_dividend_gross_chf,
+            -- Use v_total_amount (native gross in totalCurrency), not gross_amount_chf which may be NULL
+            v_user_id, p_portfolio_id, 'revenue_credit', v_total_currency, v_total_amount,
             p_broker, v_source_id, v_batch_id, v_date, v_op_type
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
 
@@ -923,6 +932,16 @@ BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
     RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, 'Not authenticated'::text;
+    RETURN;
+  END IF;
+
+  -- Fix 1: reject duplicate CSV imports without creating a phantom portfolio
+  IF EXISTS (
+    SELECT 1 FROM public.import_batches
+    WHERE user_id = v_user_id AND broker = p_broker
+      AND file_checksum = p_file_checksum AND status = 'success'
+  ) THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, 'CSV already imported'::text;
     RETURN;
   END IF;
 
