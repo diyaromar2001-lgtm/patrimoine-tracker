@@ -570,7 +570,9 @@ BEGIN
           INSERT INTO public.cash_movements (
             user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
           ) VALUES (
-            v_user_id, p_portfolio_id, v_op_type, v_price_currency,
+            v_user_id, p_portfolio_id,
+            CASE WHEN v_op_type = 'buy' THEN 'buy_deduction' ELSE 'sell_credit' END,
+            v_price_currency,
             CASE WHEN v_op_type = 'buy' THEN -v_total_amount ELSE v_total_amount END,
             p_broker, v_source_id, v_batch_id, v_date
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
@@ -607,18 +609,18 @@ BEGIN
 
         IF v_inserted > 0 THEN
           INSERT INTO public.cash_movements (
-            user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+            user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
           ) VALUES (
-            v_user_id, p_portfolio_id, 'dividend', 'CHF', v_dividend_gross_chf,
-            p_broker, v_source_id, v_batch_id, v_date
+            v_user_id, p_portfolio_id, 'revenue_credit', 'CHF', v_dividend_gross_chf,
+            p_broker, v_source_id, v_batch_id, v_date, v_op_type
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
 
           IF v_withholding_tax > 0 THEN
             INSERT INTO public.cash_movements (
-              user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+              user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
             ) VALUES (
-              v_user_id, p_portfolio_id, 'tax', 'CHF', -v_withholding_tax,
-              p_broker, v_source_id || ':wht', v_batch_id, v_date
+              v_user_id, p_portfolio_id, 'fee', 'CHF', -v_withholding_tax,
+              p_broker, v_source_id || ':wht', v_batch_id, v_date, 'withholding_tax'
             ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
           END IF;
 
@@ -629,10 +631,10 @@ BEGIN
         v_interest_amount := (v_op->>'amount')::numeric;
 
         INSERT INTO public.cash_movements (
-          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
         ) VALUES (
-          v_user_id, p_portfolio_id, 'interest', 'CHF', v_interest_amount,
-          p_broker, v_source_id, v_batch_id, v_date
+          v_user_id, p_portfolio_id, 'revenue_credit', 'CHF', v_interest_amount,
+          p_broker, v_source_id, v_batch_id, v_date, 'interest'
         ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
@@ -664,19 +666,19 @@ BEGIN
         v_to_amount := (v_op->>'toAmount')::numeric;
 
         INSERT INTO public.cash_movements (
-          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+          user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
         ) VALUES (
-          v_user_id, p_portfolio_id, 'currency_conversion', v_from_currency, -v_from_amount,
-          p_broker, v_source_id || ':from', v_batch_id, v_date
+          v_user_id, p_portfolio_id, 'conversion', v_from_currency, -v_from_amount,
+          p_broker, v_source_id || ':from', v_batch_id, v_date, 'fx_from'
         ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
         GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
         IF v_inserted > 0 THEN
           INSERT INTO public.cash_movements (
-            user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date
+            user_id, ref_portfolio_id, type, currency, amount, source, source_external_id, import_batch_id, date, note
           ) VALUES (
-            v_user_id, p_portfolio_id, 'currency_conversion', v_to_currency, v_to_amount,
-            p_broker, v_source_id || ':to', v_batch_id, v_date
+            v_user_id, p_portfolio_id, 'conversion', v_to_currency, v_to_amount,
+            p_broker, v_source_id || ':to', v_batch_id, v_date, 'fx_to'
           ) ON CONFLICT (ref_portfolio_id, source, source_external_id) WHERE source_external_id IS NOT NULL DO NOTHING;
 
           v_rows_imported := v_rows_imported + 1;

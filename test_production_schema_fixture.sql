@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 CREATE TABLE IF NOT EXISTS public.cash_movements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
-  type text NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'dividend', 'interest', 'tax', 'fee')),
+  type text NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'buy_deduction', 'sell_credit', 'revenue_credit', 'fee', 'conversion')),
   currency text NOT NULL DEFAULT 'CHF',
   amount numeric NOT NULL,
   balance_after_chf numeric,

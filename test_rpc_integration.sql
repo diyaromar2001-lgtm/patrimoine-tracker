@@ -40,7 +40,7 @@ WHERE n.nspname = 'public'
   )
 ORDER BY p.proname;
 
--- Step 2b: Inspect actual indexes on transactions and cash_movements
+-- Step 2b: Inspect actual indexes and CHECK constraint on cash_movements
 \echo '=== INDEX INSPECTION ==='
 SELECT
   schemaname,
@@ -51,6 +51,14 @@ FROM pg_indexes
 WHERE schemaname = 'public'
   AND tablename IN ('transactions', 'cash_movements')
 ORDER BY tablename, indexname;
+
+\echo '=== CHECK CONSTRAINT cash_movements ==='
+SELECT
+  conname,
+  pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'public.cash_movements'::regclass
+  AND contype = 'c';
 
 -- Step 3: Test BUY minimal with create_portfolio_and_import_trading212
 \echo '=== TEST 1: Create portfolio and import minimal BUY ==='
