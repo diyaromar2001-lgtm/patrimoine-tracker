@@ -283,7 +283,9 @@ function HoldingsTable({
   }
 
   const sorted = useMemo(() => {
-    return [...portfolio.assets].sort((a, b) => {
+    // Only show open positions (qty > 0).  Closed/sold positions are kept in
+    // the transactions history but should not clutter the holdings table.
+    return [...portfolio.assets].filter(a => a.quantity > 0).sort((a, b) => {
       const liveA = livePrices[a.ticker]?.price ?? a.currentPrice
       const liveB = livePrices[b.ticker]?.price ?? b.currentPrice
       const eA = { ...a, currentPrice: liveA }
@@ -758,17 +760,33 @@ export default function PortfoliosPage() {
   const [chartMode,  setChartMode]  = useState<"valeur" | "performance">("valeur")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
-  const allTickers = portfolios.flatMap(p => p.assets.filter(a => a.assetClass !== "cash").map(a => a.ticker))
+  // Use quoteSymbol when available (e.g. "WSML.L" for T212 EU) so Yahoo Finance
+  // resolves the correct instrument.  Prices come back keyed by quoteSymbol;
+  // the liveEnriched memo below also indexes by broker ticker for backward compat.
+  const allTickers = portfolios.flatMap(p =>
+    p.assets.filter(a => a.assetClass !== "cash").map(a => a.quoteSymbol ?? a.ticker)
+  )
   const { prices: livePrices } = useLivePrices(allTickers, 30_000)
 
-  // Enrich prices — include original currency for dual display
+  // Enrich prices — include original currency for dual display.
+  // De-alias: when a price was fetched via quoteSymbol (e.g. "WSML.L"), also index
+  // the entry under the broker ticker ("WSML") so all livePrices[a.ticker] lookups
+  // in HoldingsTable and metric helpers continue to work transparently.
   const liveEnriched = useMemo(() => {
     const out: Record<string, { price: number; changePct: number; originalPrice?: number; originalCurrency?: string }> = {}
     for (const [t, p] of Object.entries(livePrices)) {
       out[t] = { price: p.price, changePct: p.changePct, originalPrice: p.originalPrice, originalCurrency: p.originalCurrency }
     }
+    for (const p of portfolios) {
+      for (const a of p.assets) {
+        const qs = a.quoteSymbol
+        if (qs && qs !== a.ticker && out[qs] && !out[a.ticker]) {
+          out[a.ticker] = out[qs]
+        }
+      }
+    }
     return out
-  }, [livePrices])
+  }, [livePrices, portfolios])
 
   const metricAssetsFor = useCallback((assets: Asset[]) => assets
     .filter(a => a.assetClass !== "cash")

@@ -130,6 +130,14 @@ export interface Asset {
   country?: string
   cryptoCustody?: CryptoCustodyType
   stakingEnabled?: boolean
+  /**
+   * Yahoo Finance quote symbol — may differ from `ticker` for T212 EU instruments.
+   * e.g. ticker="WSML" → quoteSymbol="WSML.L" (LSE), ticker="SMH" → "SMH.L".
+   * When set, the prices API and all price lookups use this instead of `ticker`.
+   */
+  quoteSymbol?: string
+  /** Original broker export ticker (e.g. "WSML" as it appears in T212 CSV). */
+  brokerTicker?: string
 }
 
 export interface Transaction {

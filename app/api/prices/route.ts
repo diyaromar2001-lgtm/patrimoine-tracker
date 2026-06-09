@@ -3,6 +3,7 @@ import YahooFinanceClass from "yahoo-finance2"
 import { cacheFetch } from "@/lib/cache"
 import { convertCurrency, DEFAULT_FX_RATES } from "@/lib/utils"
 import type { AppCurrency, FXRates } from "@/lib/utils"
+import { buildTickerAliases } from "@/lib/import/t212-symbol-map"
 
 export const runtime = "nodejs"
 
@@ -18,8 +19,12 @@ const COINGECKO_IDS: Record<string, string> = {
   UNI: "uniswap",     ATOM: "cosmos",      NEAR: "near",
 }
 
+// T212 EU uses bare LSE tickers; Yahoo needs exchange suffixes to avoid resolving
+// to wrong US instruments.  Generated from lib/import/t212-symbol-map.ts.
+// VUAA gets 3 exchange fallbacks for better coverage across user regions.
 const TICKER_ALIASES: Record<string, string[]> = {
-  VUAA: ["VUAA.L", "VUAA.MI", "VUAA.DE"],
+  ...buildTickerAliases(),
+  VUAA: ["VUAA.L", "VUAA.MI", "VUAA.DE"],  // override: try all EU exchanges
 }
 
 function isCrypto(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") in COINGECKO_IDS }

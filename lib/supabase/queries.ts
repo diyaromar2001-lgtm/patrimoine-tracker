@@ -133,6 +133,8 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
         country:        a.country ?? undefined,
         cryptoCustody:  a.crypto_custody ?? undefined,
         stakingEnabled: Boolean(a.staking_enabled),
+        quoteSymbol:    (a as any).quote_symbol  ?? undefined,
+        brokerTicker:   (a as any).broker_ticker ?? undefined,
       })),
   }))
 }

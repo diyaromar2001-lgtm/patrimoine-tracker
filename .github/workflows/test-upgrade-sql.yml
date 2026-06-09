@@ -7,6 +7,7 @@ on:
       - feat/trading212-import
     paths:
       - 'supabase/migrations/20260609000002_*.sql'
+      - 'supabase/migrations/20260609000003_*.sql'
       - 'test_production_schema_fixture.sql'
       - 'test_rpc_integration.sql'
       - '.github/workflows/test-upgrade-sql.yml'
@@ -301,6 +302,67 @@ jobs:
           EOF
           echo "✓ Data preservation verified"
 
+      - name: "TEST 3: Apply migration 000003 (quote_symbol + import fixes)"
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db \
+            -f supabase/migrations/20260609000003_asset_quote_symbol.sql > /tmp/test3.log 2>&1
+          echo "✓ Migration 000003 applied"
+          echo "=== 000003 OUTPUT ===" && tail -20 /tmp/test3.log
+
+      - name: "TEST 4: Migration 000003 idempotence"
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db \
+            -f supabase/migrations/20260609000003_asset_quote_symbol.sql > /tmp/test4.log 2>&1
+          echo "✓ Migration 000003 idempotency verified"
+
+      - name: Verify migration 000003 columns and function
+        run: |
+          PGPASSWORD=postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -h localhost \
+            -U postgres \
+            -d test_db << 'EOF'
+          DO $$
+          BEGIN
+            -- columns
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='assets' AND column_name='broker_ticker') THEN
+              RAISE EXCEPTION 'Missing column: assets.broker_ticker';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='assets' AND column_name='quote_symbol') THEN
+              RAISE EXCEPTION 'Missing column: assets.quote_symbol';
+            END IF;
+            -- function
+            IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 't212_resolve_quote_symbol') THEN
+              RAISE EXCEPTION 'Missing function: t212_resolve_quote_symbol';
+            END IF;
+            -- spot-check critical T212→Yahoo mappings
+            IF public.t212_resolve_quote_symbol('WSML') IS DISTINCT FROM 'WSML.L' THEN
+              RAISE EXCEPTION 'WSML should map to WSML.L, got %', public.t212_resolve_quote_symbol('WSML');
+            END IF;
+            IF public.t212_resolve_quote_symbol('SMH') IS DISTINCT FROM 'SMH.L' THEN
+              RAISE EXCEPTION 'SMH should map to SMH.L, got %', public.t212_resolve_quote_symbol('SMH');
+            END IF;
+            IF public.t212_resolve_quote_symbol('EUNL') IS DISTINCT FROM 'EUNL.DE' THEN
+              RAISE EXCEPTION 'EUNL should map to EUNL.DE, got %', public.t212_resolve_quote_symbol('EUNL');
+            END IF;
+            IF public.t212_resolve_quote_symbol('UBS') IS DISTINCT FROM 'UBSG.SW' THEN
+              RAISE EXCEPTION 'UBS should map to UBSG.SW, got %', public.t212_resolve_quote_symbol('UBS');
+            END IF;
+            RAISE NOTICE 'All 000003 column + function checks passed ✓';
+          END $$;
+          EOF
+          echo "✓ Migration 000003 verified"
+
       - name: Test RPC with auth context
         if: success()
         run: |
@@ -322,4 +384,6 @@ jobs:
           path: |
             /tmp/test1.log
             /tmp/test2.log
+            /tmp/test3.log
+            /tmp/test4.log
             /tmp/rpc-tests.log
