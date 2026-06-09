@@ -499,6 +499,9 @@ export function PortfolioCreationModal({
           </button>
         </div>
 
+        {/* DIAGNOSTIC MARKER */}
+        <div className="text-[10px] text-yellow-400">MODAL-CHOICE-V2</div>
+
         <AnimatePresence mode="wait">
           {/* Choice: Manual or Import */}
           {mode === "choice" && (
