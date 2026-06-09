@@ -41,7 +41,7 @@ WHERE n.nspname = 'public'
 ORDER BY p.proname;
 
 -- Step 3: Test BUY minimal with create_portfolio_and_import_trading212
-RAISE NOTICE '=== TEST 1: Create portfolio and import minimal BUY ===';
+\echo '=== TEST 1: Create portfolio and import minimal BUY ==='
 
 SELECT
   portfolio_id,
@@ -143,4 +143,4 @@ END $$;
 -- DROP TABLE IF EXISTS public._snapshot_cash_movements;
 -- DROP TABLE IF EXISTS public._snapshot_global_cash;
 
-RAISE NOTICE '=== ALL RPC INTEGRATION TESTS COMPLETED ===';
+\echo '=== ALL RPC INTEGRATION TESTS COMPLETED ==='
