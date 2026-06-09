@@ -40,6 +40,18 @@ WHERE n.nspname = 'public'
   )
 ORDER BY p.proname;
 
+-- Step 2b: Inspect actual indexes on transactions and cash_movements
+\echo '=== INDEX INSPECTION ==='
+SELECT
+  schemaname,
+  tablename,
+  indexname,
+  indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND tablename IN ('transactions', 'cash_movements')
+ORDER BY tablename, indexname;
+
 -- Step 3: Test BUY minimal with create_portfolio_and_import_trading212
 \echo '=== TEST 1: Create portfolio and import minimal BUY ==='
 
