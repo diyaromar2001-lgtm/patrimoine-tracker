@@ -746,7 +746,11 @@ GRANT EXECUTE ON FUNCTION public.import_csv_batch(uuid, text, text, text, jsonb)
 -- SECTION 7: ATOMIC RPC — CREATE_PORTFOLIO_AND_IMPORT_TRADING212
 -- ─────────────────────────────────────────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.create_portfolio_and_import_trading212(
+DROP FUNCTION IF EXISTS public.create_portfolio_and_import_trading212(
+  text, text, text, text, text, jsonb
+);
+
+CREATE FUNCTION public.create_portfolio_and_import_trading212(
   p_portfolio_name text,
   p_portfolio_currency text,
   p_broker text,
@@ -754,48 +758,66 @@ CREATE OR REPLACE FUNCTION public.create_portfolio_and_import_trading212(
   p_file_checksum text,
   p_operations jsonb
 )
-RETURNS record
+RETURNS TABLE(
+  portfolio_id uuid,
+  batch_id uuid,
+  success boolean,
+  rows_imported integer,
+  rows_total integer,
+  error_message text
+)
 SECURITY DEFINER
 SET search_path = 'public'
 AS $$
 DECLARE
   v_user_id uuid;
   v_portfolio_id uuid;
-  v_result_batch_id uuid;
-  v_result_success boolean;
-  v_result_rows_imported integer;
-  v_result_rows_total integer;
-  v_result_error_message text;
-  v_result record;
+  v_batch_id uuid;
+  v_success boolean;
+  v_rows_imported integer;
+  v_rows_total integer;
+  v_error_message text;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
-    RETURN ROW(NULL::uuid, NULL::uuid, false, 0, 0, 'Not authenticated'::text);
+    RETURN QUERY SELECT NULL::uuid, NULL::uuid, false, 0, 0, 'Not authenticated'::text;
+    RETURN;
   END IF;
 
-  BEGIN
-    INSERT INTO public.portfolios (user_id, name, currency)
-    VALUES (v_user_id, p_portfolio_name, p_portfolio_currency)
-    RETURNING id INTO v_portfolio_id;
+  INSERT INTO public.portfolios (user_id, name, currency)
+  VALUES (v_user_id, p_portfolio_name, p_portfolio_currency)
+  RETURNING id INTO v_portfolio_id;
 
-    INSERT INTO public.global_cash (user_id, chf, usd, eur)
-    VALUES (v_user_id, 0, 0, 0)
-    ON CONFLICT (user_id) DO NOTHING;
+  INSERT INTO public.global_cash (user_id, chf, usd, eur)
+  VALUES (v_user_id, 0, 0, 0)
+  ON CONFLICT (user_id) DO NOTHING;
 
-    SELECT icb.batch_id, icb.success, icb.rows_imported, icb.rows_total, icb.error_message
-    INTO v_result_batch_id, v_result_success, v_result_rows_imported, v_result_rows_total, v_result_error_message
-    FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations)
-         AS icb(batch_id, success, rows_imported, rows_total, error_message);
+  SELECT
+    r.batch_id,
+    r.success,
+    r.rows_imported,
+    r.rows_total,
+    r.error_message
+  INTO
+    v_batch_id,
+    v_success,
+    v_rows_imported,
+    v_rows_total,
+    v_error_message
+  FROM public.import_csv_batch(v_portfolio_id, p_broker, p_filename, p_file_checksum, p_operations) AS r;
 
-    IF NOT v_result_success THEN
-      RAISE EXCEPTION 'Import failed: %', v_result_error_message;
-    END IF;
+  IF NOT COALESCE(v_success, false) THEN
+    RAISE EXCEPTION 'Import failed: %', COALESCE(v_error_message, 'unknown error');
+  END IF;
 
-    RETURN ROW(v_portfolio_id, v_result_batch_id, true, v_result_rows_imported, v_result_rows_total, NULL::text);
-
-  EXCEPTION WHEN OTHERS THEN
-    RETURN ROW(NULL::uuid, NULL::uuid, false, 0, 0, format('Portfolio creation failed: %s', SQLERRM)::text);
-  END;
+  RETURN QUERY
+  SELECT
+    v_portfolio_id,
+    v_batch_id,
+    true,
+    v_rows_imported,
+    v_rows_total,
+    NULL::text;
 END;
 $$ LANGUAGE plpgsql;
 
