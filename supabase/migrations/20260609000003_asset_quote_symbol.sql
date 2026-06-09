@@ -63,7 +63,7 @@ AS $$
     -- Swiss stocks — SIX exchange
     WHEN 'UBS'  THEN 'UBSG.SW'
     WHEN 'UBSG' THEN 'UBSG.SW'
-    WHEN 'ROG'  THEN 'ROG.SW'
+    -- ROG.SW excluded: ROG.SW returns HTTP 404 (Roche restructured Dec 2024)
     WHEN 'NOVN' THEN 'NOVN.SW'
     WHEN 'NESN' THEN 'NESN.SW'
     WHEN 'ABBN' THEN 'ABBN.SW'

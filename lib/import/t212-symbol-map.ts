@@ -45,16 +45,19 @@ export const T212_TICKER_TO_YAHOO: Record<string, string> = {
 
   // ── Swiss stocks — SIX exchange ─────────────────────────────────────────────
   // Yahoo Finance requires ".SW" suffix for SIX-listed names.
-  // Without it, "UBS" → NYSE ADR (USD ~$29); T212 EU holds UBSG.SW (CHF ~$28).
+  // Without it, "UBS" → NYSE ADR (USD ~$29); T212 EU holds UBSG.SW (CHF).
+  // Verified working as of 2026-06-10: UBSG.SW ✓  NOVN.SW ✓  NESN.SW ✓
+  //                                    ABBN.SW ✓  ZURN.SW ✓
+  // ROG.SW returns HTTP 404 on Yahoo Finance (Roche restructured share classes
+  // Dec 2024).  Do NOT add ROG here until the correct symbol is confirmed.
   UBS:   "UBSG.SW",   // UBS Group AG — CHF, SIX
   UBSG:  "UBSG.SW",
-  ROG:   "ROG.SW",    // Roche Holding AG — CHF, SIX
   NOVN:  "NOVN.SW",   // Novartis AG — CHF, SIX
   NESN:  "NESN.SW",   // Nestlé SA — CHF, SIX
   ABBN:  "ABBN.SW",   // ABB Ltd — CHF, SIX
   ZURN:  "ZURN.SW",   // Zurich Insurance Group — CHF, SIX
-  SREN:  "SREN.SW",   // Swiss Re AG — CHF, SIX
-  GIVN:  "GIVN.SW",   // Givaudan SA — CHF, SIX
+  SREN:  "SREN.SW",   // Swiss Re AG — CHF, SIX (not verified; assumed from pattern)
+  GIVN:  "GIVN.SW",   // Givaudan SA — CHF, SIX (not verified; assumed from pattern)
 }
 
 /**
