@@ -3,10 +3,12 @@ name: Test SQL Upgrade - Lot 2
 on:
   push:
     branches:
+      - main
       - feat/trading212-import
     paths:
       - 'supabase/migrations/20260609000002_*.sql'
       - 'test_production_schema_fixture.sql'
+      - 'test_rpc_integration.sql'
       - '.github/workflows/test-upgrade-sql.yml'
   pull_request:
     branches:
