@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import YahooFinanceClass from "yahoo-finance2"
 import { cacheFetch } from "@/lib/cache"
-import { convertCurrency, DEFAULT_FX_RATES } from "@/lib/utils"
-import type { AppCurrency, FXRates } from "@/lib/utils"
 import { buildTickerAliases } from "@/lib/import/t212-symbol-map"
+import {
+  normalizeQuotePrice,
+  convertExtended,
+  DEFAULT_EXTENDED_FX_RATES,
+} from "@/lib/quote-currency"
+import type { ExtendedCurrency, ExtendedFXRates } from "@/lib/quote-currency"
 
 export const runtime = "nodejs"
 
@@ -30,28 +34,31 @@ const TICKER_ALIASES: Record<string, string[]> = {
 function isCrypto(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") in COINGECKO_IDS }
 function baseTicker(t: string) { return t.replace(/-EUR$|-USD$|-CHF$|-GBP$/, "") }
 
-// Fetch live FX rates — shared with /api/fx-rates
-async function getLiveFxRates(): Promise<FXRates> {
+// Fetch live FX rates (CHF, USD, EUR, GBP) — GBP is needed to convert
+// LSE-quoted instruments (GBP/GBp/GBX) to the app's display currencies.
+async function getLiveFxRates(): Promise<ExtendedFXRates> {
   const result = await cacheFetch("fx-rates-for-prices", async () => {
     try {
-      const res = await fetch("https://api.frankfurter.app/latest?from=CHF&to=USD,EUR")
+      const res = await fetch("https://api.frankfurter.app/latest?from=CHF&to=USD,EUR,GBP")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data: { rates: { USD: number; EUR: number } } = await res.json()
-      return { CHF: 1, USD: data.rates.USD, EUR: data.rates.EUR }
+      const data: { rates: { USD: number; EUR: number; GBP: number } } = await res.json()
+      return { CHF: 1, USD: data.rates.USD, EUR: data.rates.EUR, GBP: data.rates.GBP }
     } catch {
-      return DEFAULT_FX_RATES
+      return DEFAULT_EXTENDED_FX_RATES
     }
   }, 3600)
-  return result as unknown as FXRates
+  return result as unknown as ExtendedFXRates
 }
 
-// Convert a native price to all 3 display currencies using LIVE rates
-async function toAllCurrencies(price: number, from: AppCurrency) {
+// Convert a native price to all 3 display currencies using LIVE rates.
+// `from` may be "GBP" (after GBp/GBX normalization) in addition to the app's
+// CHF/USD/EUR display currencies.
+async function toAllCurrencies(price: number, from: ExtendedCurrency) {
   const rates = await getLiveFxRates()
   return {
-    chf: convertCurrency(price, from, "CHF", rates),
-    usd: convertCurrency(price, from, "USD", rates),
-    eur: convertCurrency(price, from, "EUR", rates),
+    chf: convertExtended(price, from, "CHF", rates),
+    usd: convertExtended(price, from, "USD", rates),
+    eur: convertExtended(price, from, "EUR", rates),
   }
 }
 
@@ -92,7 +99,15 @@ interface PriceResult {
 }
 
 async function resolveYahooQuote(ticker: string): Promise<{ requested: string; quote: Record<string, unknown> } | null> {
-  const candidates = [...new Set([ticker, ...(TICKER_ALIASES[ticker.toUpperCase()] ?? [])])]
+  // Try the known T212 → Yahoo alias(es) FIRST. If we try the bare ticker
+  // first and Yahoo happens to resolve it to an unrelated valid instrument
+  // (e.g. a US ticker that collides with a European UCITS ETF's bare T212
+  // ticker), we'd return that wrong instrument and never reach the correct
+  // alias. The bare ticker is kept as a last-resort fallback only.
+  const aliases = TICKER_ALIASES[ticker.toUpperCase()] ?? []
+  const candidates = aliases.length > 0
+    ? [...new Set([...aliases, ticker])]
+    : [ticker]
   for (const candidate of candidates) {
     try {
       const quote = await yf.quote(candidate) as Record<string, unknown> | undefined
@@ -130,10 +145,13 @@ export async function POST(req: NextRequest) {
         if (!item) continue
         const q = item.quote
         if (!q?.symbol || !q.regularMarketPrice) continue
-        const nativePrice    = q.regularMarketPrice as number
-        const nativeCurrency = ((q.currency as string) ?? "USD") as AppCurrency
+        const rawPrice    = q.regularMarketPrice as number
+        const rawCurrency = (q.currency as string) ?? "USD"
+        // Normalize GBp/GBX (British pence) → GBP before any FX conversion.
+        // e.g. IDVY.L: 2208.5 GBp → 22.085 GBP (NOT 2208.5 GBP/USD/CHF).
+        const { price: nativePrice, currency: nativeCurrency } = normalizeQuotePrice(rawPrice, rawCurrency)
         // Convert to all 3 display currencies using live FX rates
-        const converted = await toAllCurrencies(nativePrice, nativeCurrency)
+        const converted = await toAllCurrencies(nativePrice, nativeCurrency as ExtendedCurrency)
 
         out[item.requested] = {
           price: converted.chf,
