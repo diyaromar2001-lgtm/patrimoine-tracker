@@ -79,6 +79,14 @@ ALTER TABLE IF EXISTS public.transactions
   ADD COLUMN IF NOT EXISTS realized_pnl_chf numeric DEFAULT 0,
   ADD COLUMN IF NOT EXISTS source_subtype text;
 
+-- Production may have realized_pnl_chf NOT NULL (from an earlier schema version).
+-- The correct semantic is: NULL = P&L not calculable (non-CHF or no cost basis).
+-- DROP NOT NULL so our RPC can store NULL without violating the constraint.
+-- DROP DEFAULT so the column no longer silently coerces unknown P&L to 0.
+ALTER TABLE public.transactions
+  ALTER COLUMN realized_pnl_chf DROP NOT NULL,
+  ALTER COLUMN realized_pnl_chf DROP DEFAULT;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
