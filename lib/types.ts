@@ -30,7 +30,8 @@ export type CashMovementType =
   | "buy_deduction"    // déduction lors d'un achat
   | "sell_credit"      // crédit lors d'une vente
   | "dividend_credit"  // dividende reçu → crédité en cash
-  | "revenue_credit"   // revenu annexe → crédité en cash
+  | "revenue_credit"   // revenu annexe → crédité en cash (import: aussi intérêts, note='interest')
+  | "fee"              // frais / impôt à la source (import T212, montant négatif)
 
 export interface CashMovement {
   id:          string

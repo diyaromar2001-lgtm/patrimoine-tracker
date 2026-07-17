@@ -18,6 +18,13 @@ export interface LivePrice {
   originalPrice:     number
   /** Asset's native currency (e.g. "USD" for US stocks, "EUR" for EU stocks) */
   originalCurrency:  string
+  /** Real Yahoo statistics, converted to the display currency. undefined = non fournies. */
+  dayHigh?:          number
+  dayLow?:           number
+  fiftyTwoWeekHigh?: number
+  fiftyTwoWeekLow?:  number
+  marketCap?:        number
+  trailingPE?:       number
 }
 
 // Read currency preference from localStorage (SSR-safe)
@@ -30,8 +37,14 @@ function getStoredCurrency(): "CHF" | "USD" | "EUR" {
   return "CHF"
 }
 
-// Raw response from /api/prices (all 3 currencies)
-type RawPrice = { chf: number; usd: number; eur: number; changePct: number; originalPrice: number; originalCurrency: string }
+// Raw response from /api/prices (all 3 currencies + real quote statistics)
+type RawPrice = {
+  chf: number; usd: number; eur: number; changePct: number
+  originalPrice: number; originalCurrency: string
+  dayHigh?: number; dayLow?: number
+  fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number
+  marketCap?: number; trailingPE?: number
+}
 
 export function useLivePrices(tickers: string[], intervalMs = 30_000) {
   const [rawCache,    setRawCache]    = useState<Record<string, RawPrice>>({})
@@ -45,12 +58,22 @@ export function useLivePrices(tickers: string[], intervalMs = 30_000) {
   function buildMapped(raw: Record<string, RawPrice>, currency: AppCurrency): Record<string, LivePrice> {
     const out: Record<string, LivePrice> = {}
     for (const [ticker, d] of Object.entries(raw)) {
+      const price = d[currency.toLowerCase() as "chf"|"usd"|"eur"] ?? d.chf ?? 0
+      // Facteur natif → devise d'affichage (identique à la conversion du prix)
+      const toDisplay = d.originalPrice > 0 ? price / d.originalPrice : 1
+      const aux = (v: number | undefined) => (typeof v === "number" ? v * toDisplay : undefined)
       out[ticker] = {
-        price:            d[currency.toLowerCase() as "chf"|"usd"|"eur"] ?? d.chf ?? 0,
+        price,
         chf: d.chf, usd: d.usd, eur: d.eur,
         changePct:        d.changePct,
         originalPrice:    d.originalPrice,
         originalCurrency: d.originalCurrency,
+        dayHigh:          aux(d.dayHigh),
+        dayLow:           aux(d.dayLow),
+        fiftyTwoWeekHigh: aux(d.fiftyTwoWeekHigh),
+        fiftyTwoWeekLow:  aux(d.fiftyTwoWeekLow),
+        marketCap:        d.marketCap,
+        trailingPE:       d.trailingPE,
       }
     }
     return out

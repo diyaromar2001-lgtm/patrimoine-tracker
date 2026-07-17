@@ -14,17 +14,36 @@ import { useSwingIndicators } from "@/hooks/use-swing-indicators"
 import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import type { WatchlistItem } from "@/lib/types"
+import * as Q from "@/lib/supabase/queries"
+import { isSupabaseConfigured } from "@/lib/supabase/client"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import {
   X, Eye, RefreshCw, Bell, BellOff, Target, StickyNote,
   TrendingUp, TrendingDown, Plus, Search, Loader2,
 } from "lucide-react"
 
-// ─── Enriched watchlist item (local state per item) ───────────────────────────
+// ─── Enriched watchlist item ──────────────────────────────────────────────────
+// La LISTE est persistée dans la table Supabase `watchlist` ; les annotations
+// personnelles (alerte / objectif / note) le sont dans localStorage par ticker.
 interface WatchlistEnriched extends WatchlistItem {
   priceAlert?: number     // alert if price hits this
   priceTarget?: number    // personal target price
   note?:        string    // personal note
+}
+
+type Annotations = Record<string, { priceAlert?: number; priceTarget?: number; note?: string }>
+
+const ANNOTATIONS_KEY = "watchlist-annotations"
+const LOCAL_LIST_KEY  = "watchlist-items"  // fallback sans Supabase
+
+function loadAnnotations(): Annotations {
+  try { return JSON.parse(localStorage.getItem(ANNOTATIONS_KEY) ?? "{}") } catch { return {} }
+}
+
+function saveAnnotation(ticker: string, patch: Annotations[string]) {
+  const all = loadAnnotations()
+  all[ticker] = { ...all[ticker], ...patch }
+  localStorage.setItem(ANNOTATIONS_KEY, JSON.stringify(all))
 }
 
 export default function WatchlistPage() {
@@ -57,6 +76,48 @@ export default function WatchlistPage() {
     const saved = localStorage.getItem("watchlist-indicators")
     if (saved) try { setVisibleInd(JSON.parse(saved)) } catch {}
   }, [])
+
+  // ── Chargement initial : liste depuis Supabase (ou localStorage), annotations locales ──
+  useEffect(() => {
+    const annotations = loadAnnotations()
+    const enrich = (base: WatchlistItem[]): WatchlistEnriched[] =>
+      base.map(i => ({ ...i, ...annotations[i.ticker] }))
+
+    async function load() {
+      if (isSupabaseConfigured) {
+        const rows = await Q.fetchWatchlist()
+        if (rows) {
+          const base: WatchlistItem[] = rows.map(r => ({
+            id: r.id, ticker: r.ticker, name: r.name,
+            assetClass: r.assetClass as WatchlistItem["assetClass"],
+            currentPrice: 0, change24h: 0, changePct24h: 0,
+            high24h: 0, low24h: 0, currency: "CHF", sparkline: [],
+            addedAt: r.addedAt,
+          }))
+          const enriched = enrich(base)
+          setItems(enriched)
+          if (enriched.length) {
+            setSelectedTicker(t => t ?? enriched[0].ticker)
+            setSelectedName(n => n || enriched[0].name)
+          }
+          return
+        }
+      }
+      // Fallback local (Supabase absent ou non connecté)
+      try {
+        const saved: WatchlistItem[] = JSON.parse(localStorage.getItem(LOCAL_LIST_KEY) ?? "[]")
+        if (saved.length) setItems(enrich(saved))
+      } catch {}
+    }
+    load()
+  }, [])
+
+  // Sauvegarde locale de secours (liste sans annotations)
+  useEffect(() => {
+    if (isSupabaseConfigured) return
+    const bare = items.map(({ priceAlert, priceTarget, note, ...base }) => base)
+    localStorage.setItem(LOCAL_LIST_KEY, JSON.stringify(bare))
+  }, [items])
   function toggleInd(key: IndicatorKey) {
     const next = { ...visibleInd, [key]: !visibleInd[key] }
     setVisibleInd(next)
@@ -68,10 +129,10 @@ export default function WatchlistPage() {
     item.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  function handleAddFromSearch(result: SearchResult) {
+  async function handleAddFromSearch(result: SearchResult) {
     if (items.find(i => i.ticker === result.ticker)) return
     const newItem: WatchlistEnriched = {
-      id: Date.now().toString(), ticker: result.ticker, name: result.name,
+      id: `local-${Date.now()}`, ticker: result.ticker, name: result.name,
       assetClass: result.type as WatchlistItem["assetClass"],
       currentPrice: 0, change24h: 0, changePct24h: 0,
       high24h: 0, low24h: 0, currency: "CHF", sparkline: [],
@@ -80,6 +141,10 @@ export default function WatchlistPage() {
     setItems(prev => [newItem, ...prev])
     setSelectedTicker(result.ticker)
     setSelectedName(result.name)
+    if (isSupabaseConfigured) {
+      const dbId = await Q.addWatchlistTicker(result.ticker, result.name, result.type)
+      if (dbId) setItems(prev => prev.map(i => i.id === newItem.id ? { ...i, id: dbId } : i))
+    }
   }
 
   function handleRemove(id: string) {
@@ -90,18 +155,27 @@ export default function WatchlistPage() {
       setSelectedTicker(next?.ticker ?? null)
       setSelectedName(next?.name ?? "")
     }
+    if (isSupabaseConfigured && id && !id.startsWith("local-")) {
+      Q.removeWatchlistTicker(id)
+    }
   }
 
   function saveNote(id: string) {
+    const item = items.find(i => i.id === id)
+    if (item) saveAnnotation(item.ticker, { note: noteText })
     setItems(prev => prev.map(i => i.id === id ? { ...i, note: noteText } : i))
     setEditingNote(null)
   }
 
   function setAlert(id: string, price: number | undefined) {
+    const item = items.find(i => i.id === id)
+    if (item) saveAnnotation(item.ticker, { priceAlert: price })
     setItems(prev => prev.map(i => i.id === id ? { ...i, priceAlert: price } : i))
   }
 
   function setTarget(id: string, price: number | undefined) {
+    const item = items.find(i => i.id === id)
+    if (item) saveAnnotation(item.ticker, { priceTarget: price })
     setItems(prev => prev.map(i => i.id === id ? { ...i, priceTarget: price } : i))
   }
 
@@ -238,9 +312,10 @@ export default function WatchlistPage() {
                           <div className="mt-2.5 grid grid-cols-3 gap-2 text-center border-t pt-2"
                             style={{ borderColor: "var(--border-subtle)" }}>
                             {[
-                              { label: "Haut 24h", value: live?.originalPrice ? format(live.price * 1.005) : "—" },
-                              { label: "Bas 24h",  value: live?.originalPrice ? format(live.price * 0.995) : "—" },
-                              { label: "52s haut", value: live?.originalPrice ? format(live.price * 1.25) : "—" },
+                              // Vraies statistiques Yahoo — "—" si non fournies, jamais inventées
+                              { label: "Haut 24h", value: live?.dayHigh          != null ? format(live.dayHigh)          : "—" },
+                              { label: "Bas 24h",  value: live?.dayLow           != null ? format(live.dayLow)           : "—" },
+                              { label: "52s haut", value: live?.fiftyTwoWeekHigh != null ? format(live.fiftyTwoWeekHigh) : "—" },
                             ].map(s => (
                               <div key={s.label}>
                                 <p className="text-[9px] uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>{s.label}</p>

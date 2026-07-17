@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Wallet } from "lucide-react"
+import { Wallet } from "lucide-react"
 import { GlobalSearch }      from "./global-search"
 import { MarketStatus }      from "./market-status"
 import { CurrencySwitcher }  from "./currency-switcher"
@@ -57,23 +57,9 @@ export function Topbar({ title, subtitle }: TopbarProps) {
         <CurrencySwitcher />
         <MarketStatus />
 
-        {/* Notification bell */}
-        <button
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150"
-          style={{ color: "var(--text-tertiary)" }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--bg-muted)", e.currentTarget.style.color = "var(--text-primary)")}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent", e.currentTarget.style.color = "var(--text-tertiary)")}
-          aria-label="Notifications"
-        >
-          <Bell className="h-[15px] w-[15px]" />
-          <span
-            className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2"
-            style={{
-              backgroundColor: "var(--accent)",
-              borderColor:     "rgba(9, 9, 11, 0.85)",
-            }}
-          />
-        </button>
+        {/* Cloche retirée : elle affichait un point « non lu » permanent sans
+            aucun système de notifications derrière (UI trompeuse). À réintroduire
+            avec de vraies notifications (alertes de prix, dividendes). */}
       </div>
     </header>
   )

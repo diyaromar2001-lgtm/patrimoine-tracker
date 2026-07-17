@@ -14,10 +14,10 @@ interface QuoteData {
   regularMarketPrice:         number
   regularMarketChange:        number
   regularMarketChangePercent: number
-  regularMarketDayHigh:       number
-  regularMarketDayLow:        number
-  fiftyTwoWeekHigh:           number
-  fiftyTwoWeekLow:            number
+  regularMarketDayHigh:       number | null
+  regularMarketDayLow:        number | null
+  fiftyTwoWeekHigh:           number | null
+  fiftyTwoWeekLow:            number | null
   marketCap:                  number | null
   trailingPE:                 number | null
   forwardPE:                  number | null
@@ -65,18 +65,24 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
         const p = data[decodedSymbol]
         if (p) {
           const displayPrice = p[currency.toLowerCase() as "chf" | "usd" | "eur"] ?? p.chf ?? p.originalPrice ?? 0
+          // Facteur natif → devise d'affichage (même conversion que le prix).
+          // Les statistiques (jour / 52 sem.) sont les VRAIES valeurs Yahoo —
+          // null si absentes, jamais fabriquées à partir du prix.
+          const toDisplay = p.originalPrice > 0 ? displayPrice / p.originalPrice : 1
+          const aux = (v: number | undefined | null): number | null =>
+            typeof v === "number" ? v * toDisplay : null
           setQuote({
             symbol:      decodedSymbol,
             shortName:   p.resolvedSymbol ? `${decodedSymbol} · ${p.resolvedSymbol}` : decodedSymbol,
             regularMarketPrice:         displayPrice,
             regularMarketChange:        displayPrice * ((p.changePct ?? 0) / 100),
             regularMarketChangePercent: p.changePct,
-            regularMarketDayHigh:       displayPrice * 1.02,
-            regularMarketDayLow:        displayPrice * 0.98,
-            fiftyTwoWeekHigh:           displayPrice * 1.35,
-            fiftyTwoWeekLow:            displayPrice * 0.65,
-            marketCap:                  null,
-            trailingPE:                 null,
+            regularMarketDayHigh:       aux(p.dayHigh),
+            regularMarketDayLow:        aux(p.dayLow),
+            fiftyTwoWeekHigh:           aux(p.fiftyTwoWeekHigh),
+            fiftyTwoWeekLow:            aux(p.fiftyTwoWeekLow),
+            marketCap:                  typeof p.marketCap === "number" ? p.marketCap : null,
+            trailingPE:                 typeof p.trailingPE === "number" ? p.trailingPE : null,
             forwardPE:                  null,
             dividendYield:              null,
             currency:                   p.originalCurrency ?? "CHF",
@@ -193,10 +199,10 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
             {quote && (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
-                  { label: "Haut 24h",       value: format(quote.regularMarketDayHigh) },
-                  { label: "Bas 24h",        value: format(quote.regularMarketDayLow) },
-                  { label: "Plus haut 52s",  value: format(quote.fiftyTwoWeekHigh) },
-                  { label: "Plus bas 52s",   value: format(quote.fiftyTwoWeekLow) },
+                  { label: "Haut 24h",       value: quote.regularMarketDayHigh != null ? format(quote.regularMarketDayHigh) : "—" },
+                  { label: "Bas 24h",        value: quote.regularMarketDayLow  != null ? format(quote.regularMarketDayLow)  : "—" },
+                  { label: "Plus haut 52s",  value: quote.fiftyTwoWeekHigh     != null ? format(quote.fiftyTwoWeekHigh)     : "—" },
+                  { label: "Plus bas 52s",   value: quote.fiftyTwoWeekLow      != null ? format(quote.fiftyTwoWeekLow)      : "—" },
                   { label: "Cap. boursière", value: formatLargeNumber(quote.marketCap) },
                   { label: "P/E (trail.)",   value: quote.trailingPE ? quote.trailingPE.toFixed(2) : "—" },
                   { label: "P/E (fwd.)",     value: quote.forwardPE  ? quote.forwardPE.toFixed(2)  : "—" },

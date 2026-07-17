@@ -7,7 +7,7 @@ import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Briefcase, TrendingUp, Eye,
   Calculator, ArrowLeftRight, Settings, Wallet,
-  ChevronLeft, ChevronRight, LogOut, Zap,
+  ChevronLeft, ChevronRight, LogOut, Zap, ArrowDownUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient, signOut } from "@/lib/supabase/client"
@@ -26,6 +26,7 @@ const NAV_SECTIONS = [
       { label: "Watchlist",      href: "/watchlist",    icon: Eye             },
       { label: "Dividendes",     href: "/dividends",    icon: TrendingUp      },
       { label: "Revenus",        href: "/revenus",     icon: Zap             },
+      { label: "Cashflow",       href: "/cashflow",    icon: ArrowDownUp     },
     ],
   },
   {

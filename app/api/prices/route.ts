@@ -96,6 +96,14 @@ interface PriceResult {
   originalPrice:   number  // price in the asset's native currency
   originalCurrency:string  // e.g. "USD" for US stocks, "EUR" for FR stocks
   resolvedSymbol?: string
+  // Real quote statistics (native currency, GBp-normalized). undefined when
+  // Yahoo doesn't provide them — the UI shows "—", never fabricated values.
+  dayHigh?:          number
+  dayLow?:           number
+  fiftyTwoWeekHigh?: number
+  fiftyTwoWeekLow?:  number
+  marketCap?:        number
+  trailingPE?:       number
 }
 
 async function resolveYahooQuote(ticker: string): Promise<{ requested: string; quote: Record<string, unknown> } | null> {
@@ -153,6 +161,10 @@ export async function POST(req: NextRequest) {
         // Convert to all 3 display currencies using live FX rates
         const converted = await toAllCurrencies(nativePrice, nativeCurrency as ExtendedCurrency)
 
+        // Same GBp→GBP normalization for the auxiliary price statistics.
+        const normAux = (v: unknown): number | undefined =>
+          typeof v === "number" ? normalizeQuotePrice(v, rawCurrency).price : undefined
+
         out[item.requested] = {
           price: converted.chf,
           ...converted,
@@ -160,6 +172,12 @@ export async function POST(req: NextRequest) {
           originalPrice:   nativePrice,
           originalCurrency: nativeCurrency,
           resolvedSymbol:   q.symbol as string,
+          dayHigh:          normAux(q.regularMarketDayHigh),
+          dayLow:           normAux(q.regularMarketDayLow),
+          fiftyTwoWeekHigh: normAux(q.fiftyTwoWeekHigh),
+          fiftyTwoWeekLow:  normAux(q.fiftyTwoWeekLow),
+          marketCap:        typeof q.marketCap === "number" ? q.marketCap : undefined,
+          trailingPE:       typeof q.trailingPE === "number" ? q.trailingPE : undefined,
         }
       }
     } catch { /* Yahoo rate-limit — return empty */ }
