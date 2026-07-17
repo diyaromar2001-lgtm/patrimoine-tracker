@@ -22,7 +22,7 @@ import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
-import { benchmarkAlpha, calculatePortfolioMetrics, type PortfolioMetrics } from "@/lib/finance"
+import { benchmarkAlpha, calculatePortfolioMetrics, safeCostBasisChf, type PortfolioMetrics } from "@/lib/finance"
 import { formatCurrency, cn } from "@/lib/utils"
 import type { AppCurrency } from "@/lib/utils"
 import {
@@ -472,19 +472,12 @@ function HoldingsTable({
           ? origPrice * asset.quantity / rateToChf
           : livePriceUserCurr * asset.quantity
 
-        // costCHF : utiliser costBasisChf de la DB si valide, sinon fallback.
-        // DÉTECTION AUTO de data corrompue (valeur stockée en devise native sans conversion FX):
-        //   Si origCurrency != CHF ET ratio costBasisChf / (qty × avgBuyPrice) ≈ 1.0
-        //   → la valeur stockée est en réalité du natif (USD/EUR), pas du CHF
-        //   → on recalcule avec le taux FX actuel comme fallback
-        const nativeTotal = nativeAvg * asset.quantity
-        const rawCost     = asset.costBasisChf
-        const isNonChf    = origCurrency !== "CHF" && rateToChf !== 1
-        const looksLikeNative = rawCost != null && rawCost > 0 && isNonChf &&
-          Math.abs(rawCost / nativeTotal - 1.0) < 0.03   // ratio dans ±3% du total natif
-        const costCHF = (rawCost != null && rawCost > 0 && !looksLikeNative)
-          ? rawCost
-          : nativeTotal / rateToChf
+        // costCHF : la valeur stockée (CHF historique figé) fait foi ; fallback
+        // au taux courant uniquement si absente (via safeCostBasisChf canonique).
+        const costCHF = safeCostBasisChf(
+          asset.costBasisChf, asset.quantity, nativeAvg, origCurrency,
+          fxRates as Record<string, number>
+        )
 
         const userRate    = ((fxRates as Record<string,number>)[currency] ?? 1)
         const pnlUserCurr = (valueCHF - costCHF) * userRate
@@ -792,17 +785,12 @@ export default function PortfoliosPage() {
     .filter(a => a.assetClass !== "cash")
     .map(a => {
       const nativeCurr = liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF"
-      const rateToChf  = (fxRates as Record<string,number>)[nativeCurr] ?? 1
-      // Détection auto data corrompue : si costBasisChf ≈ qty × avgBuyPrice (ratio ~1.0)
-      // pour un actif non-CHF, c'est stocké en natif sans FX → recalculer avec taux actuel
-      const nativeTotal = a.quantity * a.avgBuyPrice
-      const raw = a.costBasisChf
-      const isNonChf = nativeCurr !== "CHF" && rateToChf !== 1
-      const looksLikeNative = raw != null && raw > 0 && isNonChf &&
-        Math.abs(raw / nativeTotal - 1.0) < 0.03
-      const costBasisChf = (raw != null && raw > 0 && !looksLikeNative)
-        ? raw
-        : nativeTotal / rateToChf
+      // La valeur stockée (CHF historique figé) fait foi ; fallback au taux
+      // courant uniquement si absente (safeCostBasisChf canonique).
+      const costBasisChf = safeCostBasisChf(
+        a.costBasisChf, a.quantity, a.avgBuyPrice, nativeCurr,
+        fxRates as Record<string, number>
+      )
       return {
         ticker: a.ticker,
         quantity: a.quantity,
@@ -873,10 +861,20 @@ export default function PortfoliosPage() {
     byClass.cash = (byClass.cash ?? 0) + globalMetrics.cashChf * userRate
   }
 
-  // Annual dividends (simplified)
-  // Dividendes annuels calculés depuis les positions réelles (via useLiveDividends en production)
-  // Pour l'instant : 0 si aucune position, sinon approximation from asset class
-  const annualDivs = 0  // TODO: hook useLiveDividends → lib/finance.ts totalAnnualDividend()
+  // Dividendes encaissés sur les 12 derniers mois (transactions réelles),
+  // exprimés en devise d'affichage — plus de valeur codée en dur.
+  const annualDivs = useMemo(() => {
+    const cutoff = new Date()
+    cutoff.setFullYear(cutoff.getFullYear() - 1)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    return transactions
+      .filter(t => t.type === "dividend" && t.date >= cutoffStr)
+      .reduce((s, t) => {
+        if (t.netAmountChf != null) return s + t.netAmountChf * userRate
+        const fxN = (fxRates as Record<string, number>)[t.currency ?? "CHF"] ?? 1
+        return s + (t.quantity * t.price / fxN) * userRate
+      }, 0)
+  }, [transactions, fxRates, userRate])
 
   // Best/worst
   const best  = moversData[0]
@@ -1136,9 +1134,11 @@ export default function PortfoliosPage() {
                     {
                       icon: Activity, iconColor: "#a78bfa", label: "Risque",
                       rows: [
-                        { k: "Bêta (SPY)", v: "~0.92", c: "var(--text-primary)" },
-                        { k: "Volatilité", v: "~14.2%", c: "var(--text-primary)" },
-                        { k: "Sharpe",     v: "~1.18",  c: "var(--text-primary)" },
+                        // Valeurs réelles non calculées pour l'instant — afficher
+                        // "—" plutôt que des chiffres inventés.
+                        { k: "Bêta (SPY)", v: "—", c: "var(--text-tertiary)" },
+                        { k: "Volatilité", v: "—", c: "var(--text-tertiary)" },
+                        { k: "Sharpe",     v: "—", c: "var(--text-tertiary)" },
                       ],
                     },
                     {

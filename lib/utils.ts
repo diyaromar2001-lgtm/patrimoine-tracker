@@ -10,12 +10,16 @@ export type AppCurrency = "CHF" | "USD" | "EUR"
 export type FXRates = Record<AppCurrency, number>
 
 // Default FX rates (BCE approximation) — replaced at runtime by /api/fx-rates
-// 1 CHF = x USD/EUR
+// 1 CHF = x USD/EUR. TABLE UNIQUE : lib/finance.ts et lib/quote-currency.ts
+// dérivent leurs fallbacks de celle-ci — ne pas dupliquer de littéraux ailleurs.
 export const DEFAULT_FX_RATES: FXRates = {
   CHF: 1,
-  USD: 1.267,   // updated from BCE 2026-06
-  EUR: 1.091,   // updated from BCE 2026-06
+  USD: 1.2571,  // BCE 2026-06
+  EUR: 1.0862,  // BCE 2026-06
 }
+
+/** Fallback GBP (unités par CHF) pour les tables étendues (finance, quote-currency). */
+export const DEFAULT_GBP_PER_CHF = 0.9379  // BCE 2026-06
 
 // Keep FX_RATES as alias for backward compat
 export const FX_RATES = DEFAULT_FX_RATES

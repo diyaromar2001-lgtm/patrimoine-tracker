@@ -138,16 +138,22 @@ export default function TransactionsPage() {
         notes:      form.notes || undefined,
       })
     } else {
+      // Devise native de l'actif si déjà détenu (cohérent avec la page
+      // Portefeuilles) ; "CHF" seulement pour un actif inconnu.
+      const tickerUpper = form.ticker.toUpperCase()
+      const existingAsset = portfolios
+        .flatMap(p => p.assets)
+        .find(a => a.ticker.toUpperCase() === tickerUpper)
       const res = await addTransaction({
         portfolioId: form.portfolioId,
-        ticker:      form.ticker.toUpperCase(),
+        ticker:      tickerUpper,
         assetName:   form.assetName,
         assetClass:  form.assetClass,
         type:        form.type,
         quantity:    parseFloat(form.quantity),
         price:       parseFloat(form.price),
         fees:        parseFloat(form.fees) || 0,
-        currency:    "CHF",
+        currency:    existingAsset?.currency ?? "CHF",
         date:        form.date,
         notes:       form.notes || undefined,
       })

@@ -43,19 +43,21 @@ describe("convertCurrency", () => {
     expect(convertCurrency(100, "CHF", "CHF")).toBe(100)
   })
 
-  it("CHF → USD", () => {
+  // Indépendants des valeurs de la table par défaut (elles suivent la BCE) :
+  // on vérifie la MÉCANIQUE de conversion, pas un taux figé.
+  it("CHF → USD uses the table rate", () => {
     const result = convertCurrency(100, "CHF", "USD", DEFAULT_FX_RATES)
-    expect(result).toBeCloseTo(110.9, 1)
+    expect(result).toBeCloseTo(100 * DEFAULT_FX_RATES.USD, 6)
   })
 
-  it("USD → CHF", () => {
-    const result = convertCurrency(110.9, "USD", "CHF", DEFAULT_FX_RATES)
-    expect(result).toBeCloseTo(100, 1)
+  it("USD → CHF round-trips CHF → USD", () => {
+    const usd = convertCurrency(100, "CHF", "USD", DEFAULT_FX_RATES)
+    expect(convertCurrency(usd, "USD", "CHF", DEFAULT_FX_RATES)).toBeCloseTo(100, 6)
   })
 
-  it("EUR → CHF", () => {
-    const result = convertCurrency(104.2, "EUR", "CHF", DEFAULT_FX_RATES)
-    expect(result).toBeCloseTo(100, 1)
+  it("EUR → CHF round-trips CHF → EUR", () => {
+    const eur = convertCurrency(100, "CHF", "EUR", DEFAULT_FX_RATES)
+    expect(convertCurrency(eur, "EUR", "CHF", DEFAULT_FX_RATES)).toBeCloseTo(100, 6)
   })
 })
 

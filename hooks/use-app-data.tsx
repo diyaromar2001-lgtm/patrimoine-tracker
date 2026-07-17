@@ -108,100 +108,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         Q.fetchTransactions(),
         Q.fetchRevenus(),
         Q.fetchGlobalCash(),
-        Q.fetchCashMovements(200),
+        Q.fetchCashMovements(2000),  // historique long pour l'agrégation Cashflow
       ])
       if (p)  setPortfolios(p)
       if (t)  setTransactions(t)
       if (r)  setRevenus(r)
       if (gc) setGlobalCash(gc)
       if (cm) setCashMovements(cm)
-
-      // ── MIGRATION AUTO : corrige les costBasisChf corrompus (1 fois par session) ──
-      // Si costBasisChf ≈ qty × avgBuyPrice (ratio ~1.0) → valeur stockée sans FX
-      // → on recalcule via API BCE avec la date des transactions d'achat
-      if (p && t) await migrateCorruptedCostBasis(p, t)
+      // NOTE: l'ancienne « migration silencieuse » des cost basis (recalcul BCE
+      // au chargement) a été supprimée : elle écrasait des valeurs historiques
+      // correctes à chaque session. La réparation se fait désormais uniquement
+      // via le bouton « Recalculer les positions » dans Réglages (aperçu + confirmation).
     } catch (e) {
       console.error("[AppData] refresh failed:", e)
     }
     setLoading(false)
   }, [])
-
-  // ── Migration silencieuse — exécutée 1× par session pour les anciens assets ──
-  const [migrated, setMigrated] = useState(false)
-  async function migrateCorruptedCostBasis(portfolios: Portfolio[], transactions: Transaction[]) {
-    if (migrated) return
-    setMigrated(true)
-    // Note: la fonction est protégée par la condition Math.abs(current - totalCostChf) < 1
-    // donc si tous les costBasisChf sont corrects, aucun update DB n'est fait.
-
-    const fixes: Array<{ assetId: string; portfolioId: string; qty: number; avg: number; newCostChf: number }> = []
-
-    // RÈGLE SIMPLE: pour TOUTE position non-CHF qui a au moins 1 transaction buy,
-    // on recalcule TOUJOURS le cost_basis_chf via les taux BCE historiques.
-    // Plus de détection "ratio" fragile : la vérité = somme des CHF réellement payés.
-    for (const p of portfolios) {
-      for (const a of p.assets) {
-        if (a.assetClass === "cash") continue
-        const native = a.currency
-        if (!native || native === "CHF") continue
-
-        // ── RÈGLE: coût CHF de la position résiduelle ──────────────────────
-        // newCostChf = quantité_actuelle × avgBuyPrice_natif × tauxBCE_pondéré
-        // Où tauxBCE_pondéré = moyenne des taux historiques de TOUS les buys
-        // pondérée par le montant natif de chaque achat.
-        //
-        // Cela évite le bug de "somme des transactions" si l'utilisateur a fait
-        // plusieurs achats puis des sells (qty réduite mais somme des buys gonflée).
-
-        const buys = transactions.filter(t => t.portfolioId === p.id && t.ticker === a.ticker && t.type === "buy")
-        if (!buys.length) continue
-
-        let totalNative   = 0  // somme native pour pondération
-        let weightedRate  = 0  // Σ (montant_natif × rate)
-        let allFetched    = true
-
-        for (const tx of buys) {
-          try {
-            const res = await fetch(`/api/fx-rates-historical?date=${tx.date}&currency=${tx.currency}`)
-            if (!res.ok) { allFetched = false; break }
-            const hist = await res.json() as { rate: number }
-            const rate = hist.rate ?? 1
-            if (rate <= 0) { allFetched = false; break }
-            const nativeAmount = tx.quantity * tx.price
-            totalNative  += nativeAmount
-            weightedRate += nativeAmount * rate  // attention: rate = native/CHF
-          } catch { allFetched = false; break }
-        }
-
-        if (!allFetched || totalNative <= 0) continue
-
-        // Taux pondéré = Σ(nativeAmount × rate) / Σ(nativeAmount)
-        // Coût CHF = qty_actuelle × avgBuyPrice / tauxPondéré
-        const avgRate     = weightedRate / totalNative
-        const nativeCurrentTotal = a.quantity * a.avgBuyPrice
-        const newCostChf  = nativeCurrentTotal / avgRate
-
-        if (newCostChf <= 0) continue
-
-        const current = a.costBasisChf ?? 0
-        if (Math.abs(current - newCostChf) < 1) continue
-
-        fixes.push({ assetId: a.id, portfolioId: p.id, qty: a.quantity, avg: a.avgBuyPrice, newCostChf })
-      }
-    }
-
-    // Applique les corrections silencieusement
-    for (const f of fixes) {
-      try {
-        await Q.updateAssetPosition(f.assetId, f.qty, f.avg, f.newCostChf)
-      } catch { /* skip */ }
-    }
-    if (fixes.length > 0) {
-      console.log(`[AppData] Migration: ${fixes.length} asset(s) corrigé(s) avec taux BCE historiques`)
-      const fresh = await Q.fetchPortfolios()
-      if (fresh) setPortfolios(fresh)
-    }
-  }
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -441,7 +363,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (existing) {
           // Update qty + weighted avg price
           const newQty = existing.quantity + preparedTx.quantity
-          const newAvg = (existing.quantity * existing.avgBuyPrice + preparedTx.quantity * preparedTx.price + preparedTx.fees) / newQty
+          const newAvg = (existing.quantity * existing.avgBuyPrice + preparedTx.quantity * preparedTx.price + (preparedTx.fees ?? 0)) / newQty
           const nextCostBasisChf = (existing.costBasisChf ?? existing.quantity * existing.avgBuyPrice * rateToChf(existing.currency)) + netAmountChf
           return {
             ...p,
@@ -467,7 +389,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             name:         preparedTx.assetName,
             assetClass:   preparedTx.assetClass,
             quantity:     preparedTx.quantity,
-            avgBuyPrice:  preparedTx.quantity > 0 ? preparedTx.price + (preparedTx.fees / preparedTx.quantity) : preparedTx.price,
+            avgBuyPrice:  preparedTx.quantity > 0 ? preparedTx.price + ((preparedTx.fees ?? 0) / preparedTx.quantity) : preparedTx.price,
             currentPrice: preparedTx.price,
             currency:     preparedTx.currency ?? "CHF",
             costBasisChf: netAmountChf,
@@ -562,6 +484,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             { ticker: tx.ticker, portfolioId: tx.portfolioId })
           setGlobalCash(newCash)
           await Q.upsertGlobalCash(newCash)
+
+        } else if (tx.type === "dividend" && ["CHF", "USD", "EUR"].includes(nativeCurr)) {
+          // Dividende → crédite la liquidité globale, même convention que les
+          // revenus annexes : le P&L global inclut les dividendes, le patrimoine
+          // (positions + cash) doit donc les refléter aussi. Nouvelles
+          // transactions uniquement — aucun rétro-crédit de l'historique.
+          const netDividend = tx.quantity * tx.price - (tx.fees ?? 0)
+          if (netDividend > 0) {
+            const newCash = { ...globalCash, [nativeCurr]: globalCash[nativeCurr] + netDividend }
+            await Q.insertCashMovement("dividend_credit", nativeCurr, netDividend, newCash,
+              { ticker: tx.ticker, portfolioId: tx.portfolioId })
+            setGlobalCash(newCash)
+            await Q.upsertGlobalCash(newCash)
+          }
         }
       }
 

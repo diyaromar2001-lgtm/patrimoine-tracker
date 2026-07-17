@@ -1,5 +1,50 @@
 import { createClient } from "./client"
 import type { Portfolio, Asset, Transaction, CashBalance, GlobalCash, CashMovement, CashMovementType } from "@/lib/types"
+import { replayPosition, type ReplayEvent } from "@/lib/replay-position"
+
+// ─── Canonical position recompute ────────────────────────────────────────────
+/**
+ * Map raw DB transaction rows (buy/sell) to ReplayEvents for replayPosition().
+ *
+ * CRITICAL unit convention (bug fix): avg_buy_price is stored in the asset's
+ * NATIVE currency (see upsertAssetFromBuy), while cost_basis_chf is the frozen
+ * historical CHF total (Σ net_amount_chf of buys, reduced proportionally on
+ * sells). The previous edit/delete recompute divided CHF totals by quantity,
+ * silently flipping avg_buy_price to CHF-per-share for non-CHF assets.
+ * Routing every recompute through replayPosition() keeps the two units apart.
+ *
+ * Exported for unit tests (lib/position-lifecycle.test.ts).
+ */
+export function txsToReplayEvents(rows: Array<{
+  type: string
+  date: string
+  created_at?: string | null
+  quantity: number | string
+  price: number | string
+  fees?: number | string | null
+  net_amount_chf?: number | string | null
+  fx_rate_to_chf?: number | string | null
+}>): ReplayEvent[] {
+  const events: ReplayEvent[] = []
+  let order = 0
+  for (const t of rows) {
+    const qty = Number(t.quantity)
+    if (t.type === "buy") {
+      const fees = Number(t.fees ?? 0)
+      const price = Number(t.price)
+      // Fallback when net_amount_chf is missing (old manual rows): approximate
+      // with the stored per-tx FX rate (CHF per currency unit, default 1).
+      const fx = Number(t.fx_rate_to_chf ?? 1) || 1
+      const baseAmountChf = t.net_amount_chf != null
+        ? Number(t.net_amount_chf)
+        : (qty * price + fees) * fx
+      events.push({ type: "buy", date: String(t.date).slice(0, 10), order: order++, quantity: qty, price, feesNative: fees, baseAmountChf })
+    } else if (t.type === "sell") {
+      events.push({ type: "sell", date: String(t.date).slice(0, 10), order: order++, quantity: qty })
+    }
+  }
+  return events
+}
 
 const EMPTY_CASH: CashBalance = { CHF: 0, USD: 0, EUR: 0 }
 const EMPTY_GLOBAL: GlobalCash = { CHF: 0, USD: 0, EUR: 0 }
@@ -389,90 +434,31 @@ export async function updateTransactionAndRecalculate(
 
     // 3. Recalculate asset if this was a buy/sell (not cash-related)
     if (oldTx.asset_id && ["buy", "sell"].includes(oldTx.type)) {
-      // 3a. Fetch current asset state (before modification)
-      const { data: asset, error: assetErr } = await sb
-        .from("assets")
-        .select("*")
-        .eq("id", oldTx.asset_id)
-        .maybeSingle()
-
-      if (assetErr) {
-        console.error("[updateTransactionAndRecalculate] Error fetching asset:", assetErr)
-        return { ok: false, error: "Failed to fetch asset" }
-      }
-
+      // Canonical recompute: full chronological replay of the asset's
+      // remaining transactions (which already include the updated row).
+      // avg_buy_price stays in NATIVE currency, cost_basis_chf stays the
+      // frozen historical CHF total — no unit mixing.
       const { data: remainingTx, error: txErr } = await sb
         .from("transactions")
         .select("*")
         .eq("asset_id", oldTx.asset_id)
         .in("type", ["buy", "sell"])
         .order("date", { ascending: true })
+        .order("created_at", { ascending: true })
 
       if (txErr) {
         console.error("[updateTransactionAndRecalculate] Error fetching transactions:", txErr)
         return { ok: false, error: "Failed to recalculate asset" }
       }
 
-      let newQty = 0
-      let newCostBasisChf = 0
-      let newAvgBuyPrice = 0
-
-      // ────────────────────────────────────────────────────────────────────────
-      // SELL PARTIAL: Use historical cost per unit to handle currency-agnosticism
-      // ────────────────────────────────────────────────────────────────────────
-      const oldQty = Number(oldTx.quantity)
-      const newTxQty = updates.quantity ?? oldQty
-      const oldAssetQty = asset ? Number(asset.quantity) : 0
-      const oldAssetCostBasisChf = asset ? Number(asset.cost_basis_chf) : 0
-
-      if (
-        oldTx.type === "sell" &&
-        asset &&
-        oldAssetQty > 0 &&
-        newTxQty !== oldQty  // Only if quantity changed
-      ) {
-        // Quantity difference: how much more or less are we selling?
-        const qtyDifference = newTxQty - oldQty
-        const costPerUnitChf = oldAssetCostBasisChf / oldAssetQty
-
-        // Adjust cost basis based on the quantity difference
-        // If reducing sell qty (qtyDifference < 0), we add back cost basis
-        // If increasing sell qty (qtyDifference > 0), we reduce cost basis
-        newCostBasisChf = oldAssetCostBasisChf - (qtyDifference * costPerUnitChf)
-        newQty = oldAssetQty - newTxQty
-        newAvgBuyPrice = newQty > 0 ? newCostBasisChf / newQty : 0
-      } else {
-        // ────────────────────────────────────────────────────────────────────
-        // BUY MODIFIED or SELL with no qty change: Recalculate from all transactions
-        // ────────────────────────────────────────────────────────────────────
-        let totalQtyBought = 0
-        let totalBuyCostChf = 0
-
-        for (const t of remainingTx || []) {
-          if (t.type === "buy") {
-            newQty += Number(t.quantity)
-            totalQtyBought += Number(t.quantity)
-            totalBuyCostChf += Number(t.net_amount_chf ?? 0)
-          } else if (t.type === "sell") {
-            newQty -= Number(t.quantity)
-          }
-        }
-
-        // Calculate avg buy price including fees: totalBuyCostChf / totalQtyBought
-        // Example: 1.2 shares @ 80 CHF + 1 CHF fees = 97 CHF total → 97/1.2 = 80.83 per share
-        newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
-
-        // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
-        // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
-        newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
-      }
+      const r = replayPosition(txsToReplayEvents(remainingTx ?? []))
 
       const { error: updateAssetErr } = await sb
         .from("assets")
         .update({
-          quantity: Math.max(0, newQty),
-          avg_buy_price: newAvgBuyPrice,
-          cost_basis_chf: newCostBasisChf,
+          quantity: r.quantity,
+          avg_buy_price: r.avgBuyPriceNative,
+          cost_basis_chf: r.costBasisChf,
           cost_basis_source: "computed",
           cost_basis_updated_at: new Date().toISOString(),
         })
@@ -511,81 +497,36 @@ export async function deleteTransactionAndRecalculate(id: string): Promise<{ ok:
       return { ok: false, error: "Transaction not found" }
     }
 
-    // 1b. Fetch current asset state (before deleting transaction)
-    const { data: asset, error: assetErr } = await sb
-      .from("assets")
-      .select("*")
-      .eq("id", tx.asset_id)
-      .maybeSingle()
-
     // 2. Delete the transaction
     const { error: deleteErr } = await sb.from("transactions").delete().eq("id", id)
     if (deleteErr) {
       return { ok: false, error: `Delete failed: ${deleteErr.message}` }
     }
 
-    // 3. If this was a buy/sell (not cash-related), recalculate the asset
+    // 3. If this was a buy/sell (not cash-related), recalculate the asset via
+    //    the canonical replay (native avg / frozen CHF cost basis).
     if (tx.asset_id && ["buy", "sell"].includes(tx.type)) {
-      // Fetch all remaining transactions for this asset to recalculate qty/avgPrice/costBasis
       const { data: remainingTx, error: txErr } = await sb
         .from("transactions")
         .select("*")
         .eq("asset_id", tx.asset_id)
         .in("type", ["buy", "sell"])
         .order("date", { ascending: true })
+        .order("created_at", { ascending: true })
 
       if (txErr) {
         console.error("[deleteTransactionAndRecalculate] Error fetching remaining transactions:", txErr)
         return { ok: false, error: "Failed to recalculate asset" }
       }
 
-      let newQty = 0
-      let newCostBasisChf = 0
-      let newAvgBuyPrice = 0
+      const r = replayPosition(txsToReplayEvents(remainingTx ?? []))
 
-      if (tx.type === "sell" && asset && Number(asset.quantity) > 0) {
-        // ──────────────────────────────────────────────────────────────────────
-        // VENTE PARTIELLE: Use historical cost per unit to maintain accuracy
-        // across multiple currencies (USD, EUR, CHF).
-        // ──────────────────────────────────────────────────────────────────────
-        const costPerUnitChf = Number(asset.cost_basis_chf) / Number(asset.quantity)
-        newQty = Number(asset.quantity) + Number(tx.quantity)
-        newCostBasisChf = Number(asset.cost_basis_chf) + (Number(tx.quantity) * costPerUnitChf)
-        // avg_buy_price is unchanged: the historical buy cost per unit remains the same
-        newAvgBuyPrice = newQty > 0 ? newCostBasisChf / newQty : 0
-      } else {
-        // ──────────────────────────────────────────────────────────────────────
-        // ACHAT SUPPRIMÉ ou autres: Recalculate from remaining transactions
-        // ──────────────────────────────────────────────────────────────────────
-        let totalQtyBought = 0
-        let totalBuyCostChf = 0
-
-        for (const t of remainingTx || []) {
-          if (t.type === "buy") {
-            newQty += Number(t.quantity)
-            totalQtyBought += Number(t.quantity)
-            totalBuyCostChf += Number(t.net_amount_chf ?? 0)  // Includes fees
-          } else if (t.type === "sell") {
-            newQty -= Number(t.quantity)
-          }
-        }
-
-        // Calculate avg buy price including fees: totalBuyCostChf / totalQtyBought
-        // Example: 1.2 shares @ 80 CHF + 1 CHF fees = 97 CHF total → 97/1.2 = 80.83 per share
-        newAvgBuyPrice = totalQtyBought > 0 ? totalBuyCostChf / totalQtyBought : 0
-
-        // Cost basis remaining = remaining qty × avg buy price (includes fees proportionally)
-        // Example after selling 1: 0.2 × 80.83 = 16.1667 CHF (not 97 CHF)
-        newCostBasisChf = Math.max(0, newQty) * newAvgBuyPrice
-      }
-
-      // Update the asset
       const { error: updateErr } = await sb
         .from("assets")
         .update({
-          quantity: Math.max(0, newQty),
-          avg_buy_price: newAvgBuyPrice,
-          cost_basis_chf: newCostBasisChf,
+          quantity: r.quantity,
+          avg_buy_price: r.avgBuyPriceNative,
+          cost_basis_chf: r.costBasisChf,
           cost_basis_source: "computed",
           cost_basis_updated_at: new Date().toISOString(),
         })
@@ -640,14 +581,19 @@ export async function upsertAssetFromBuy(tx: {
       .maybeSingle()
     existing = data
   } else {
-    // Fallback: chercher par portfolio_id + ticker (legacy only)
+    // Fallback: chercher par portfolio_id + ticker (legacy only).
+    // Un ticker peut correspondre à plusieurs lignes (position re-créée) —
+    // on prévient au lieu d'échouer silencieusement, et on prend la 1re.
     const { data } = await sb
       .from("assets")
       .select("id, quantity, avg_buy_price, cost_basis_chf")
       .eq("portfolio_id", tx.portfolioId)
       .eq("ticker", tx.ticker)
-      .maybeSingle()
-    existing = data
+      .limit(2)
+    if ((data?.length ?? 0) > 1) {
+      console.warn(`[upsertAssetFromBuy] ${tx.ticker}: plusieurs assets pour ce ticker — fallback ambigu, passez assetId`)
+    }
+    existing = data?.[0] ?? null
   }
 
   if (existing) {
@@ -731,14 +677,18 @@ export async function reduceAssetFromSell(tx: {
       .maybeSingle()
     existing = data
   } else {
-    // Fallback: chercher par portfolio_id + ticker (legacy, risky for sells)
+    // Fallback: chercher par portfolio_id + ticker (legacy, risky for sells).
+    // Ambiguïté possible avec des tickers dupliqués → warn + 1re ligne.
     const { data } = await sb
       .from("assets")
       .select("id, quantity, cost_basis_chf")
       .eq("portfolio_id", tx.portfolioId)
       .eq("ticker", tx.ticker)
-      .maybeSingle()
-    existing = data
+      .limit(2)
+    if ((data?.length ?? 0) > 1) {
+      console.warn(`[reduceAssetFromSell] ${tx.ticker}: plusieurs assets pour ce ticker — fallback ambigu, passez assetId`)
+    }
+    existing = data?.[0] ?? null
   }
 
   if (!existing) return
@@ -855,5 +805,58 @@ export async function deleteRevenu(id: string) {
   const sb = createClient()
   if (!sb) return false
   const { error } = await sb.from("revenus_annexes").delete().eq("id", id)
+  return !error
+}
+
+// ─── Watchlist (persistée) ────────────────────────────────────────────────────
+
+export interface WatchlistRow {
+  id:         string
+  ticker:     string
+  name:       string
+  assetClass: string
+  addedAt:    string
+}
+
+export async function fetchWatchlist(): Promise<WatchlistRow[] | null> {
+  const sb = createClient()
+  if (!sb) return null
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return null
+  const { data, error } = await sb
+    .from("watchlist")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("added_at", { ascending: false })
+  if (error) { console.error("[fetchWatchlist]", error.message); return null }
+  return (data ?? []).map(w => ({
+    id:         w.id,
+    ticker:     w.ticker,
+    name:       w.name,
+    assetClass: w.asset_class ?? "stock",
+    addedAt:    typeof w.added_at === "string" ? w.added_at.slice(0, 10) : "",
+  }))
+}
+
+export async function addWatchlistTicker(ticker: string, name: string, assetClass: string): Promise<string | null> {
+  const sb = createClient()
+  if (!sb) return null
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return null
+  const { data, error } = await sb.from("watchlist").upsert({
+    user_id:     user.id,
+    ticker,
+    name,
+    asset_class: assetClass,
+  }, { onConflict: "user_id,ticker" }).select("id").single()
+  if (error) { console.error("[addWatchlistTicker]", error.message); return null }
+  return data?.id ?? null
+}
+
+export async function removeWatchlistTicker(id: string): Promise<boolean> {
+  const sb = createClient()
+  if (!sb) return false
+  const { error } = await sb.from("watchlist").delete().eq("id", id)
+  if (error) console.error("[removeWatchlistTicker]", error.message)
   return !error
 }

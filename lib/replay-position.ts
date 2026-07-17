@@ -43,6 +43,9 @@ export interface ReplayEvent {
   quantity?: number
   /** BUY: native price per share. */
   price?: number
+  /** BUY: native fees, folded into the weighted average (price + fees/qty),
+   *  matching upsertAssetFromBuy's semantics. Optional — defaults to 0. */
+  feesNative?: number
   /** BUY/SELL: CHF amount affecting cost basis (positive for BUY, used for SELL proportional reduction). */
   baseAmountChf?: number
   /** SPLIT: "open" row quantity (new share-count scale). */
@@ -81,7 +84,9 @@ export function replayPosition(events: ReplayEvent[]): ReplayResult {
       if (ratio > 0) avg /= ratio
     } else if (e.type === "buy") {
       const q = e.quantity ?? 0
-      const p = e.price ?? 0
+      // Fees are folded into the effective per-share price (native), matching
+      // upsertAssetFromBuy: newAvg = (oldQty*oldAvg + qty*price + fees) / newQty
+      const p = (e.price ?? 0) + (q > 0 ? (e.feesNative ?? 0) / q : 0)
       if (qty > 0) {
         avg = (qty * avg + q * p) / (qty + q)
       } else {

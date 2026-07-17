@@ -15,6 +15,8 @@
  * so it can be imported and unit-tested without pulling in `yahoo-finance2`.
  */
 
+import { DEFAULT_FX_RATES, DEFAULT_GBP_PER_CHF } from "./utils"
+
 /** Currency codes Yahoo returns that represent 1/100 of their "real" unit. */
 const PENCE_CURRENCIES = new Set(["GBp", "GBX", "GBX.L"])
 
@@ -50,12 +52,11 @@ export function normalizeQuotePrice(price: number, currency: string | null | und
 export type ExtendedCurrency = "CHF" | "USD" | "EUR" | "GBP"
 export type ExtendedFXRates = Record<ExtendedCurrency, number>
 
-/** Fallback rates (units per 1 CHF) used if the live FX fetch fails. */
+/** Fallback rates (units per 1 CHF) used if the live FX fetch fails.
+ *  Derived from the single source table in lib/utils.ts. */
 export const DEFAULT_EXTENDED_FX_RATES: ExtendedFXRates = {
-  CHF: 1,
-  USD: 1.267,
-  EUR: 1.091,
-  GBP: 0.93,
+  ...DEFAULT_FX_RATES,
+  GBP: DEFAULT_GBP_PER_CHF,
 }
 
 /**

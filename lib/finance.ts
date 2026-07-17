@@ -6,16 +6,16 @@
  */
 
 import type { AppCurrency } from "./utils"
+import { DEFAULT_FX_RATES as BASE_FX_RATES, DEFAULT_GBP_PER_CHF } from "./utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type FXRates = { [currency: string]: number }
 
+// Dérivée de la table unique de lib/utils.ts (+ GBP) — plus de littéraux divergents.
 export const DEFAULT_FX_RATES: FXRates = {
-  CHF: 1,
-  USD: 1.109,
-  EUR: 1.042,
-  GBP: 0.871,
+  ...BASE_FX_RATES,
+  GBP: DEFAULT_GBP_PER_CHF,
 }
 
 export interface AssetInput {
@@ -165,17 +165,17 @@ export function chfPerCurrencyUnit(currency: string | undefined, rates: FXRates)
 }
 
 /**
- * Calcule le cost basis CHF d'une position en détectant automatiquement les données corrompues.
+ * Retourne le cost basis CHF d'une position.
  *
- * RÈGLE: si costBasisChf en DB ≈ qty × avgBuyPrice (ratio ~1.0) pour un actif non-CHF,
- * la valeur stockée est en réalité en devise native sans conversion FX → on recalcule
- * avec le taux actuel comme fallback.
+ * RÈGLE: la valeur stockée (Σ net_amount_chf historique, figée) fait foi dès
+ * qu'elle est présente et > 0. Le fallback nativeTotal/taux-courant n'est
+ * utilisé qu'en l'absence totale de valeur stockée (anciennes lignes).
  *
- * @param costBasisChf  valeur brute en DB (peut être en CHF ou natif corrompu)
+ * @param costBasisChf  valeur brute en DB (CHF historique figé)
  * @param quantity      quantité détenue
  * @param avgBuyPrice   prix moyen natif
  * @param nativeCurrency devise native de l'actif (USD/EUR/CHF)
- * @param rates         taux FX actuels
+ * @param rates         taux FX actuels (fallback uniquement)
  */
 export function safeCostBasisChf(
   costBasisChf: number | null | undefined,
@@ -184,17 +184,21 @@ export function safeCostBasisChf(
   nativeCurrency: string | undefined,
   rates: FXRates
 ): number {
-  const nativeTotal = quantity * avgBuyPrice
-  const rate = rates[nativeCurrency ?? "CHF"] ?? 1
-  const isNonChf = (nativeCurrency ?? "CHF") !== "CHF" && rate !== 1
-
-  // Détection corruption : ratio ~1.0 signifie valeur stockée en natif sans FX
-  const looksLikeNative = costBasisChf != null && costBasisChf > 0 && isNonChf &&
-    Math.abs(costBasisChf / nativeTotal - 1.0) < 0.03
-
-  if (costBasisChf != null && costBasisChf > 0 && !looksLikeNative) {
+  // La valeur stockée est un cost basis CHF historique FIGÉ (Σ net_amount_chf).
+  // On lui fait confiance dès qu'elle est présente et > 0.
+  //
+  // L'ancienne heuristique |costBasisChf/nativeTotal − 1| < 0.03 (« valeur
+  // stockée en natif sans FX ») produisait des faux positifs systématiques
+  // pour USD/CHF et EUR/CHF (taux ≈ 0.95–1.05) : un cost basis correct était
+  // écrasé par nativeTotal/taux-courant, et se mettait à dériver avec le FX
+  // live à chaque rendu. Supprimée — la source du bug (recompute CHF dans
+  // edit/delete de transaction) est corrigée à l'écriture via replayPosition.
+  if (costBasisChf != null && costBasisChf > 0) {
     return costBasisChf
   }
+  // Fallback uniquement si aucune valeur stockée : approximation au taux courant.
+  const nativeTotal = quantity * avgBuyPrice
+  const rate = rates[nativeCurrency ?? "CHF"] ?? 1
   return nativeTotal / rate
 }
 
@@ -398,6 +402,73 @@ export function portfolioLatentPnLPct(assets: AssetInput[]): number {
   const cost = portfolioTotalCostBasis(assets)
   if (!cost) return 0
   return (portfolioLatentPnL(assets) / cost) * 100
+}
+
+// ─── Agrégats dashboard (purs, testables) ────────────────────────────────────
+
+export interface DashboardDividendTx {
+  type: string
+  quantity: number
+  price: number
+  currency?: string
+  netAmountChf?: number | null
+}
+
+/**
+ * Somme des dividendes encaissés, exprimée en devise d'affichage.
+ * Une SEULE conversion par transaction :
+ *  - netAmountChf présent → CHF × taux d'affichage
+ *  - sinon montant natif → devise d'affichage (jamais les deux à la suite)
+ */
+export function sumDividendsDisplay(
+  transactions: DashboardDividendTx[],
+  displayCurrency: string,
+  rates: FXRates
+): number {
+  const userRate = rates[displayCurrency] ?? 1
+  return transactions
+    .filter(t => t.type === "dividend")
+    .reduce((s, t) => {
+      if (t.netAmountChf != null) return s + t.netAmountChf * userRate
+      return s + convertCurrency(t.quantity * t.price, t.currency ?? "CHF", displayCurrency, rates)
+    }, 0)
+}
+
+export interface DashboardAllocationAsset {
+  assetClass: string
+  ticker: string
+  quantity: number
+  currentPrice: number
+  currency?: string
+}
+
+/**
+ * Allocation par classe d'actif en devise d'affichage.
+ *  - Les actifs de classe "cash" sont IGNORÉS dans la boucle : la liquidité
+ *    vient uniquement de totalCashDisplay (sinon double comptage).
+ *  - Fallback de prix normalisé : natif → devise d'affichage (pas de mélange
+ *    d'unités avec les prix live déjà convertis).
+ *  - Les % sont calculés sur la somme des buckets → total exactement 100.
+ */
+export function computeAllocation(
+  assets: DashboardAllocationAsset[],
+  livePriceDisplay: (ticker: string) => number | undefined,
+  totalCashDisplay: number,
+  displayCurrency: string,
+  rates: FXRates
+): Array<{ cls: string; val: number; pct: number }> {
+  const byClass: Record<string, number> = {}
+  for (const a of assets) {
+    if (a.assetClass === "cash") continue
+    const price = livePriceDisplay(a.ticker)
+      ?? convertCurrency(a.currentPrice, a.currency ?? "CHF", displayCurrency, rates)
+    byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + price * a.quantity
+  }
+  if (totalCashDisplay > 0) byClass.cash = (byClass.cash ?? 0) + totalCashDisplay
+  const total = Object.values(byClass).reduce((s, v) => s + v, 0)
+  return Object.entries(byClass)
+    .sort(([, a], [, b]) => b - a)
+    .map(([cls, val]) => ({ cls, val, pct: total > 0 ? (val / total) * 100 : 0 }))
 }
 
 // ─── Allocation ───────────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import { calculatePortfolioPnL, convertPnL } from "@/lib/pnl"
 import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
-import { maxDrawdown } from "@/lib/finance"
+import { maxDrawdown, sumDividendsDisplay, computeAllocation } from "@/lib/finance"
 import {
   TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
   TrendingDown, ArrowUpRight, BarChart2, Eye, EyeOff,
@@ -98,15 +98,10 @@ export default function DashboardPage() {
     [revenus, convert]
   )
 
-  // Dividendes encaissés
+  // Dividendes encaissés — une seule conversion (fix double FX)
   const totalDividends = useMemo(
-    () => transactions
-      .filter(t => t.type === "dividend")
-      .reduce((s, t) => {
-        const userRate = (fxRates as Record<string,number>)[currency] ?? 1
-        return s + ((t.netAmountChf ?? convert(t.quantity * t.price, t.currency as AppCurrency)) * userRate)
-      }, 0),
-    [transactions, fxRates, currency, convert]
+    () => sumDividendsDisplay(transactions, currency, fxRates as Record<string, number>),
+    [transactions, fxRates, currency]
   )
 
   // P&L global = P&L marché + P&L réalisé + dividendes + revenus annexes
@@ -137,23 +132,17 @@ export default function DashboardPage() {
     return transactions.reduce((s, t) => s + ((t.feesChf ?? 0) * ur), 0)
   }, [transactions, fxRates, currency])
 
-  // Allocation par classe
-  const allocationEntries = useMemo(() => {
-    const byClass: Record<string, number> = {}
-    allAssets.forEach(a => {
-      const price = a.assetClass === "cash"
-        ? convert(a.currentPrice || a.avgBuyPrice || 1, a.currency as AppCurrency)
-        : livePrices[a.ticker]?.price ?? a.currentPrice
-      byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + price * a.quantity
-    })
-    if (totalCashConverted > 0) byClass.cash = (byClass.cash ?? 0) + totalCashConverted
-    return Object.entries(byClass)
-      .sort(([, a], [, b]) => b - a)
-      .map(([cls, val]) => ({
-        cls, val,
-        pct: netWorthValue > 0 ? (val / netWorthValue) * 100 : 0,
-      }))
-  }, [allAssets, livePrices, totalCashConverted, netWorthValue])
+  // Allocation par classe — cash compté une seule fois, unités homogènes
+  const allocationEntries = useMemo(() =>
+    computeAllocation(
+      allAssets,
+      (ticker) => livePrices[ticker]?.price,
+      totalCashConverted,
+      currency,
+      fxRates as Record<string, number>
+    ),
+    [allAssets, livePrices, totalCashConverted, currency, fxRates]
+  )
 
   // Top 5 positions (par valeur)
   const top5 = useMemo(() =>
@@ -163,11 +152,12 @@ export default function DashboardPage() {
         const origPrice    = livePrices[a.ticker]?.originalPrice
         const origCurrency = livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD"
         const livePrice    = livePrices[a.ticker]?.price ?? a.currentPrice
+        const priceIsStale = livePrices[a.ticker] == null  // valorisé au coût, pas au marché
         const nativeAvg    = a.avgBuyPrice
         const pnlPct = (origPrice != null && nativeAvg > 0)
           ? ((origPrice - nativeAvg) / nativeAvg) * 100
           : 0
-        return { ...a, livePrice, origPrice, origCurrency, nativeAvg, pnlPct }
+        return { ...a, livePrice, origPrice, origCurrency, nativeAvg, pnlPct, priceIsStale }
       })
       .sort((a, b) => (b.livePrice * b.quantity) - (a.livePrice * a.quantity))
       .slice(0, 5),
@@ -431,7 +421,12 @@ export default function DashboardPage() {
                   <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Chargement historique…</span>
                 </div>
               ) : isReal ? (
-                <AreaChart data={portfolioHistory} height={176} />
+                <>
+                  <AreaChart data={portfolioHistory} height={176} />
+                  <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                    Courbe approximative : quantités actuelles × prix historiques (les achats/ventes passés ne sont pas rejoués).
+                  </p>
+                </>
               ) : (
                 <div className="h-44 flex flex-col items-center justify-center gap-2">
                   <BarChart2 className="h-6 w-6" style={{ color: "var(--text-tertiary)" }} />
@@ -519,7 +514,16 @@ export default function DashboardPage() {
                       {a.ticker.slice(0, 3)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.ticker}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.ticker}</p>
+                        {a.priceIsStale && (
+                          <span
+                            className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                            style={{ backgroundColor: "#f59e0b" }}
+                            title="Prix indisponible — valorisé au coût"
+                          />
+                        )}
+                      </div>
                       <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
                         {Number(a.quantity).toFixed(8).replace(/\.?0+$/, '')} × {a.livePrice.toFixed(2)}
                       </p>
