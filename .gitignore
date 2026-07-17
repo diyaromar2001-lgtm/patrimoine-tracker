@@ -20,3 +20,4 @@ scripts/test-*.js
 # Logs containing tokens or secrets
 *.log
 .env.local
+.vercel

@@ -6,6 +6,8 @@ import { Topbar } from "@/components/layout/topbar"
 import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import type { AppCurrency } from "@/lib/utils"
+import { PeriodSelector } from "@/components/ui/period-selector"
+import { MetricCard } from "@/components/ui/metric-card"
 import {
   aggregateCashflow, movementsForMonth,
   CASHFLOW_CATEGORY_LABELS,
@@ -217,20 +219,16 @@ export default function CashflowPage() {
 
         {/* ─── Filtres ─── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-xl border p-1"
-            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-            {([["ytd", "YTD"], ["12m", "12 mois"], ["all", "Tout"]] as Array<[Period, string]>).map(([p, label]) => (
-              <button key={p}
-                onClick={() => { setPeriod(p); setSelectedMonth(null) }}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
-                style={{
-                  backgroundColor: period === p ? "var(--bg-muted)" : "transparent",
-                  color: period === p ? "var(--text-primary)" : "var(--text-secondary)",
-                }}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <PeriodSelector
+            size="md"
+            options={[
+              { value: "ytd", label: "YTD" },
+              { value: "12m", label: "12 mois" },
+              { value: "all", label: "Tout" },
+            ]}
+            value={period}
+            onChange={(p) => { setPeriod(p); setSelectedMonth(null) }}
+          />
 
           <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2"
             style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
@@ -253,14 +251,8 @@ export default function CashflowPage() {
         {/* ─── KPIs ─── */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {kpis.map(k => (
-            <div key={k.label} className="rounded-2xl border p-4"
-              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <div className="flex items-center gap-2 mb-2" style={{ color: "var(--text-tertiary)" }}>
-                <span style={{ color: k.color }}>{k.icon}</span>
-                <span className="text-[11px] font-medium uppercase tracking-wide">{k.label}</span>
-              </div>
-              <p className="text-lg font-bold tabular-nums" style={{ color: k.color }}>{k.value}</p>
-            </div>
+            <MetricCard key={k.label} label={k.label} value={k.value}
+              icon={k.icon} iconColor={k.color} valueColor={k.color} />
           ))}
         </div>
 

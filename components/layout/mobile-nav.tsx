@@ -7,6 +7,7 @@ import { useState } from "react"
 import {
   LayoutDashboard, Briefcase, Eye, ArrowLeftRight,
   Grid3X3, TrendingUp, Calculator, Settings, X, Wallet, ArrowDownUp,
+  PieChart, Target,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -18,10 +19,13 @@ const PRIMARY_ITEMS = [
 ]
 
 const MORE_ITEMS = [
-  { label: "Dividendes",   href: "/dividends",      icon: TrendingUp },
-  { label: "Cashflow",     href: "/cashflow",       icon: ArrowDownUp },
-  { label: "DCA Calculator",href: "/dca-calculator",icon: Calculator },
-  { label: "Paramètres",   href: "/settings",       icon: Settings },
+  { label: "Cashflow",       href: "/cashflow",       icon: ArrowDownUp },
+  { label: "Revenus passifs",href: "/revenus",        icon: TrendingUp },
+  { label: "Analyses",       href: "/analyses",       icon: PieChart },
+  { label: "Objectifs",      href: "/objectifs",      icon: Target },
+  { label: "Dividendes",     href: "/dividends",      icon: TrendingUp },
+  { label: "Calculateur DCA",href: "/dca-calculator", icon: Calculator },
+  { label: "Paramètres",     href: "/settings",       icon: Settings },
 ]
 
 export function MobileNav() {

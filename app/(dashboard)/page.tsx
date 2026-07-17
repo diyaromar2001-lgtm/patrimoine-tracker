@@ -17,6 +17,7 @@ import { maxDrawdown, sumDividendsDisplay, computeAllocation } from "@/lib/finan
 import {
   TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
   TrendingDown, ArrowUpRight, BarChart2, Eye, EyeOff,
+  ShieldAlert,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -176,6 +177,52 @@ export default function DashboardPage() {
   // Max drawdown
   const portfolioMaxDrawdown = useMemo(() => maxDrawdown(portfolioHistory), [portfolioHistory])
 
+  // Variation sur la PÉRIODE sélectionnée (premier vs dernier point de
+  // l'historique réel). null si l'historique est insuffisant — on n'invente rien.
+  const periodChange = useMemo(() => {
+    if (!isReal || portfolioHistory.length < 2) return null
+    const first = portfolioHistory[0]?.value ?? 0
+    const last  = portfolioHistory[portfolioHistory.length - 1]?.value ?? 0
+    if (first <= 0) return null
+    return { abs: last - first, pct: ((last - first) / first) * 100 }
+  }, [portfolioHistory, isReal])
+
+  // ── Risque & exposition (compact, données réelles uniquement) ──────────────
+  const riskInfo = useMemo(() => {
+    const positions = allAssets
+      .filter(a => a.assetClass !== "cash")
+      .map(a => ({
+        ticker: a.ticker,
+        value: (livePrices[a.ticker]?.price ?? convert(a.currentPrice, (a.currency ?? "CHF") as AppCurrency)) * a.quantity,
+      }))
+      .filter(p => p.value > 0)
+      .sort((a, b) => b.value - a.value)
+    const total = positions.reduce((s, p) => s + p.value, 0) + totalCashConverted
+    if (total <= 0 || positions.length === 0) return null
+
+    const top1Pct = (positions[0].value / total) * 100
+    const top3Pct = (positions.slice(0, 3).reduce((s, p) => s + p.value, 0) / total) * 100
+    const topClass = allocationEntries.filter(e => e.cls !== "cash")[0]
+
+    const alerts: string[] = []
+    if (top1Pct > 25) alerts.push(`${positions[0].ticker} pèse ${top1Pct.toFixed(0)} % du patrimoine — concentration élevée`)
+    if (topClass && topClass.pct > 75) {
+      alerts.push(`${ASSET_CLASS_LABELS[topClass.cls as keyof typeof ASSET_CLASS_LABELS] ?? topClass.cls} concentre ${topClass.pct.toFixed(0)} % du patrimoine`)
+    }
+    if (alerts.length === 0 && positions.length < 5) {
+      alerts.push(`Seulement ${positions.length} position${positions.length > 1 ? "s" : ""} — diversification limitée`)
+    }
+
+    return {
+      topTicker: positions[0].ticker,
+      top1Pct,
+      top3Pct,
+      topClass,
+      alerts: alerts.slice(0, 2),
+      positionCount: positions.length,
+    }
+  }, [allAssets, livePrices, convert, totalCashConverted, allocationEntries])
+
   // Earnings
   useEffect(() => {
     if (!hasAssets) { setEarnings([]); return }
@@ -273,6 +320,17 @@ export default function DashboardPage() {
                     {todayPnl >= 0 ? "+" : ""}{format(todayPnl)}
                   </span>
                 </span>
+                {periodChange && (
+                  <>
+                    <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>Période {period}</span>
+                      <span className="font-semibold tabular-nums" style={{ color: periodChange.abs >= 0 ? "var(--gain)" : "var(--loss)" }}>
+                        {periodChange.abs >= 0 ? "+" : ""}{format(periodChange.abs)} ({periodChange.pct >= 0 ? "+" : ""}{periodChange.pct.toFixed(2)} %)
+                      </span>
+                    </span>
+                  </>
+                )}
                 {totalCashConverted > 0 && (
                   <>
                     <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
@@ -474,6 +532,54 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        )}
+
+        {/* ══ RISQUE & EXPOSITION ═════════════════════════════════════════════ */}
+        {riskInfo && (
+          <div className="rounded-2xl border overflow-hidden"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            <div className="flex items-center justify-between border-b px-5 py-3.5" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4" style={{ color: "#f59e0b" }} />
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Risque & exposition</p>
+              </div>
+              <Link href="/analyses" className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
+                style={{ color: "var(--accent)" }}>
+                Analyse détaillée <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 gap-px sm:grid-cols-4" style={{ backgroundColor: "var(--border-subtle)" }}>
+              {[
+                { label: "Plus grosse position", value: `${riskInfo.topTicker} · ${riskInfo.top1Pct.toFixed(1)} %`, warn: riskInfo.top1Pct > 25 },
+                { label: "Top 3 positions", value: `${riskInfo.top3Pct.toFixed(1)} %`, warn: riskInfo.top3Pct > 60 },
+                {
+                  label: "Classe dominante",
+                  value: riskInfo.topClass
+                    ? `${ASSET_CLASS_LABELS[riskInfo.topClass.cls as keyof typeof ASSET_CLASS_LABELS] ?? riskInfo.topClass.cls} · ${riskInfo.topClass.pct.toFixed(0)} %`
+                    : "—",
+                  warn: (riskInfo.topClass?.pct ?? 0) > 75,
+                },
+                { label: "Positions ouvertes", value: String(riskInfo.positionCount), warn: riskInfo.positionCount < 5 },
+              ].map(s => (
+                <div key={s.label} className="px-5 py-3.5" style={{ backgroundColor: "var(--bg-elevated)" }}>
+                  <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>{s.label}</p>
+                  <p className="mt-0.5 text-sm font-bold tabular-nums" style={{ color: s.warn ? "#f59e0b" : "var(--text-primary)" }}>
+                    {s.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {riskInfo.alerts.length > 0 && (
+              <div className="border-t px-5 py-3 space-y-1.5" style={{ borderColor: "var(--border-subtle)" }}>
+                {riskInfo.alerts.map(a => (
+                  <p key={a} className="flex items-center gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+                    {a}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ══ TOP POSITIONS + ACTIVITÉ ════════════════════════════════════════ */}
