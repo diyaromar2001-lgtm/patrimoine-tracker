@@ -471,6 +471,20 @@ export function computeAllocation(
     .map(([cls, val]) => ({ cls, val, pct: total > 0 ? (val / total) * 100 : 0 }))
 }
 
+/**
+ * Indice de Herfindahl-Hirschman (HHI) de concentration du portefeuille.
+ * HHI = Σ (poids_i)² avec poids en fraction (0-1). Retourne 0-10000 (échelle
+ * classique ×10000). Repères : <1500 diversifié · 1500-2500 modéré · >2500 concentré.
+ */
+export function herfindahlIndex(values: number[]): number {
+  const total = values.reduce((s, v) => s + Math.max(0, v), 0)
+  if (total <= 0) return 0
+  return values.reduce((s, v) => {
+    const w = Math.max(0, v) / total
+    return s + w * w
+  }, 0) * 10000
+}
+
 // ─── Allocation ───────────────────────────────────────────────────────────────
 
 export function calculateAllocationByClass(

@@ -11,6 +11,7 @@ import { MetricCard } from "@/components/ui/metric-card"
 import { ChangeBadge } from "@/components/ui/badge"
 import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
+import { herfindahlIndex } from "@/lib/finance"
 import {
   PieChart, ShieldAlert, Globe2, Factory, Banknote, Receipt,
   BarChart2, ArrowRight, Layers,
@@ -94,23 +95,53 @@ export default function AnalysesPage() {
     return transactions.reduce((s, t) => s + ((t.feesChf ?? 0) * ur), 0)
   }, [transactions, fxRates, currency])
 
-  // Alertes de concentration (règles simples et transparentes)
+  // Indice de concentration HHI (Σ poids², échelle ×10000)
+  const hhi = useMemo(() => herfindahlIndex(positions.map(p => p.displayValue)), [positions])
+  const hhiLabel = hhi > 2500 ? "Concentré" : hhi > 1500 ? "Modéré" : "Diversifié"
+
+  // Alertes structurées : problème → pourquoi → action possible
   const alerts = useMemo(() => {
-    const out: string[] = []
+    const out: Array<{ probleme: string; pourquoi: string; action: string }> = []
     if (totalValue <= 0) return out
     const top1 = positions[0]
-    if (top1 && top1.displayValue / totalValue > 0.25)
-      out.push(`${top1.ticker} représente ${(top1.displayValue / totalValue * 100).toFixed(0)} % du portefeuille — envisagez de diversifier.`)
+    if (top1 && top1.displayValue / totalValue > 0.25) out.push({
+      probleme: `${top1.ticker} pèse ${(top1.displayValue / totalValue * 100).toFixed(0)} % du portefeuille`,
+      pourquoi: "Une chute de ce seul actif impacterait fortement tout votre patrimoine.",
+      action: "Renforcer d'autres positions lors des prochains apports plutôt que celle-ci.",
+    })
     const top3 = positions.slice(0, 3).reduce((s, p) => s + p.displayValue, 0)
-    if (positions.length >= 3 && top3 / totalValue > 0.6)
-      out.push(`Vos 3 plus grosses positions pèsent ${(top3 / totalValue * 100).toFixed(0)} % du portefeuille.`)
-    if (byCurrency[0] && byCurrency[0].pct > 80)
-      out.push(`${byCurrency[0].pct.toFixed(0)} % du portefeuille est exposé à la devise ${byCurrency[0].label}.`)
-    const unknownSector = bySector.find(s => s.label === "Non renseigné")
-    if (unknownSector && unknownSector.pct > 50)
-      out.push(`Le secteur de ${unknownSector.pct.toFixed(0)} % du portefeuille n'est pas renseigné — complétez les fiches actifs pour une analyse sectorielle fiable.`)
-    return out.slice(0, 3)
-  }, [positions, totalValue, byCurrency, bySector])
+    if (positions.length >= 3 && top3 / totalValue > 0.6) out.push({
+      probleme: `Le top 3 concentre ${(top3 / totalValue * 100).toFixed(0)} % du portefeuille`,
+      pourquoi: "La diversification réelle est plus faible que le nombre de lignes ne le suggère.",
+      action: "Viser progressivement un poids < 60 % pour les 3 premières lignes.",
+    })
+    if (byCurrency[0] && byCurrency[0].pct > 80) out.push({
+      probleme: `${byCurrency[0].pct.toFixed(0)} % exposé à la devise ${byCurrency[0].label}`,
+      pourquoi: "Votre patrimoine varie avec le taux de change de cette seule devise.",
+      action: "Considérer des actifs libellés dans d'autres devises (ou couverts).",
+    })
+    const crypto = byClass.find(c => c.label.toLowerCase().includes("crypto"))
+    if (crypto && crypto.pct > 30) out.push({
+      probleme: `Crypto = ${crypto.pct.toFixed(0)} % du portefeuille`,
+      pourquoi: "Classe très volatile : les baisses de 50 %+ y sont historiquement fréquentes.",
+      action: "Vérifier que cette part correspond bien à votre tolérance au risque.",
+    })
+    const stale = positions.filter(p => p.priceIsStale)
+    if (stale.length > 0) out.push({
+      probleme: `${stale.length} position(s) sans prix live (${stale.slice(0, 3).map(p => p.ticker).join(", ")}${stale.length > 3 ? "…" : ""})`,
+      pourquoi: "Ces lignes sont valorisées au coût : la valeur et le P&L affichés sont incomplets.",
+      action: "Vérifier le symbole de cotation (quote_symbol) de ces actifs.",
+    })
+    return out.slice(0, 4)
+  }, [positions, totalValue, byCurrency, byClass])
+
+  // Qualité des données (transparence, pas de fallback silencieux)
+  const dataQuality = useMemo(() => {
+    const stalePrices = positions.filter(p => p.priceIsStale).length
+    const unknownSector = bySector.find(s => s.label === "Non renseigné")?.pct ?? 0
+    const unknownCountry = byCountry.find(s => s.label === "Non renseigné")?.pct ?? 0
+    return { stalePrices, unknownSector, unknownCountry }
+  }, [positions, bySector, byCountry])
 
   const hasData = positions.length > 0
 
@@ -150,17 +181,40 @@ export default function AnalysesPage() {
                 icon={<Receipt className="h-4 w-4" />} iconColor="#f59e0b" />
             </div>
 
-            {/* ── Alertes ── */}
+            {/* ── Alertes actionnables ── */}
             {alerts.length > 0 && (
-              <div className="rounded-2xl border px-5 py-4 space-y-2"
-                style={{ backgroundColor: "#f59e0b08", borderColor: "#f59e0b30" }}>
-                <div className="flex items-center gap-2">
+              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "#f59e0b30" }}>
+                <div className="flex items-center gap-2 border-b px-5 py-3.5"
+                  style={{ backgroundColor: "#f59e0b08", borderColor: "#f59e0b20" }}>
                   <ShieldAlert className="h-4 w-4" style={{ color: "#f59e0b" }} />
                   <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Points d'attention</p>
+                  <span className="ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ backgroundColor: hhi > 2500 ? "#ef444420" : hhi > 1500 ? "#f59e0b20" : "#22c55e20", color: hhi > 2500 ? "#ef4444" : hhi > 1500 ? "#f59e0b" : "#22c55e" }}>
+                    HHI {Math.round(hhi)} · {hhiLabel}
+                  </span>
                 </div>
-                {alerts.map(a => (
-                  <p key={a} className="pl-6 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{a}</p>
-                ))}
+                <div style={{ backgroundColor: "var(--bg-elevated)" }}>
+                  {alerts.map((a, i) => (
+                    <div key={a.probleme} className="px-5 py-3"
+                      style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{a.probleme}</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>{a.pourquoi}</p>
+                      <p className="mt-0.5 text-[11px]" style={{ color: "var(--accent)" }}>→ {a.action}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Qualité des données ── */}
+            {(dataQuality.stalePrices > 0 || dataQuality.unknownSector > 20 || dataQuality.unknownCountry > 20) && (
+              <div className="rounded-2xl border px-5 py-3.5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>Qualité des données</p>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                  {dataQuality.stalePrices > 0 && <span>• {dataQuality.stalePrices} position(s) valorisée(s) au coût (prix indisponible)</span>}
+                  {dataQuality.unknownSector > 20 && <span>• Secteur non renseigné pour {dataQuality.unknownSector.toFixed(0)} % du portefeuille</span>}
+                  {dataQuality.unknownCountry > 20 && <span>• Pays non renseigné pour {dataQuality.unknownCountry.toFixed(0)} % du portefeuille</span>}
+                </div>
               </div>
             )}
 

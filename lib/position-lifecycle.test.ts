@@ -224,3 +224,28 @@ describe("Scénario E — computeAllocation (cash compté une fois, unités homo
     expect(etf?.val).toBeCloseTo(1000 / 1.08, 4)
   })
 })
+
+// ───────────────────────────────────────────────────────────────────────────
+// herfindahlIndex — concentration du portefeuille
+// ───────────────────────────────────────────────────────────────────────────
+
+import { herfindahlIndex } from "./finance"
+
+describe("herfindahlIndex", () => {
+  test("position unique → 10000 (concentration maximale)", () => {
+    expect(herfindahlIndex([500])).toBeCloseTo(10000, 6)
+  })
+
+  test("4 positions égales → 2500", () => {
+    expect(herfindahlIndex([100, 100, 100, 100])).toBeCloseTo(2500, 6)
+  })
+
+  test("10 positions égales → 1000 (diversifié)", () => {
+    expect(herfindahlIndex(Array(10).fill(50))).toBeCloseTo(1000, 6)
+  })
+
+  test("vide ou total nul → 0", () => {
+    expect(herfindahlIndex([])).toBe(0)
+    expect(herfindahlIndex([0, 0])).toBe(0)
+  })
+})
