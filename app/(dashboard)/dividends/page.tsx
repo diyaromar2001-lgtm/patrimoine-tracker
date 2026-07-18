@@ -10,7 +10,8 @@ import { useCurrency } from "@/hooks/use-currency"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import type { DividendEvent } from "@/lib/types"
 import type { DividendInfo } from "@/app/api/dividends/route"
-import { dividendReceivedYTD, estimatedAnnualDividend } from "@/lib/finance"
+import { estimatedAnnualDividend } from "@/lib/finance"
+import { summarizeDividends } from "@/lib/dividends"
 import {
   CalendarDays, TrendingUp, Clock, CheckCircle2,
   Plus, X, Check, ChevronLeft, ChevronRight, Loader2, RefreshCw,
@@ -88,8 +89,24 @@ function buildDividendEvents(
 }
 
 export default function DividendsPage() {
-  const { portfolios }  = useAppData()
-  const { format, fxRates } = useCurrency()
+  const { portfolios, transactions }  = useAppData()
+  const { format, fxRates, currency } = useCurrency()
+
+  // ── RÉEL : dividendes effectivement encaissés (transactions type=dividend) ──
+  const real = useMemo(
+    () => summarizeDividends(transactions, currency, fxRates as Record<string, number>),
+    [transactions, currency, fxRates]
+  )
+
+  // Objectif de revenu passif mensuel (persisté localement)
+  const [incomeGoal, setIncomeGoal] = useState("")
+  useEffect(() => {
+    try { setIncomeGoal(localStorage.getItem("dividend-income-goal") ?? "") } catch {}
+  }, [])
+  function saveIncomeGoal(v: string) {
+    setIncomeGoal(v)
+    try { localStorage.setItem("dividend-income-goal", v) } catch {}
+  }
   const today           = new Date()
 
   const [filter,    setFilter]    = useState<"all"|"upcoming"|"paid">("all")
@@ -172,11 +189,7 @@ export default function DividendsPage() {
   const totalPortValue = portfolios.flatMap(p => p.assets).reduce((s, a) => s + a.currentPrice * a.quantity, 0)
   const nextDiv = filtered.find(d => d.status === "upcoming")
   const daysToNext = nextDiv ? Math.ceil((new Date(nextDiv.payDate).getTime() - Date.now()) / 86400000) : null
-  const paidTotalChf = useMemo(() => dividendReceivedYTD(
-    allDividends.map(d => ({ amount: d.amount, currency: d.currency, paymentDate: d.payDate, status: d.status })),
-    fxRates
-  ), [allDividends, fxRates])
-  const paidCount  = allDividends.filter(d => d.status === "paid" && new Date(d.payDate) <= new Date()).length
+  // (les « reçus » viennent désormais des transactions réelles via summarizeDividends)
 
   // Calendar map
   const calDivMap: Record<string, DividendEvent[]> = {}
@@ -209,10 +222,12 @@ export default function DividendsPage() {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
           {[
-            { label: "Revenu annuel estimé", value: format(totalAnnualChf, "CHF"), sub: totalPortValue > 0 ? ((totalAnnualChf / totalPortValue) * 100).toFixed(2) + "% yield" : "", icon: TrendingUp, color: "#22c55e" },
-            { label: "Revenu mensuel moyen", value: format(totalAnnualChf / 12, "CHF"), sub: format(totalAnnualChf / 52, "CHF") + "/sem.", icon: CalendarDays, color: "#3b82f6" },
-            { label: "Prochain versement", value: nextDiv ? "+" + format(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + "j" : "", icon: Clock, color: "#f59e0b" },
-            { label: "Reçus (année en cours)", value: format(paidTotalChf, "CHF"), sub: paidCount + " versement" + (paidCount > 1 ? "s" : ""), icon: CheckCircle2, color: "#a78bfa" },
+            // RÉEL — transactions dividende encaissées (net après retenue à la source)
+            { label: "Reçus cette année (net)", value: format(real.receivedYtdNet), sub: real.withholdingYtd > 0 ? `brut ${format(real.receivedYtdGross)} · impôt −${format(real.withholdingYtd)}` : `${real.history.filter(d => d.date >= `${new Date().getFullYear()}-01-01`).length} versement(s) confirmé(s)`, icon: CheckCircle2, color: "#22c55e" },
+            { label: "Moyenne mensuelle (12 m réels)", value: format(real.monthlyAvg12m), sub: `${format(real.received12mNet)} sur 12 mois`, icon: CalendarDays, color: "#3b82f6" },
+            // ESTIMÉ — taux Yahoo × positions actuelles
+            { label: "Revenu annuel estimé", value: format(totalAnnualChf, "CHF"), sub: totalPortValue > 0 ? ((totalAnnualChf / totalPortValue) * 100).toFixed(2) + " % rendement courant · estimation" : "estimation", icon: TrendingUp, color: "#a78bfa" },
+            { label: "Prochain versement (estimé)", value: nextDiv ? "+" + format(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + " j" : "", icon: Clock, color: "#f59e0b" },
           ].map(({ label, value, sub, icon: Icon, color }) => (
             <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <div className="flex items-center gap-2 mb-2">
@@ -287,6 +302,111 @@ export default function DividendsPage() {
             </div>
           </div>
         )}
+
+        {/* ─── Historique RÉEL + Top distributeurs ─── */}
+        {real.history.length > 0 && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Historique des dividendes encaissés */}
+            <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              <div className="border-b px-5 py-3.5" style={{ borderColor: "var(--border)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Historique encaissé</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Transactions réelles · net après retenue à la source</p>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {real.history.slice(0, 20).map((d, i) => (
+                  <div key={`${d.ticker}-${d.date}-${i}`} className="flex items-center gap-3 px-5 py-2.5"
+                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                    <span className="w-14 text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{d.ticker}</span>
+                    <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{d.date}</span>
+                    <span className="ml-auto flex items-center gap-2">
+                      {d.withholding > 0 && (
+                        <span className="text-[10px] tabular-nums" style={{ color: "var(--text-tertiary)" }}
+                          title={`Brut ${format(d.gross)} · retenue −${format(d.withholding)}`}>
+                          −{format(d.withholding)}
+                        </span>
+                      )}
+                      <span className="text-xs font-bold tabular-nums" style={{ color: "var(--gain)" }}>+{format(d.net)}</span>
+                      <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ backgroundColor: "#22c55e18", color: "#22c55e" }}>Confirmé</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top distributeurs + concentration */}
+            <div className="rounded-2xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top distributeurs (12 mois)</p>
+              <p className="text-[11px] mt-0.5 mb-4" style={{ color: "var(--text-tertiary)" }}>Part de chaque actif dans vos revenus réels</p>
+              <div className="space-y-3">
+                {real.byTicker.slice(0, 6).map(t => (
+                  <div key={t.ticker} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{t.ticker}</span>
+                      <span className="tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+                        {format(t.net)} · <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{t.pct.toFixed(0)} %</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--bg-muted)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, t.pct)}%`, backgroundColor: t.pct > 50 ? "#f59e0b" : "#22c55e" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {real.topConcentrationPct > 50 && real.byTicker.length > 1 && (
+                <p className="mt-4 flex items-center gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+                  {real.byTicker[0].ticker} fournit {real.topConcentrationPct.toFixed(0)} % de vos dividendes — revenus concentrés sur un seul actif.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── Objectif de revenu passif ─── */}
+        <div className="rounded-2xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Objectif de revenu passif</p>
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Cible mensuelle vs revenus estimés actuels</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="div-goal" className="text-xs" style={{ color: "var(--text-secondary)" }}>Cible / mois</label>
+              <input id="div-goal" type="number" min="0" value={incomeGoal}
+                onChange={e => saveIncomeGoal(e.target.value)}
+                className="input w-24 !py-1.5 text-right text-xs" placeholder="100" />
+            </div>
+          </div>
+          {(() => {
+            const goal = Number(incomeGoal)
+            if (!Number.isFinite(goal) || goal <= 0) return (
+              <p className="mt-3 text-xs" style={{ color: "var(--text-tertiary)" }}>Fixez une cible mensuelle pour suivre votre progression.</p>
+            )
+            const currentMonthly = totalAnnualChf / 12
+            const progress = Math.min(100, (currentMonthly / goal) * 100)
+            const yieldPct = totalPortValue > 0 ? (totalAnnualChf / totalPortValue) * 100 : 0
+            const capital = yieldPct > 0 ? (goal * 12) / (yieldPct / 100) : null
+            return (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold tabular-nums" style={{ color: progress >= 100 ? "var(--gain)" : "var(--text-primary)" }}>
+                    {format(currentMonthly)} / {format(goal)} · {progress.toFixed(0)} %
+                  </span>
+                  <span className="tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+                    {capital != null ? `capital nécessaire ≈ ${format(capital)}` : "rendement estimé indisponible"}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--bg-muted)" }}>
+                  <div className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${progress}%`, background: progress >= 100 ? "var(--gain)" : "linear-gradient(90deg, var(--accent), #818cf8)" }} />
+                </div>
+                <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                  Hypothèses : revenu mensuel = revenu annuel estimé ÷ 12 (taux Yahoo × positions actuelles) ;
+                  capital nécessaire calculé au rendement courant de {yieldPct.toFixed(2)} % — estimations, pas des promesses.
+                </p>
+              </div>
+            )
+          })()}
+        </div>
 
         {/* ─── Résumé mensuel ─── */}
         {allDividends.length > 0 && (
