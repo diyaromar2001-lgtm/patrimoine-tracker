@@ -171,14 +171,14 @@ export default function TransactionsPage() {
       <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/* 4 KPI seulement : la PV latente vit dans Portefeuilles/Analyses,
+              la PV réalisée dans Analyses — pas de doublons ici. */}
           {[
-            { label: "Capital investi",   value: format(totalBuy),  color: "#3b82f6" },  // bleu neutre
-            { label: "Total ventes",     value: format(totalSell), color: "#22c55e" },
-            { label: "PV latente",       value: (latentPnl >= 0 ? "+" : "") + format(latentPnl), color: latentPnl >= 0 ? "#22c55e" : "#ef4444" },
-            { label: "PV réalisée",      value: (realizedPnl >= 0 ? "+" : "") + format(realizedPnl), color: realizedPnl >= 0 ? "#22c55e" : "#ef4444" },
-            { label: "Dividendes reçus", value: format(totalDiv),  color: "#f59e0b" },
-            { label: "Frais total",      value: format(totalFees), color: "#6b7280" },
+            { label: "Achats",           value: format(totalBuy),  color: "var(--text-primary)" },
+            { label: "Ventes",           value: format(totalSell), color: "var(--text-primary)" },
+            { label: "Dividendes reçus", value: format(totalDiv),  color: "#22c55e" },
+            { label: "Frais",            value: "−" + format(totalFees), color: "#f59e0b" },
           ].map(s => (
             <div key={s.label} className="rounded-xl border p-4"
               style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
@@ -301,27 +301,45 @@ export default function TransactionsPage() {
                       {TX_LABELS[tx.type]}
                     </span>
                   </div>
-                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>{Number(tx.quantity).toFixed(8).replace(/\.?0+$/, '')}</p>
-                  {/* Prix unit. + total net */}
+                  {/* Quantité — seulement pour achats/ventes (un dépôt n'a pas
+                      de « quantité 1 × prix » : c'est un montant). */}
+                  <p className="text-right text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                    {["buy", "sell"].includes(tx.type)
+                      ? Number(tx.quantity).toFixed(8).replace(/\.?0+$/, '')
+                      : "—"}
+                  </p>
+                  {/* Cellule montant — adaptée au type */}
                   <div className="text-right">
-                    <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                      {format(tx.price)}
-                    </p>
-                    {(() => {
-                      const ur = (fxRates as Record<string,number>)[currency] ?? 1
-                      const net = tx.type === "buy"
-                        ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price + tx.fees))
-                        : tx.type === "sell"
-                        ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price - tx.fees))
-                        : null
-                      if (!net) return null
-                      return (
-                        <p className="text-[10px] tabular-nums mt-0.5"
-                          style={{ color: tx.type === "sell" ? "var(--gain)" : "var(--text-tertiary)" }}>
-                          {tx.type === "sell" ? "+" : "−"}{format(net)}
+                    {["buy", "sell"].includes(tx.type) ? (
+                      <>
+                        <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                          {format(tx.price)}
                         </p>
-                      )
-                    })()}
+                        {(() => {
+                          const net = tx.type === "buy"
+                            ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price + tx.fees))
+                            : toUser(tx.netAmountChf ?? (tx.quantity * tx.price - tx.fees))
+                          if (!net) return null
+                          return (
+                            <p className="text-[10px] tabular-nums mt-0.5"
+                              style={{ color: tx.type === "sell" ? "var(--gain)" : "var(--text-tertiary)" }}>
+                              {tx.type === "sell" ? "+" : "−"}{format(net)}
+                            </p>
+                          )
+                        })()}
+                      </>
+                    ) : tx.type === "dividend" ? (
+                      <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--gain)" }}
+                        title={tx.feesChf ? `Brut ${format(toUser((tx.netAmountChf ?? 0) + tx.feesChf))} · retenue −${format(toUser(tx.feesChf))}` : undefined}>
+                        +{format(toUser(tx.netAmountChf ?? convert(tx.quantity * tx.price, tx.currency as AppCurrency)))}
+                        <span className="block text-[10px] font-normal mt-0.5" style={{ color: "var(--text-tertiary)" }}>net · {tx.currency}</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                        {format(convert(tx.quantity * tx.price, tx.currency as AppCurrency))}
+                        <span className="block text-[10px] font-normal mt-0.5" style={{ color: "var(--text-tertiary)" }}>{tx.currency}</span>
+                      </p>
+                    )}
                   </div>
                   {/* Frais */}
                   <div className="text-right">

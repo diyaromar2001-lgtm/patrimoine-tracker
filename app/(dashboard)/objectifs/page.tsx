@@ -29,7 +29,7 @@ interface Goal {
 }
 
 const STORAGE_KEY = "patrimoine-goals"
-const ICON_CHOICES = ["🎯", "🏠", "🚗", "✈️", "🎓", "💰", "🏖️", "📈"]
+const ICON_CHOICES = ["🎯", "🛡️", "🏠", "🚗", "✈️", "🎓", "💰", "📈"]
 
 function loadGoals(): Goal[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") } catch { return [] }
@@ -134,17 +134,33 @@ export default function ObjectifsPage() {
         </div>
 
         {goals.length === 0 ? (
-          <div className="rounded-2xl border" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-            <EmptyState
-              icon={<Target className="h-5 w-5" />}
-              title="Aucun objectif défini"
-              description="Fixez un cap : un montant de patrimoine à atteindre, une mise de côté pour un projet, un jalon d'indépendance financière."
-              action={
-                <button onClick={() => { resetForm(); setShowModal(true) }} className="btn-primary">
-                  <Plus className="h-3.5 w-3.5" /> Créer mon premier objectif
+          <div className="rounded-2xl border p-6 sm:p-8" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Fixez votre premier cap</p>
+            <p className="mt-1 max-w-lg text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              Un objectif transforme votre patrimoine en progression mesurable : choisissez un modèle ou créez le vôtre.
+            </p>
+            {/* Modèles suggérés — préremplissent la modale, rien n'est créé sans validation */}
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {[
+                { name: "Épargne de sécurité", icon: "🛡️", amount: "10000", desc: "3 à 6 mois de dépenses disponibles en cas d'imprévu." },
+                { name: "Achat immobilier", icon: "🏠", amount: "60000", desc: "Constituer l'apport pour un futur bien." },
+                { name: "Indépendance financière", icon: "📈", amount: "500000", desc: "Le capital dont les revenus couvrent votre train de vie." },
+              ].map(t => (
+                <button key={t.name}
+                  onClick={() => { resetForm(); setFName(t.name); setFIcon(t.icon); setFAmount(t.amount); setShowModal(true) }}
+                  className="rounded-xl border p-4 text-left transition-all hover:border-[var(--accent)]"
+                  style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
+                  <span className="text-xl">{t.icon}</span>
+                  <p className="mt-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{t.name}</p>
+                  <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{t.desc}</p>
                 </button>
-              }
-            />
+              ))}
+            </div>
+            <div className="mt-5">
+              <button onClick={() => { resetForm(); setShowModal(true) }} className="btn-primary">
+                <Plus className="h-3.5 w-3.5" /> Créer un objectif personnalisé
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">

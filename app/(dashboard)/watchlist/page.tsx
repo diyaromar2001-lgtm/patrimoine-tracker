@@ -124,6 +124,18 @@ export default function WatchlistPage() {
     localStorage.setItem("watchlist-indicators", JSON.stringify(next))
   }
 
+  // Mode avancé : les indicateurs techniques (RSI, MA, volume, signaux) ne
+  // sont pas imposés à tous — vue patrimoniale simple par défaut.
+  const [advancedMode, setAdvancedMode] = useState(false)
+  useEffect(() => {
+    try { setAdvancedMode(localStorage.getItem("watchlist-advanced") === "true") } catch {}
+  }, [])
+  function toggleAdvanced() {
+    const next = !advancedMode
+    setAdvancedMode(next)
+    try { localStorage.setItem("watchlist-advanced", String(next)) } catch {}
+  }
+
   const filtered = items.filter(item =>
     item.ticker.toLowerCase().includes(search.toLowerCase()) ||
     item.name.toLowerCase().includes(search.toLowerCase())
@@ -221,30 +233,40 @@ export default function WatchlistPage() {
             <div className="lg:col-span-2 space-y-2">
               <SectionHeader title="Mes actifs" description="Cliquer pour voir le graphique" />
 
-              {/* Toggles indicateurs swing */}
+              {/* Mode avancé : indicateurs techniques optionnels */}
               {items.length > 0 && (
-                <div className="rounded-xl border p-2" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)" }}>
-                  <div className="flex items-center justify-between mb-2 px-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
-                      Indicateurs swing (1-4 semaines)
+                <div className="rounded-xl border p-2.5" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)" }}>
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      Mode avancé
+                      <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>RSI, moyennes mobiles, volume, signaux</span>
                     </span>
+                    <button role="switch" aria-checked={advancedMode} onClick={toggleAdvanced}
+                      aria-label="Activer le mode avancé"
+                      className="relative h-5 w-9 rounded-full transition-colors"
+                      style={{ backgroundColor: advancedMode ? "var(--accent)" : "var(--border)" }}>
+                      <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all"
+                        style={{ left: advancedMode ? "18px" : "2px" }} />
+                    </button>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ALL_IND.map(({ key, label }) => {
-                      const on = visibleInd[key]
-                      return (
-                        <button key={key} onClick={() => toggleInd(key)}
-                          className="rounded-md border px-2 py-1 text-[10px] font-medium transition-all"
-                          style={{
-                            backgroundColor: on ? "#6366f118" : "var(--bg-base)",
-                            borderColor:     on ? "var(--accent)" : "var(--border)",
-                            color:           on ? "var(--accent)" : "var(--text-tertiary)",
-                          }}>
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  {advancedMode && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t pt-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+                      {ALL_IND.map(({ key, label }) => {
+                        const on = visibleInd[key]
+                        return (
+                          <button key={key} onClick={() => toggleInd(key)}
+                            className="rounded-md border px-2 py-1 text-[11px] font-medium transition-all"
+                            style={{
+                              backgroundColor: on ? "#6366f118" : "var(--bg-base)",
+                              borderColor:     on ? "var(--accent)" : "var(--border)",
+                              color:           on ? "var(--accent)" : "var(--text-tertiary)",
+                            }}>
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -352,7 +374,7 @@ export default function WatchlistPage() {
                         {(() => {
                           const ind = indicators[item.ticker]
                           const hasAny = Object.values(visibleInd).some(v => v)
-                          if (!ind || !hasAny) return null
+                          if (!advancedMode || !ind || !hasAny) return null
 
                           const signalColors = {
                             BUY:  { bg: "#22c55e22", color: "#22c55e", border: "#22c55e40" },
