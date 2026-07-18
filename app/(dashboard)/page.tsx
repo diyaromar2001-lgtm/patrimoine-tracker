@@ -14,6 +14,7 @@ import { calculatePortfolioPnL, convertPnL } from "@/lib/pnl"
 import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
 import { maxDrawdown, sumDividendsDisplay, computeAllocation } from "@/lib/finance"
+import { aggregateCashflow } from "@/lib/cashflow"
 import {
   TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
   TrendingDown, ArrowUpRight, BarChart2, Eye, EyeOff,
@@ -28,7 +29,7 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, revenus, globalCash, loading, realizedPnLEvents } = useAppData()
+  const { portfolios, transactions, revenus, globalCash, cashMovements, loading, realizedPnLEvents } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
@@ -173,6 +174,17 @@ export default function DashboardPage() {
       .slice(0, 6),
     [transactions]
   )
+
+  // Cashflow net du mois en cours (flux externes uniquement, via lib/cashflow)
+  const monthCashflowNet = useMemo(() => {
+    const monthStart = new Date().toISOString().slice(0, 7) + "-01"
+    const s = aggregateCashflow(
+      cashMovements,
+      (amt, cur) => convert(amt, cur as AppCurrency),
+      { fromDate: monthStart }
+    )
+    return s.net
+  }, [cashMovements, convert])
 
   // Max drawdown
   const portfolioMaxDrawdown = useMemo(() => maxDrawdown(portfolioHistory), [portfolioHistory])
@@ -389,12 +401,14 @@ export default function DashboardPage() {
               icon:  BarChart2,
               color: "#6366f1",
             },
+            // « P&L du jour » supprimé : déjà affiché dans le héro (« Aujourd'hui »).
+            // À la place : le cashflow net du mois en cours (flux externes).
             {
-              label: "P&L du jour",
-              value: (todayPnl >= 0 ? "+" : "") + format(todayPnl),
-              sub:   (todayPnlPct >= 0 ? "+" : "") + todayPnlPct.toFixed(2) + "%",
+              label: "Cashflow net (mois)",
+              value: (monthCashflowNet >= 0 ? "+" : "") + format(monthCashflowNet),
+              sub:   "entrées − sorties du mois en cours",
               icon:  Activity,
-              color: isToday ? "var(--gain)" : "var(--loss)",
+              color: monthCashflowNet >= 0 ? "var(--gain)" : "var(--loss)",
             },
           ].map((kpi, i) => (
             <motion.div key={kpi.label}

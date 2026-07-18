@@ -7,6 +7,7 @@ import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { EmptyState } from "@/components/ui/empty-state"
+import { aggregateCashflow } from "@/lib/cashflow"
 import type { AppCurrency } from "@/lib/utils"
 import { Target, Plus, Trash2, X, CalendarDays } from "lucide-react"
 
@@ -35,7 +36,7 @@ function loadGoals(): Goal[] {
 }
 
 export default function ObjectifsPage() {
-  const { portfolios, globalCash } = useAppData()
+  const { portfolios, globalCash, cashMovements } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
 
   const [goals, setGoals] = useState<Goal[]>([])
@@ -73,6 +74,20 @@ export default function ObjectifsPage() {
   }, [allAssets, livePrices, globalCash, convert, fxRates, currency])
 
   const userRate = (fxRates as Record<string, number>)[currency] ?? 1
+
+  // Rythme d'épargne réel : moyenne du cashflow net externe des 6 derniers mois
+  // (en CHF pour rester cohérent avec le référentiel des objectifs).
+  const avgMonthlySavingsChf = useMemo(() => {
+    const from = new Date()
+    from.setMonth(from.getMonth() - 5)
+    const s = aggregateCashflow(
+      cashMovements,
+      (amt, cur) => convert(amt, cur as AppCurrency),
+      { fromDate: from.toISOString().slice(0, 7) + "-01" }
+    )
+    const months = Math.max(1, s.months.length)
+    return userRate > 0 ? (s.net / months) / userRate : 0
+  }, [cashMovements, convert, userRate])
 
   function resetForm() {
     setFName(""); setFIcon(ICON_CHOICES[0]); setFAmount(""); setFDate(""); setFError("")
@@ -177,6 +192,33 @@ export default function ObjectifsPage() {
                         className="h-full rounded-full"
                         style={{ background: reached ? "var(--gain)" : "linear-gradient(90deg, var(--accent), #818cf8)" }} />
                     </div>
+
+                    {/* Projection : rythme requis vs rythme réel */}
+                    {!reached && (() => {
+                      const lines: string[] = []
+                      if (g.targetDate) {
+                        const monthsLeft = Math.max(1, Math.ceil(
+                          (new Date(g.targetDate).getTime() - Date.now()) / (30.44 * 86400000)))
+                        lines.push(`Rythme requis : ${format((remaining / monthsLeft) * userRate)}/mois sur ${monthsLeft} mois`)
+                      }
+                      if (avgMonthlySavingsChf > 0 && remaining > 0) {
+                        const monthsNeeded = Math.ceil(remaining / avgMonthlySavingsChf)
+                        const eta = new Date()
+                        eta.setMonth(eta.getMonth() + monthsNeeded)
+                        lines.push(`Au rythme actuel (${format(avgMonthlySavingsChf * userRate)}/mois épargnés) : atteint vers ${eta.toISOString().slice(0, 7)}`)
+                      }
+                      return lines.length > 0 ? (
+                        <div className="pt-1 space-y-0.5">
+                          {lines.map(l => (
+                            <p key={l} className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{l}</p>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
+                    <p className="text-[10px] pt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                      Mode de calcul : progression mesurée sur le patrimoine net total ;
+                      rythme réel = cashflow net moyen des 6 derniers mois. Estimations.
+                    </p>
                   </div>
 
                   {/* Confirmation de suppression inline */}

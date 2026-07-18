@@ -20,7 +20,7 @@ const NAV_SECTIONS = [
       { label: "Tableau de bord", href: "/",           icon: LayoutDashboard },
       { label: "Portefeuilles",   href: "/portfolios", icon: Briefcase       },
       { label: "Cashflow",        href: "/cashflow",   icon: ArrowDownUp     },
-      { label: "Revenus passifs", href: "/revenus",    icon: Zap             },
+      { label: "Dividendes",      href: "/dividends",  icon: TrendingUp      },
       { label: "Analyses",        href: "/analyses",   icon: PieChart        },
       { label: "Objectifs",       href: "/objectifs",  icon: Target          },
     ],
@@ -29,7 +29,7 @@ const NAV_SECTIONS = [
     label: "Outils",
     items: [
       { label: "Watchlist",       href: "/watchlist",      icon: Eye            },
-      { label: "Dividendes",      href: "/dividends",      icon: TrendingUp     },
+      { label: "Revenus annexes", href: "/revenus",        icon: Zap            },
       { label: "Transactions",    href: "/transactions",   icon: ArrowLeftRight },
       { label: "Calculateur DCA", href: "/dca-calculator", icon: Calculator     },
     ],

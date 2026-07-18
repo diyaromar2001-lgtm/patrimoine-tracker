@@ -20,10 +20,10 @@ const PRIMARY_ITEMS = [
 
 const MORE_ITEMS = [
   { label: "Cashflow",       href: "/cashflow",       icon: ArrowDownUp },
-  { label: "Revenus passifs",href: "/revenus",        icon: TrendingUp },
+  { label: "Dividendes",     href: "/dividends",      icon: TrendingUp },
   { label: "Analyses",       href: "/analyses",       icon: PieChart },
   { label: "Objectifs",      href: "/objectifs",      icon: Target },
-  { label: "Dividendes",     href: "/dividends",      icon: TrendingUp },
+  { label: "Revenus annexes",href: "/revenus",        icon: TrendingUp },
   { label: "Calculateur DCA",href: "/dca-calculator", icon: Calculator },
   { label: "Paramètres",     href: "/settings",       icon: Settings },
 ]
