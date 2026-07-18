@@ -8,6 +8,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import type { AppCurrency } from "@/lib/utils"
 import { PeriodSelector } from "@/components/ui/period-selector"
 import { MetricCard } from "@/components/ui/metric-card"
+import { SankeyCashflow, type SankeyNode } from "@/components/charts/sankey-cashflow"
 import {
   aggregateCashflow, movementsForMonth,
   CASHFLOW_CATEGORY_LABELS,
@@ -198,6 +199,56 @@ export default function CashflowPage() {
       .map(([cat, amount]) => ({ cat, amount, pct: total > 0 ? (amount / total) * 100 : 0 }))
   }, [summary.byCategory])
 
+  // ── Données du diagramme de Sankey (sources → flux → emplois → détail) ────
+  const sankey = useMemo(() => {
+    // Totaux entrées/sorties par catégorie sur la période
+    const inflow: Partial<Record<CashflowCategory, number>> = {}
+    const outflow: Partial<Record<CashflowCategory, number>> = {}
+    for (const m of summary.months) {
+      for (const [cat, v] of Object.entries(m.inflows)) inflow[cat as CashflowCategory] = (inflow[cat as CashflowCategory] ?? 0) + (v ?? 0)
+      for (const [cat, v] of Object.entries(m.outflows)) outflow[cat as CashflowCategory] = (outflow[cat as CashflowCategory] ?? 0) + (v ?? 0)
+    }
+
+    const sources: SankeyNode[] = (Object.entries(inflow) as Array<[CashflowCategory, number]>)
+      .filter(([, v]) => v > 0)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cat, v]) => ({ id: cat, label: CASHFLOW_CATEGORY_LABELS[cat], value: v, color: CATEGORY_COLORS[cat] }))
+
+    // Ventilation des achats par actif (détail 4e colonne, top 8 + Autres)
+    const buysByTicker: Record<string, number> = {}
+    for (const m of cashMovements) {
+      if (m.type !== "buy_deduction") continue
+      if (fromDate && m.date < fromDate) continue
+      const v = Math.abs(convert(m.amount, (m.currency || "CHF") as AppCurrency))
+      const key = m.refTicker || "Autres"
+      buysByTicker[key] = (buysByTicker[key] ?? 0) + v
+    }
+    const buyEntries = Object.entries(buysByTicker).sort(([, a], [, b]) => b - a)
+    const topBuys = buyEntries.slice(0, 8)
+    const restBuys = buyEntries.slice(8).reduce((s, [, v]) => s + v, 0)
+    const buyChildren = [
+      ...topBuys.map(([t, v], i) => ({ label: t, value: v, color: ["#6366f1", "#818cf8", "#a855f7", "#0ea5e9", "#22c55e", "#eab308", "#f97316", "#64748b"][i % 8] })),
+      ...(restBuys > 0 ? [{ label: "Autres", value: restBuys, color: "#64748b" }] : []),
+    ]
+
+    const uses: SankeyNode[] = (Object.entries(outflow) as Array<[CashflowCategory, number]>)
+      .filter(([, v]) => v > 0)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cat, v]) => ({
+        id: cat, label: CASHFLOW_CATEGORY_LABELS[cat], value: v, color: CATEGORY_COLORS[cat],
+        children: cat === "buys" && includeInvestments && buyChildren.length > 1 ? buyChildren : undefined,
+      }))
+
+    // Équilibre du diagramme : épargne nette à droite (ou puisée à gauche)
+    if (summary.net > 0.005) {
+      uses.push({ id: "savings", label: "Épargne nette", value: summary.net, color: "#22c55e" })
+    } else if (summary.net < -0.005) {
+      sources.push({ id: "drawdown", label: "Puisé sur l'épargne", value: -summary.net, color: "#f97316" })
+    }
+
+    return { sources, uses }
+  }, [summary, cashMovements, fromDate, convert, includeInvestments])
+
   const drilldown = useMemo(() =>
     selectedMonth
       ? movementsForMonth(cashMovements, selectedMonth, { includeInvestments })
@@ -271,6 +322,28 @@ export default function CashflowPage() {
           </div>
         ) : (
           <>
+            {/* ─── Diagramme des flux (Sankey) ─── */}
+            {(sankey.sources.length > 0 || sankey.uses.length > 0) && (
+              <div className="rounded-2xl border p-5"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    D'où vient l'argent, où va-t-il ?
+                  </h3>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Sources → flux de la période → emplois
+                    {includeInvestments ? " · achats ventilés par actif" : " · activez « inclure achats / ventes » pour le détail par actif"}
+                  </p>
+                </div>
+                <SankeyCashflow
+                  sources={sankey.sources}
+                  hubLabel="Flux de la période"
+                  uses={sankey.uses}
+                  format={format}
+                />
+              </div>
+            )}
+
             {/* ─── Graphique mensuel ─── */}
             <div className="rounded-2xl border p-5"
               style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
