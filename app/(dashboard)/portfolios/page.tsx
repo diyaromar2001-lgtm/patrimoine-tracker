@@ -29,7 +29,7 @@ import {
   Plus, Briefcase, ChevronDown, ChevronUp, X, Check,
   ArrowUpRight, ArrowDownRight, TrendingUp, BarChart2,
   Activity, Layers, Edit2, Trash2, Loader2, ArrowLeftRight,
-  ArrowUp, ArrowDown, ChevronsUpDown, AlertCircle,
+  ArrowUp, ArrowDown, ChevronsUpDown, AlertCircle, Search,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -255,6 +255,7 @@ function HoldingsTable({
   const { format, convert, fxRates, currency } = useCurrency()
   const [sortKey, setSortKey] = useState<SortKey>("value")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
+  const [filter, setFilter]   = useState("")
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -285,7 +286,11 @@ function HoldingsTable({
   const sorted = useMemo(() => {
     // Only show open positions (qty > 0).  Closed/sold positions are kept in
     // the transactions history but should not clutter the holdings table.
-    return [...portfolio.assets].filter(a => a.quantity > 0).sort((a, b) => {
+    const q = filter.trim().toLowerCase()
+    return [...portfolio.assets]
+      .filter(a => a.quantity > 0)
+      .filter(a => !q || a.ticker.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
+      .sort((a, b) => {
       const liveA = livePrices[a.ticker]?.price ?? a.currentPrice
       const liveB = livePrices[b.ticker]?.price ?? b.currentPrice
       const eA = { ...a, currentPrice: liveA }
@@ -314,7 +319,7 @@ function HoldingsTable({
       }
       return sortDir === "asc" ? va - vb : vb - va
     })
-  }, [portfolio.assets, sortKey, sortDir, livePrices, fxRates])
+  }, [portfolio.assets, sortKey, sortDir, livePrices, fxRates, filter])
 
   const COL = "minmax(160px,1fr) 44px 124px 134px 110px 72px 80px 96px 96px"
 
@@ -421,6 +426,25 @@ function HoldingsTable({
   // ── DESKTOP layout: full grid table ──────────────────────────────────────
   return (
     <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+      {/* Recherche dans les positions */}
+      <div className="flex items-center gap-2 border-b px-5 py-2.5" style={{ borderColor: "var(--border)" }}>
+        <Search className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-tertiary)" }} />
+        <input
+          type="text"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          placeholder="Filtrer les positions (ticker ou nom)…"
+          aria-label="Filtrer les positions"
+          className="w-full bg-transparent text-xs outline-none"
+          style={{ color: "var(--text-primary)" }}
+        />
+        {filter && (
+          <button onClick={() => setFilter("")} aria-label="Effacer le filtre"
+            className="text-[11px] font-medium flex-shrink-0" style={{ color: "var(--text-tertiary)" }}>
+            Effacer
+          </button>
+        )}
+      </div>
       {/* Scrollable wrapper for wide table */}
       <div className="overflow-x-auto">
       {/* Desktop header */}
@@ -503,7 +527,13 @@ function HoldingsTable({
                   {asset.ticker.slice(0, 3)}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{asset.name}</p>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                    {asset.name}
+                    {livePrices[asset.ticker] == null && (
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "#f59e0b" }}
+                        title="Prix indisponible — valorisé au coût" />
+                    )}
+                  </p>
                   <AssetClassBadge label={ASSET_CLASS_LABELS[asset.assetClass]} color={color} />
                   {asset.assetClass === "crypto" && (asset.cryptoCustody || asset.stakingEnabled) && (
                     <div className="mt-1 flex flex-wrap gap-1">
