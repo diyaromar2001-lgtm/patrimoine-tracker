@@ -19,9 +19,11 @@
   --border-strong:  #2a2a38;
 
   /* ── Text ────────────────────────────────────────────────────────────── */
+  /* Contraste renforcé : secondary/tertiary étaient trop faibles pour des
+     informations financières importantes (lisibilité > décoration). */
   --text-primary:   #f0f0f4;
-  --text-secondary: #8484a0;
-  --text-tertiary:  #46465e;
+  --text-secondary: #9a9ab4;
+  --text-tertiary:  #62627e;
 
   /* ── Brand & Accents ─────────────────────────────────────────────────── */
   --accent:         #6366f1;   /* indigo */

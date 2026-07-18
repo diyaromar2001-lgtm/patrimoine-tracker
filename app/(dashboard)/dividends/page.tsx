@@ -41,19 +41,24 @@ function buildDividendEvents(
     const payDate     = new Date(info.paymentDate)
     const exDate      = info.exDividendDate ? new Date(info.exDividendDate) : null
 
-    // Add the upcoming payment
-    events.push({
-      id:         `live-${info.ticker}-next`,
-      ticker:     info.ticker,
-      assetName:  info.name,
-      assetClass: pos.assetClass as DividendEvent["assetClass"],
-      exDate:     exDate ? exDate.toISOString().slice(0, 10) : payDate.toISOString().slice(0, 10),
-      payDate:    payDate.toISOString().slice(0, 10),
-      amount:     Math.round(totalAmount * 100) / 100,
-      frequency:  info.frequency,
-      currency:   info.currency as "EUR" | "USD" | "CHF" | "GBP",
-      status:     payDate > today ? "upcoming" : "paid",
-    })
+    // SÉMANTIQUE : un événement généré depuis Yahoo est une ESTIMATION.
+    // On n'affiche JAMAIS « Versé » sans transaction réelle correspondante —
+    // les dividendes encaissés vivent dans l'onglet Historique (transactions).
+    // Les dates passées générées sont donc ignorées.
+    if (payDate > today) {
+      events.push({
+        id:         `live-${info.ticker}-next`,
+        ticker:     info.ticker,
+        assetName:  info.name,
+        assetClass: pos.assetClass as DividendEvent["assetClass"],
+        exDate:     exDate ? exDate.toISOString().slice(0, 10) : payDate.toISOString().slice(0, 10),
+        payDate:    payDate.toISOString().slice(0, 10),
+        amount:     Math.round(totalAmount * 100) / 100,
+        frequency:  info.frequency,
+        currency:   info.currency as "EUR" | "USD" | "CHF" | "GBP",
+        status:     "upcoming",
+      })
+    }
 
     // Project next payments — advance until we have 3 FUTURE ones
     // FIX: status is checked against today (not hardcoded "upcoming")
@@ -69,19 +74,21 @@ function buildDividendEvents(
       if (futurePayDate.getTime() - today.getTime() > 2 * 365.25 * 24 * 3600 * 1000) break
 
       const isPast = futurePayDate <= today
-      events.push({
-        id:         `live-${info.ticker}-p${i}`,
-        ticker:     info.ticker,
-        assetName:  info.name,
-        assetClass: pos.assetClass as DividendEvent["assetClass"],
-        exDate:     futureExDate.toISOString().slice(0, 10),
-        payDate:    futurePayDate.toISOString().slice(0, 10),
-        amount:     Math.round(totalAmount * 100) / 100,
-        frequency:  info.frequency,
-        currency:   info.currency as "EUR" | "USD" | "CHF" | "GBP",
-        status:     isPast ? "paid" : "upcoming",
-      })
-      if (!isPast) futureCount++
+      if (!isPast) {
+        events.push({
+          id:         `live-${info.ticker}-p${i}`,
+          ticker:     info.ticker,
+          assetName:  info.name,
+          assetClass: pos.assetClass as DividendEvent["assetClass"],
+          exDate:     futureExDate.toISOString().slice(0, 10),
+          payDate:    futurePayDate.toISOString().slice(0, 10),
+          amount:     Math.round(totalAmount * 100) / 100,
+          frequency:  info.frequency,
+          currency:   info.currency as "EUR" | "USD" | "CHF" | "GBP",
+          status:     "upcoming",
+        })
+        futureCount++
+      }
     }
   }
 
@@ -97,6 +104,9 @@ export default function DividendsPage() {
     () => summarizeDividends(transactions, currency, fxRates as Record<string, number>),
     [transactions, currency, fxRates]
   )
+
+  // Onglets : Vue d'ensemble / Calendrier / Historique
+  const [tab, setTab] = useState<"overview" | "calendar" | "history">("overview")
 
   // Objectif de revenu passif mensuel (persisté localement)
   const [incomeGoal, setIncomeGoal] = useState("")
@@ -219,6 +229,23 @@ export default function DividendsPage() {
       <Topbar title="Dividendes" subtitle="Revenus passifs de vos placements" />
       <div className="flex-1 space-y-4 sm:space-y-6 p-4 sm:p-6">
 
+        {/* ─── Onglets ─── */}
+        <div role="tablist" aria-label="Sections dividendes"
+          className="inline-flex items-center gap-0.5 rounded-lg border p-0.5 self-start"
+          style={{ backgroundColor: "var(--bg-overlay)", borderColor: "var(--border)" }}>
+          {([["overview", "Vue d'ensemble"], ["calendar", "Calendrier"], ["history", "Historique"]] as const).map(([t, label]) => (
+            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+              className="rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                backgroundColor: tab === t ? "var(--bg-subtle)" : "transparent",
+                color: tab === t ? "var(--text-primary)" : "var(--text-secondary)",
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "overview" && (<>
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
           {[
@@ -242,7 +269,16 @@ export default function DividendsPage() {
           ))}
         </div>
 
-        {/* Live yield banner — per-position data */}
+        {/* Qualité des estimations — diagnostic Yahoo replié (contenu secondaire) */}
+        <details className="rounded-xl border overflow-hidden"
+          style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+          <summary className="cursor-pointer select-none px-4 py-3 text-xs font-medium list-none flex items-center gap-2"
+            style={{ color: "var(--text-secondary)" }}>
+            <RefreshCw className="h-3.5 w-3.5" style={{ color: "var(--text-tertiary)" }} />
+            Qualité des estimations — données Yahoo par position
+            <span className="ml-auto text-[11px]" style={{ color: "var(--text-tertiary)" }}>afficher / masquer</span>
+          </summary>
+          <div className="border-t px-4 pb-4 pt-3" style={{ borderColor: "var(--border-subtle)" }}>
         {loading ? (
           <div className="flex items-center gap-2 rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
             <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#3b82f6" }} />
@@ -302,37 +338,12 @@ export default function DividendsPage() {
             </div>
           </div>
         )}
+          </div>
+        </details>
 
-        {/* ─── Historique RÉEL + Top distributeurs ─── */}
+        {/* ─── Top distributeurs (l'historique complet vit dans son onglet) ─── */}
         {real.history.length > 0 && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* Historique des dividendes encaissés */}
-            <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <div className="border-b px-5 py-3.5" style={{ borderColor: "var(--border)" }}>
-                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Historique encaissé</p>
-                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Transactions réelles · net après retenue à la source</p>
-              </div>
-              <div className="max-h-72 overflow-y-auto">
-                {real.history.slice(0, 20).map((d, i) => (
-                  <div key={`${d.ticker}-${d.date}-${i}`} className="flex items-center gap-3 px-5 py-2.5"
-                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                    <span className="w-14 text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{d.ticker}</span>
-                    <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{d.date}</span>
-                    <span className="ml-auto flex items-center gap-2">
-                      {d.withholding > 0 && (
-                        <span className="text-[10px] tabular-nums" style={{ color: "var(--text-tertiary)" }}
-                          title={`Brut ${format(d.gross)} · retenue −${format(d.withholding)}`}>
-                          −{format(d.withholding)}
-                        </span>
-                      )}
-                      <span className="text-xs font-bold tabular-nums" style={{ color: "var(--gain)" }}>+{format(d.net)}</span>
-                      <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ backgroundColor: "#22c55e18", color: "#22c55e" }}>Confirmé</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
+          <div className="grid gap-4 lg:grid-cols-1">
             {/* Top distributeurs + concentration */}
             <div className="rounded-2xl border p-5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
               <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top distributeurs (12 mois)</p>
@@ -445,6 +456,9 @@ export default function DividendsPage() {
           </div>
         )}
 
+        </>)}
+
+        {tab === "calendar" && (<>
         {/* Controls */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <SectionHeader
@@ -579,6 +593,62 @@ export default function DividendsPage() {
               )
             })}
           </div>
+        )}
+        </>)}
+
+        {/* ─── Onglet Historique : transactions réelles uniquement ─── */}
+        {tab === "history" && (
+          real.history.length === 0 ? (
+            <div className="rounded-2xl border p-10 text-center"
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Aucun dividende encaissé</p>
+              <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                Les dividendes importés ou saisis comme transactions apparaîtront ici avec brut, impôt et net.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border overflow-hidden"
+              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+              <div className="border-b px-5 py-3.5" style={{ borderColor: "var(--border)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Dividendes encaissés</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                  {real.history.length} versement(s) issus de vos transactions réelles
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ minWidth: 560 }}>
+                  <thead>
+                    <tr style={{ color: "var(--text-tertiary)" }}>
+                      <th className="px-5 py-2.5 text-left font-medium">Date</th>
+                      <th className="px-3 py-2.5 text-left font-medium">Actif</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Brut</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Impôt</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Net</th>
+                      <th className="px-3 py-2.5 text-left font-medium">Devise</th>
+                      <th className="px-5 py-2.5 text-right font-medium">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {real.history.map((d, i) => (
+                      <tr key={`${d.ticker}-${d.date}-${i}`}
+                        style={{ borderTop: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
+                        <td className="px-5 py-2.5 tabular-nums">{d.date}</td>
+                        <td className="px-3 py-2.5 font-semibold" style={{ color: "var(--text-primary)" }}>{d.ticker}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{format(d.gross)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{d.withholding > 0 ? `−${format(d.withholding)}` : "—"}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: "var(--gain)" }}>+{format(d.net)}</td>
+                        <td className="px-3 py-2.5">{d.nativeCurrency}</td>
+                        <td className="px-5 py-2.5 text-right">
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                            style={{ backgroundColor: "#22c55e18", color: "#22c55e" }}>Confirmé</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
         )}
       </div>
 

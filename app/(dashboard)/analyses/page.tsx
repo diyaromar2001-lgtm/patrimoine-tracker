@@ -218,29 +218,52 @@ export default function AnalysesPage() {
               </div>
             )}
 
-            {/* ── Expositions ── */}
-            <div className="grid gap-6 lg:grid-cols-2">
-              {[
+            {/* ── Expositions ──
+                Les sections entièrement « Non renseigné » ne s'affichent pas
+                comme de grandes cartes vides : une seule carte compacte les
+                remplace (règle : jamais d'écran qui semble cassé). */}
+            {(() => {
+              const sectorEmpty = bySector.length === 1 && bySector[0].label === "Non renseigné"
+              const countryEmpty = byCountry.length === 1 && byCountry[0].label === "Non renseigné"
+              const sections = [
                 { title: "Par classe d'actifs", icon: <PieChart className="h-4 w-4" style={{ color: "#6366f1" }} />, data: byClass },
                 { title: "Par devise", icon: <Banknote className="h-4 w-4" style={{ color: "#22c55e" }} />, data: byCurrency },
-                { title: "Par secteur", icon: <Factory className="h-4 w-4" style={{ color: "#a855f7" }} />, data: bySector.slice(0, 8) },
-                { title: "Par zone géographique", icon: <Globe2 className="h-4 w-4" style={{ color: "#0ea5e9" }} />, data: byCountry.slice(0, 8) },
-              ].map(section => (
-                <div key={section.title} className="rounded-2xl border p-5"
-                  style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                  <div className="mb-4 flex items-center gap-2">
-                    {section.icon}
-                    <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{section.title}</h3>
+                ...(!sectorEmpty ? [{ title: "Par secteur", icon: <Factory className="h-4 w-4" style={{ color: "#a855f7" }} />, data: bySector.slice(0, 8) }] : []),
+                ...(!countryEmpty ? [{ title: "Par zone géographique", icon: <Globe2 className="h-4 w-4" style={{ color: "#0ea5e9" }} />, data: byCountry.slice(0, 8) }] : []),
+              ]
+              return (
+                <>
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {sections.map(section => (
+                      <div key={section.title} className="rounded-2xl border p-5"
+                        style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                        <div className="mb-4 flex items-center gap-2">
+                          {section.icon}
+                          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{section.title}</h3>
+                        </div>
+                        <ExposureBars data={section.data} format={format} />
+                      </div>
+                    ))}
                   </div>
-                  {section.data.length === 1 && section.data[0].label === "Non renseigné" ? (
-                    <EmptyState compact title="Données non renseignées"
-                      description="Complétez le secteur/pays de vos actifs pour activer cette analyse." />
-                  ) : (
-                    <ExposureBars data={section.data} format={format} />
+                  {(sectorEmpty || countryEmpty) && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-4"
+                      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                          Analyses {sectorEmpty && countryEmpty ? "sectorielle et géographique indisponibles" : sectorEmpty ? "sectorielle indisponible" : "géographique indisponible"}
+                        </p>
+                        <p className="mt-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+                          {sectorEmpty && countryEmpty ? "Les secteurs et pays" : sectorEmpty ? "Les secteurs" : "Les pays"} de vos positions ne sont pas renseignés.
+                        </p>
+                      </div>
+                      <Link href="/portfolios" className="btn-ghost text-xs">
+                        Compléter les données <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   )}
-                </div>
-              ))}
-            </div>
+                </>
+              )
+            })()}
 
             {/* ── Top positions ── */}
             <div className="rounded-2xl border overflow-hidden"

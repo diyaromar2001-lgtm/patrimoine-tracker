@@ -256,11 +256,15 @@ export default function CashflowPage() {
     [cashMovements, selectedMonth, includeInvestments]
   )
 
+  const savingsFormula = includeInvestments
+    ? "Formule : (entrées − sorties) ÷ entrées, achats/ventes inclus (toggle actif). Les conversions internes entre devises sont toujours exclues."
+    : "Formule : (entrées − sorties) ÷ entrées, sur les flux externes uniquement (dépôts, retraits, dividendes, intérêts, frais). Les achats/ventes de titres et les conversions internes sont exclus."
+
   const kpis = [
-    { label: "Entrées",        value: format(summary.totalIn),  icon: <ArrowDownLeft className="h-4 w-4" />, color: "var(--gain)" },
-    { label: "Sorties",        value: format(summary.totalOut), icon: <ArrowUpRight className="h-4 w-4" />,  color: "var(--loss)" },
-    { label: "Net",            value: `${summary.net >= 0 ? "+" : ""}${format(summary.net)}`, icon: <ArrowDownUp className="h-4 w-4" />, color: summary.net >= 0 ? "var(--gain)" : "var(--loss)" },
-    { label: "Taux d'épargne", value: `${summary.savingsRatePct.toFixed(1)} %`, icon: <PiggyBank className="h-4 w-4" />, color: "var(--accent)" },
+    { label: "Entrées",        value: format(summary.totalIn),  icon: <ArrowDownLeft className="h-4 w-4" />, color: "var(--gain)", title: undefined as string | undefined },
+    { label: "Sorties",        value: format(summary.totalOut), icon: <ArrowUpRight className="h-4 w-4" />,  color: "var(--loss)", title: undefined },
+    { label: "Net",            value: `${summary.net >= 0 ? "+" : ""}${format(summary.net)}`, icon: <ArrowDownUp className="h-4 w-4" />, color: summary.net >= 0 ? "var(--gain)" : "var(--loss)", title: undefined },
+    { label: "Taux d'épargne", value: `${summary.savingsRatePct.toFixed(1)} %`, icon: <PiggyBank className="h-4 w-4" />, color: "var(--accent)", title: savingsFormula },
   ]
 
   return (
@@ -302,8 +306,11 @@ export default function CashflowPage() {
         {/* ─── KPIs ─── */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {kpis.map(k => (
-            <MetricCard key={k.label} label={k.label} value={k.value}
-              icon={k.icon} iconColor={k.color} valueColor={k.color} />
+            <div key={k.label} title={k.title}>
+              <MetricCard label={k.label} value={k.value}
+                icon={k.icon} iconColor={k.color} valueColor={k.color}
+                sub={k.title ? "survolez pour la formule" : undefined} />
+            </div>
           ))}
         </div>
 
@@ -322,28 +329,6 @@ export default function CashflowPage() {
           </div>
         ) : (
           <>
-            {/* ─── Diagramme des flux (Sankey) ─── */}
-            {(sankey.sources.length > 0 || sankey.uses.length > 0) && (
-              <div className="rounded-2xl border p-5"
-                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                <div className="mb-4">
-                  <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    D'où vient l'argent, où va-t-il ?
-                  </h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Sources → flux de la période → emplois
-                    {includeInvestments ? " · achats ventilés par actif" : " · activez « inclure achats / ventes » pour le détail par actif"}
-                  </p>
-                </div>
-                <SankeyCashflow
-                  sources={sankey.sources}
-                  hubLabel="Flux de la période"
-                  uses={sankey.uses}
-                  format={format}
-                />
-              </div>
-            )}
-
             {/* ─── Graphique mensuel ─── */}
             <div className="rounded-2xl border p-5"
               style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
@@ -366,6 +351,33 @@ export default function CashflowPage() {
                 format={format}
               />
             </div>
+
+            {/* ─── Origine et destination des flux (Sankey, secondaire) ─── */}
+            {(sankey.sources.length > 0 || sankey.uses.length > 0) && (
+              <details className="rounded-2xl border overflow-hidden"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                <summary className="cursor-pointer select-none px-5 py-3.5 list-none">
+                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Origine et destination des flux
+                  </span>
+                  <span className="ml-2 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                    diagramme détaillé · cliquer pour afficher
+                  </span>
+                </summary>
+                <div className="border-t px-5 pb-5 pt-4" style={{ borderColor: "var(--border-subtle)" }}>
+                  <p className="mb-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                    Sources → flux de la période → emplois
+                    {includeInvestments ? " · achats ventilés par actif" : " · activez « inclure achats / ventes » pour le détail par actif"}
+                  </p>
+                  <SankeyCashflow
+                    sources={sankey.sources}
+                    hubLabel="Flux de la période"
+                    uses={sankey.uses}
+                    format={format}
+                  />
+                </div>
+              </details>
+            )}
 
             {/* ─── Drill-down mensuel ─── */}
             <AnimatePresence>

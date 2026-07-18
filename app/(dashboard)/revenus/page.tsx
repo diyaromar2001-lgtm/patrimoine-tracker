@@ -167,7 +167,7 @@ export default function RevenusPage() {
 
   return (
     <div className="flex flex-col">
-      <Topbar title="Revenus Passifs" subtitle="Liquidité · Dividendes · Revenus annexes" />
+      <Topbar title="Liquidités" subtitle="Soldes par devise, dépôts, retraits et revenus annexes" />
       <div className="flex-1 space-y-5 p-4 sm:p-6">
 
         {/* ─── Tabs ─── */}

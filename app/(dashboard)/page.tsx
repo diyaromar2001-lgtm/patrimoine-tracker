@@ -368,9 +368,10 @@ export default function DashboardPage() {
                 style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
                 Portefeuilles <ArrowRight className="h-3.5 w-3.5" />
               </Link>
+              {/* CTA principal = couleur de marque (le vert reste réservé aux gains) */}
               <Link href="/portfolios"
                 className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
-                style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
+                style={{ background: "linear-gradient(135deg, var(--accent), #818cf8)" }}>
                 <Plus className="h-3.5 w-3.5" /> Transaction
               </Link>
             </div>

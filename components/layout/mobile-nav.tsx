@@ -23,7 +23,7 @@ const MORE_ITEMS = [
   { label: "Dividendes",     href: "/dividends",      icon: TrendingUp },
   { label: "Analyses",       href: "/analyses",       icon: PieChart },
   { label: "Objectifs",      href: "/objectifs",      icon: Target },
-  { label: "Revenus annexes",href: "/revenus",        icon: TrendingUp },
+  { label: "Liquidités",     href: "/revenus",        icon: Wallet },
   { label: "Calculateur DCA",href: "/dca-calculator", icon: Calculator },
   { label: "Paramètres",     href: "/settings",       icon: Settings },
 ]

@@ -7,7 +7,7 @@ import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Briefcase, TrendingUp, Eye,
   Calculator, ArrowLeftRight, Settings, Wallet,
-  ChevronLeft, ChevronRight, LogOut, Zap, ArrowDownUp,
+  ChevronLeft, ChevronRight, LogOut, ArrowDownUp,
   PieChart, Target, User, ChevronUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -29,7 +29,7 @@ const NAV_SECTIONS = [
     label: "Outils",
     items: [
       { label: "Watchlist",       href: "/watchlist",      icon: Eye            },
-      { label: "Revenus annexes", href: "/revenus",        icon: Zap            },
+      { label: "Liquidités",      href: "/revenus",        icon: Wallet         },
       { label: "Transactions",    href: "/transactions",   icon: ArrowLeftRight },
       { label: "Calculateur DCA", href: "/dca-calculator", icon: Calculator     },
     ],

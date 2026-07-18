@@ -30,12 +30,12 @@ export function MetricCard({
     <div className="kpi-card">
       <div className="mb-2 flex items-center gap-2">
         {icon && <span className="flex-shrink-0" style={{ color: iconColor }}>{icon}</span>}
-        <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+        <span className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
           {label}
         </span>
       </div>
       <div className="flex items-baseline gap-2">
-        <p className="text-lg font-bold tabular-nums leading-tight" style={{ color: valueColor }}>
+        <p className="text-xl font-bold tabular-nums leading-tight" style={{ color: valueColor }}>
           {value}
         </p>
         {changePct != null && Number.isFinite(changePct) && (
