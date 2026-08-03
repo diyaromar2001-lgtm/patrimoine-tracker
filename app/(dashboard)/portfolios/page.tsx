@@ -29,7 +29,7 @@ import {
   Plus, Briefcase, ChevronDown, ChevronUp, X, Check,
   ArrowUpRight, ArrowDownRight, TrendingUp, BarChart2,
   Activity, Layers, Edit2, Trash2, Loader2, ArrowLeftRight,
-  ArrowUp, ArrowDown, ChevronsUpDown, AlertCircle, Search,
+  ArrowUp, ArrowDown, ChevronsUpDown, AlertCircle, Search, Wallet,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -879,8 +879,10 @@ export default function PortfoliosPage() {
     ...a,
     dayChangePct: liveEnriched[a.ticker]?.changePct ?? 0,
   })).sort((a, b) => b.dayChangePct - a.dayChangePct)
-  const topGainers = moversData.slice(0, 3)
-  const topLosers  = [...moversData].reverse().slice(0, 3)
+  // Un actif en baisse n'a rien à faire dans « meilleures performances » (et
+  // inversement) : on filtre par signe avant de prendre le top 3.
+  const topGainers = moversData.filter(a => a.dayChangePct > 0).slice(0, 3)
+  const topLosers  = moversData.filter(a => a.dayChangePct < 0).reverse().slice(0, 3)
 
   // Asset allocation by class
   const byClass = allAssetsEnriched.reduce<Record<string, number>>((acc, a) => {
@@ -1021,7 +1023,7 @@ export default function PortfoliosPage() {
 
   return (
     <div className="flex flex-col">
-      <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuilles · ${format(totalValue)}`} />
+      <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuille${portfolios.length > 1 ? "s" : ""} · ${format(totalValue)}`} />
 
       {/* ─── Tab bar ─── */}
       <div className="border-b overflow-x-auto" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-base)" }}>
@@ -1113,7 +1115,8 @@ export default function PortfoliosPage() {
                             <span key={cur}
                               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums"
                               style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
-                              💵 {(val as number).toFixed(2)} {cur} en liquidité
+                              <Wallet className="h-3 w-3" />
+                              {formatCurrency(val as number, cur as AppCurrency)} en liquidité
                             </span>
                           ))}
                         </div>
@@ -1133,9 +1136,19 @@ export default function PortfoliosPage() {
                   {/* Mini stats */}
                   <div className="grid grid-cols-3 gap-3 self-center">
                     {[
-                      { label: "Meilleur", value: best ? ("+" + ((liveEnriched[best.ticker]?.changePct ?? 0).toFixed(1)) + "%") : "--", sub: best?.ticker, color: "#22c55e" },
-                      { label: "Pire", value: worst ? (((liveEnriched[worst.ticker]?.changePct ?? 0).toFixed(1)) + "%") : "--", sub: worst?.ticker, color: "#ef4444" },
-                      { label: "Lignes", value: String(globalMetrics.positionLineCount), sub: `${globalMetrics.uniqueAssetCount} uniques`, color: "#3b82f6" },
+                      // Le signe vient du nombre lui-même : "+" n'est ajouté que
+                      // s'il est positif (sinon on affichait « +-1.8% »).
+                      ...(() => {
+                        const bestPct  = best  ? (liveEnriched[best.ticker]?.changePct  ?? 0) : null
+                        const worstPct = worst ? (liveEnriched[worst.ticker]?.changePct ?? 0) : null
+                        const fmtPct = (v: number | null) =>
+                          v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)} %`
+                        return [
+                          { label: "Meilleur", value: fmtPct(bestPct),  sub: best?.ticker,  color: (bestPct  ?? 0) >= 0 ? "var(--gain)" : "var(--loss)" },
+                          { label: "Pire",     value: fmtPct(worstPct), sub: worst?.ticker, color: (worstPct ?? 0) >= 0 ? "var(--gain)" : "var(--loss)" },
+                        ]
+                      })(),
+                      { label: "Lignes", value: String(globalMetrics.positionLineCount), sub: `${globalMetrics.uniqueAssetCount} actif${globalMetrics.uniqueAssetCount > 1 ? "s" : ""} unique${globalMetrics.uniqueAssetCount > 1 ? "s" : ""}`, color: "var(--accent)" },
                     ].map(s => (
                       <div key={s.label} className="rounded-xl border px-3 py-2.5" style={{ borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.04)" }}>
                         <p className="text-[11px] text-zinc-500">{s.label}</p>
@@ -1321,8 +1334,13 @@ export default function PortfoliosPage() {
                   <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top movers du jour</p>
                   <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                     <div className="px-4 py-2 border-b" style={{ borderColor: "var(--border)" }}>
-                      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Meilleures performances</p>
+                      <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Meilleures performances</p>
                     </div>
+                    {topGainers.length === 0 && (
+                      <p className="px-4 py-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                        Aucun actif en hausse aujourd'hui
+                      </p>
+                    )}
                     {topGainers.map((a, i) => {
                       const pct = liveEnriched[a.ticker]?.changePct ?? 0
                       const color = ASSET_CLASS_COLORS[a.assetClass]
@@ -1338,16 +1356,29 @@ export default function PortfoliosPage() {
                           </div>
                           <div className="text-right">
                             <ChangeBadge value={pct} showIcon={false} />
-                            <p className="text-[11px] tabular-nums mt-0.5" style={{ color: "#22c55e" }}>
-                              +{format((liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity * pct / 100)}
-                            </p>
+                            {/* Le signe suit le montant : « + » seulement si gain
+                                (on affichait « +-43.57 CHF » quand la valeur baissait). */}
+                            {(() => {
+                              const amount = (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity * pct / 100
+                              return (
+                                <p className="text-xs tabular-nums mt-0.5"
+                                  style={{ color: amount >= 0 ? "var(--gain)" : "var(--loss)" }}>
+                                  {amount > 0 ? "+" : ""}{format(amount)}
+                                </p>
+                              )
+                            })()}
                           </div>
                         </div>
                       )
                     })}
                     <div className="px-4 py-2 border-t border-b" style={{ borderColor: "var(--border)" }}>
-                      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Moins bonnes performances</p>
+                      <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Moins bonnes performances</p>
                     </div>
+                    {topLosers.length === 0 && (
+                      <p className="px-4 py-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                        Aucun actif en baisse aujourd'hui
+                      </p>
+                    )}
                     {topLosers.map((a, i) => {
                       const pct = liveEnriched[a.ticker]?.changePct ?? 0
                       const color = ASSET_CLASS_COLORS[a.assetClass]
@@ -1467,17 +1498,19 @@ export default function PortfoliosPage() {
                     {(() => {
                       const nonZero = Object.entries(globalCash).filter(([, v]) => (v as number) > 0)
                       if (!nonZero.length) return (
-                        <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: "var(--text-tertiary)" }}>
-                          💵 Aucune liquidité — déposez du cash pour acheter
+                        <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: "var(--text-tertiary)" }}>
+                          <Wallet className="h-3 w-3" />
+                          Aucune liquidité — déposez du cash pour acheter
                         </p>
                       )
                       return (
                         <div className="flex flex-wrap gap-2 mt-1">
                           {nonZero.map(([cur, val]) => (
                             <span key={cur}
-                              className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                              className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-semibold tabular-nums"
                               style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
-                              💵 {(val as number).toFixed(2)} {cur} disponible
+                              <Wallet className="h-3 w-3" />
+                              {formatCurrency(val as number, cur as AppCurrency)} disponible
                             </span>
                           ))}
                         </div>

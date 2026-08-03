@@ -511,7 +511,7 @@ export function calculateAllocationByClass(
 export function calculateAllocationByField(
   assets:      AssetInput[],
   field:       "sector" | "country",
-  fallback:    string = "Non renseigne",
+  fallback:    string = "Non renseigné",
   totalValue?: number
 ): AllocationEntry[] {
   const tv  = totalValue ?? portfolioTotalValue(assets)
@@ -784,13 +784,13 @@ export function generateInsights(
     }
   }
 
-  const sectorAllocations = calculateAllocationByField(assets, "sector", "Non renseigne", totalValue)
+  const sectorAllocations = calculateAllocationByField(assets, "sector", "Non renseigné", totalValue)
   for (const sector of sectorAllocations) {
     if (sector.pct >= 40) {
       insights.push({
         type: "warning",
         title: "Concentration sectorielle",
-        message: `${sector.key} represente ${sector.pct.toFixed(1)} % du portefeuille. Le seuil d'alerte est fixe a 40 %.`,
+        message: `${sector.key} représente ${sector.pct.toFixed(1)} % du portefeuille. Le seuil d'alerte est fixé à 40 %.`,
       })
     }
   }

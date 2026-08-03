@@ -15,7 +15,7 @@ import {
 import { formatCurrency } from "@/lib/utils"
 import type { AppCurrency } from "@/lib/utils"
 import {
-  Plus, Trash2, CalendarDays, TrendingUp, Zap, Award, BarChart2,
+  Plus, Trash2, CalendarDays, TrendingUp, Zap, Award, BarChart2, Wallet,
 } from "lucide-react"
 
 // ─── Simple monthly bar chart (SVG) ───────────────────────────────────────────
@@ -173,9 +173,9 @@ export default function RevenusPage() {
         {/* ─── Tabs ─── */}
         <div className="flex gap-1 rounded-xl border p-1" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)", width: "fit-content" }}>
           {([
-            ["liquidite", "💵 Liquidité",      "#0ea5e9"],
-            ["revenus",   "💜 Revenus annexes", "#a855f7"],
-            ["dividends", "💚 Dividendes",      "#22c55e"],
+            ["liquidite", "Liquidité",      "#0ea5e9"],
+            ["revenus",   "Revenus annexes", "#a855f7"],
+            ["dividends", "Dividendes",      "#22c55e"],
           ] as const).map(([tab, label, color]) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="rounded-lg px-4 py-2 text-sm font-medium transition-all"
@@ -229,7 +229,7 @@ export default function RevenusPage() {
                       Commune à tous les portefeuilles · hors positions
                     </p>
                   </div>
-                  <div className="text-4xl">💵</div>
+                  <Wallet className="h-8 w-8" style={{ color: "var(--accent)" }} />
                 </div>
                 {(["CHF","USD","EUR"] as const).map(cur => {
                   const val = globalCash[cur]
@@ -238,8 +238,10 @@ export default function RevenusPage() {
                     <div key={cur} className="rounded-xl border px-4 py-3"
                       style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                       <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{cur}</p>
-                      <p className="text-xl font-bold tabular-nums mt-0.5" style={{ color: val > 0 ? "#0ea5e9" : "var(--text-tertiary)" }}>
-                        {val.toFixed(2)}
+                      {/* Montant natif formaté (séparateurs de milliers) — cohérent
+                          avec le total affiché juste au-dessus. */}
+                      <p className="text-xl font-bold tabular-nums mt-0.5" style={{ color: val > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+                        {formatCurrency(val, cur)}
                       </p>
                       {cur !== currency && val > 0 && (
                         <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>≈ {format(inUser)}</p>
@@ -252,9 +254,9 @@ export default function RevenusPage() {
               {/* ── Action buttons ── */}
               <div className="flex flex-wrap gap-2">
                 {[
-                  { label: "＋ Déposer",   color: "#0ea5e9", onClick: () => { setShowDepositModal(true); setShowWithdrawModal(false); setShowConvertModal(false); setActionError("") } },
-                  { label: "－ Retirer",   color: "#ef4444", onClick: () => { setShowWithdrawModal(true); setShowDepositModal(false); setShowConvertModal(false); setActionError("") } },
-                  { label: "⇄ Convertir",  color: "#f59e0b", onClick: () => { setShowConvertModal(true); setShowDepositModal(false); setShowWithdrawModal(false); setActionError("") } },
+                  { label: "Déposer",   color: "#0ea5e9", onClick: () => { setShowDepositModal(true); setShowWithdrawModal(false); setShowConvertModal(false); setActionError("") } },
+                  { label: "Retirer",   color: "#ef4444", onClick: () => { setShowWithdrawModal(true); setShowDepositModal(false); setShowConvertModal(false); setActionError("") } },
+                  { label: "Convertir",  color: "#f59e0b", onClick: () => { setShowConvertModal(true); setShowDepositModal(false); setShowWithdrawModal(false); setActionError("") } },
                 ].map(btn => (
                   <button key={btn.label} onClick={btn.onClick}
                     className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
@@ -394,12 +396,13 @@ export default function RevenusPage() {
                             </p>
                           </div>
                           <div className="text-right">
+                            {/* Montant natif formaté ; le signe vient du montant lui-même */}
                             <p className="text-sm font-bold tabular-nums" style={{ color }}>
-                              {isPos ? "+" : ""}{mv.amount.toFixed(2)} {mv.currency}
+                              {isPos ? "+" : ""}{formatCurrency(mv.amount, mv.currency as AppCurrency)}
                             </p>
                             {mv.balanceAfterChf != null && (
-                              <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                                solde CHF: {mv.balanceAfterChf.toFixed(2)}
+                              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                solde après : {formatCurrency(mv.balanceAfterChf, "CHF")}
                               </p>
                             )}
                           </div>

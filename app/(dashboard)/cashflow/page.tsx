@@ -105,9 +105,10 @@ function CashflowBarChart({
                 {monthLabel(m.month)}
               </span>
               {/* Net du mois */}
-              <span className="text-[9px] font-semibold tabular-nums"
+              {/* Montant compact mais formaté (séparateur de milliers) */}
+              <span className="text-[10px] font-semibold tabular-nums"
                 style={{ color: m.net >= 0 ? "var(--gain)" : "var(--loss)" }}>
-                {m.net >= 0 ? "+" : ""}{Math.round(m.net)}
+                {m.net > 0 ? "+" : ""}{Math.round(m.net).toLocaleString("fr-CH")}
               </span>
             </button>
           )

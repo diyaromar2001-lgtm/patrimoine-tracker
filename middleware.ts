@@ -12,12 +12,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // Supabase non configuré → mode local/démo : l'app fonctionne en mémoire
+  // (useAppData a déjà ce repli). Sans cette porte de sortie, on redirigeait
+  // en boucle vers un login qui ne peut pas aboutir.
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.next()
+  }
+
   // Pour les routes protégées, vérifier la session Supabase
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseKey,
     {
       cookies: {
         getAll()  { return request.cookies.getAll() },
@@ -32,8 +42,16 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: getUser() (pas getSession()) pour valider côté serveur
-  const { data: { user } } = await supabase.auth.getUser()
+  // IMPORTANT: getUser() (pas getSession()) pour valider côté serveur.
+  // Si Supabase est injoignable (projet supprimé, panne réseau), on ne veut
+  // pas d'une erreur 500 sur toutes les pages : on retombe sur le login.
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch (e) {
+    console.error("[middleware] Supabase injoignable:", e)
+  }
 
   if (!user) {
     // Non authentifié → page de login

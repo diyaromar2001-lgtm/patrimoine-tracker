@@ -568,7 +568,9 @@ export default function DashboardPage() {
                 { label: "Plus grosse position", value: `${riskInfo.topTicker} · ${riskInfo.top1Pct.toFixed(1)} %`, warn: riskInfo.top1Pct > 25 },
                 { label: "Top 3 positions", value: `${riskInfo.top3Pct.toFixed(1)} %`, warn: riskInfo.top3Pct > 60 },
                 {
-                  label: "Classe dominante",
+                  // Le cash est exclu du classement : sans cette précision, on lisait
+                  // « classe dominante : Crypto 13 % » alors que 63 % était en liquidités.
+                  label: "1re classe (hors cash)",
                   value: riskInfo.topClass
                     ? `${ASSET_CLASS_LABELS[riskInfo.topClass.cls as keyof typeof ASSET_CLASS_LABELS] ?? riskInfo.topClass.cls} · ${riskInfo.topClass.pct.toFixed(0)} %`
                     : "—",

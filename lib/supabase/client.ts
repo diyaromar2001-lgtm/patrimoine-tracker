@@ -14,7 +14,10 @@ export function createClient() {
     cookieOptions: {
       maxAge: COOKIE_MAX_AGE,
       sameSite: "lax",
-      secure: true,
+      // `secure: true` empêche le navigateur d'enregistrer le cookie en HTTP :
+      // la session (et le code_verifier PKCE) était impossible en local, donc
+      // la connexion échouait silencieusement en développement.
+      secure: typeof window === "undefined" || window.location.protocol === "https:",
     },
   })
 }

@@ -34,7 +34,9 @@ export function ChangeBadge({
       style={{ backgroundColor: bgCol, color, border: `1px solid ${border}` }}
     >
       {showIcon && <Icon className={size === "sm" ? "h-2.5 w-2.5" : "h-3 w-3"} />}
-      {isPos ? "+" : ""}{Math.abs(value).toFixed(2)}{suffix}
+      {/* Le signe négatif DOIT rester visible : sans icône (showIcon={false}),
+          Math.abs() faisait lire une perte de −1.78 % comme « 1.78 % ». */}
+      {isPos ? "+" : ""}{value.toFixed(2)}{suffix}
     </span>
   )
 }
