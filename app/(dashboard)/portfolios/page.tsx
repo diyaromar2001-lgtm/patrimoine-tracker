@@ -19,6 +19,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import type { SearchResult } from "@/hooks/use-asset-search"
 import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
+import Link from "next/link"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -222,6 +223,28 @@ function BenchmarkChart({
   )
 }
 
+/**
+ * Rend la zone nom/logo d'une ligne cliquable vers la fiche de l'actif
+ * (graphique TradingView, statistiques, position). Les liquidités n'ont pas
+ * de cotation : la zone reste inerte plutôt que de mener à une page vide.
+ */
+function AssetLink({
+  asset, className, children,
+}: { asset: Asset; className?: string; children: React.ReactNode }) {
+  if (asset.assetClass === "cash" || asset.assetClass === "real_estate") {
+    return <div className={className}>{children}</div>
+  }
+  return (
+    <Link
+      href={`/assets/${encodeURIComponent(asset.ticker)}`}
+      className={`${className ?? ""} group cursor-pointer`}
+      title={`Voir la fiche et le graphique de ${asset.ticker}`}
+    >
+      {children}
+    </Link>
+  )
+}
+
 // ─── Holdings Table (sortable) ────────────────────────────────────────────────
 function SortHeader({
   label, sortKey, current, dir, onSort,
@@ -350,7 +373,8 @@ function HoldingsTable({
           return (
             <div key={asset.id} style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
               <div className="flex items-center gap-3 px-4 py-3.5">
-                {/* Icon */}
+                {/* Icon + nom : accès à la fiche de l'actif */}
+                <AssetLink asset={asset} className="flex flex-1 items-center gap-3 min-w-0">
                 <div className="h-9 w-9 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold"
                   style={{ backgroundColor: color + "22", color }}>
                   {asset.ticker.slice(0, 3)}
@@ -379,6 +403,7 @@ function HoldingsTable({
                     {liveData?.price && <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />}
                   </div>
                 </div>
+                </AssetLink>
 
                 {/* Right: value + P&L */}
                 <div className="text-right flex-shrink-0">
@@ -521,7 +546,7 @@ function HoldingsTable({
             {/* Desktop-only row (isMobile handled above, returns early) */}
             <div className="portfolio-table-row grid items-center px-5 py-3 transition-colors"
               style={{ minWidth: "980px", gridTemplateColumns: COL }}>
-              <div className="flex items-center gap-3 min-w-0">
+              <AssetLink asset={asset} className="flex items-center gap-3 min-w-0">
                 <div className="h-7 w-7 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold"
                   style={{ backgroundColor: color + "22", color }}>
                   {asset.ticker.slice(0, 3)}
@@ -552,7 +577,7 @@ function HoldingsTable({
                     </div>
                   )}
                 </div>
-              </div>
+              </AssetLink>
               {/* Qty — centred, bold, rounded to avoid floating point errors */}
               <p className="text-center text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                 {Number(asset.quantity).toFixed(8).replace(/\.?0+$/, '')}
@@ -1348,13 +1373,15 @@ export default function PortfoliosPage() {
                       return (
                         <div key={a.id} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/20 transition-colors"
                           style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                          <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>
-                            {a.ticker.slice(0, 3)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.name}</p>
-                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{a.ticker}</p>
-                          </div>
+                          <AssetLink asset={a} className="flex flex-1 items-center gap-3 min-w-0">
+                            <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>
+                              {a.ticker.slice(0, 3)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.name}</p>
+                              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{a.ticker}</p>
+                            </div>
+                          </AssetLink>
                           <div className="text-right">
                             <ChangeBadge value={pct} showIcon={false} />
                             {/* Le signe suit le montant : « + » seulement si gain
@@ -1386,13 +1413,15 @@ export default function PortfoliosPage() {
                       return (
                         <div key={a.id} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/20 transition-colors"
                           style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                          <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>
-                            {a.ticker.slice(0, 3)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.name}</p>
-                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{a.ticker}</p>
-                          </div>
+                          <AssetLink asset={a} className="flex flex-1 items-center gap-3 min-w-0">
+                            <div className="h-8 w-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: color + "22", color }}>
+                              {a.ticker.slice(0, 3)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{a.name}</p>
+                              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{a.ticker}</p>
+                            </div>
+                          </AssetLink>
                           <div className="text-right">
                             <ChangeBadge value={pct} showIcon={false} />
                           </div>

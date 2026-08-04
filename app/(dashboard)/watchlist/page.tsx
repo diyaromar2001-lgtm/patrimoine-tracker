@@ -21,6 +21,8 @@ import {
   X, Eye, RefreshCw, Bell, BellOff, Target, StickyNote,
   TrendingUp, TrendingDown, Plus, Search, Loader2,
 } from "lucide-react"
+import { TradingViewChart } from "@/components/charts/tradingview-chart"
+import { toTradingViewSymbol } from "@/lib/tradingview-symbol"
 
 // ─── Enriched watchlist item ──────────────────────────────────────────────────
 // La LISTE est persistée dans la table Supabase `watchlist` ; les annotations
@@ -51,6 +53,7 @@ export default function WatchlistPage() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [selectedName,   setSelectedName]   = useState<string>("")
   const [search,         setSearch]         = useState("")
+  const [chartMode,      setChartMode]       = useState<"tradingview" | "simple">("tradingview")
   const [editingNote,    setEditingNote]     = useState<string | null>(null)
   const [noteText,       setNoteText]        = useState("")
 
@@ -475,7 +478,33 @@ export default function WatchlistPage() {
             <div className="lg:col-span-3 space-y-3">
               {selectedTicker ? (
                 <>
-                  <LiveChart ticker={selectedTicker} name={selectedName} height={340} defaultCompare="SPY" />
+                  {(() => {
+                    const sel = items.find(i => i.ticker === selectedTicker)
+                    const tvSymbol = toTradingViewSymbol({
+                      ticker: selectedTicker, assetClass: sel?.assetClass,
+                    })
+                    return (
+                      <div className="space-y-3">
+                        {tvSymbol && (
+                          <div className="flex items-center gap-1 rounded-lg border p-1 w-fit"
+                            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)" }}>
+                            {([["tradingview", "Graphique avancé"], ["simple", "Vue simple"]] as const).map(([mode, label]) => (
+                              <button key={mode} type="button" onClick={() => setChartMode(mode)}
+                                className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+                                style={chartMode === mode
+                                  ? { backgroundColor: "var(--accent)", color: "#fff" }
+                                  : { color: "var(--text-secondary)" }}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {tvSymbol && chartMode === "tradingview"
+                          ? <TradingViewChart symbol={tvSymbol} height={460} />
+                          : <LiveChart ticker={selectedTicker} name={selectedName} height={340} defaultCompare="SPY" />}
+                      </div>
+                    )
+                  })()}
 
                   {/* Action bar below chart */}
                   {(() => {

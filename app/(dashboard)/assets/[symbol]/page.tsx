@@ -3,6 +3,8 @@
 import { useState, useEffect, use } from "react"
 import { Topbar } from "@/components/layout/topbar"
 import { LiveChart } from "@/components/charts/live-chart"
+import { TradingViewChart } from "@/components/charts/tradingview-chart"
+import { toTradingViewSymbol } from "@/lib/tradingview-symbol"
 import { useCurrency } from "@/hooks/use-currency"
 import { useAppData } from "@/hooks/use-app-data"
 import { Loader2, TrendingUp, TrendingDown, Star, Plus, ArrowLeft, Pencil, Save, X } from "lucide-react"
@@ -40,6 +42,8 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
   const { portfolios, updateAssetCostBasis } = useAppData()
 
   const [quote, setQuote]     = useState<QuoteData | null>(null)
+  const [resolvedSymbol, setResolvedSymbol] = useState<string | null>(null)
+  const [chartMode, setChartMode] = useState<"tradingview" | "simple">("tradingview")
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
   const [costModalOpen, setCostModalOpen] = useState(false)
@@ -64,6 +68,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
       .then(data => {
         const p = data[decodedSymbol]
         if (p) {
+          setResolvedSymbol(p.resolvedSymbol ?? null)
           const displayPrice = p[currency.toLowerCase() as "chf" | "usd" | "eur"] ?? p.chf ?? p.originalPrice ?? 0
           // Facteur natif → devise d'affichage (même conversion que le prix).
           // Les statistiques (jour / 52 sem.) sont les VRAIES valeurs Yahoo —
@@ -95,6 +100,14 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
       .catch(() => setError(true))
       .finally(() => setLoading(false))
   }, [decodedSymbol, currency])
+
+  // Symbole TradingView : la place de cotation vient du symbole réellement
+  // résolu par /api/prices (WSML → WSML.L), pas du ticker courtier.
+  const tvSymbol = toTradingViewSymbol({
+    ticker:         decodedSymbol,
+    assetClass:     heldAsset?.assetClass,
+    resolvedSymbol,
+  })
 
   const userRate = (fxRates as Record<string, number>)[currency] ?? 1
   const positionPrice = quote?.regularMarketPrice ?? heldAsset?.currentPrice ?? 0
@@ -144,7 +157,7 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
       <div className="flex-1 space-y-6 p-4 sm:p-6">
 
         {/* Back */}
-        <Link href="/watchlist"
+        <Link href={heldAsset ? "/portfolios" : "/watchlist"}
           className="inline-flex items-center gap-1.5 text-xs transition-colors hover:text-white"
           style={{ color: "var(--text-secondary)" }}>
           <ArrowLeft className="h-3.5 w-3.5" /> Retour
@@ -192,8 +205,34 @@ export default function AssetDetailPage(props: { params: Promise<{ symbol: strin
               )}
             </div>
 
-            {/* Chart */}
-            <LiveChart ticker={decodedSymbol} name={decodedSymbol} height={320} defaultCompare="SPY" />
+            {/* Chart — TradingView (outils de dessin, indicateurs) ou vue simple */}
+            <div className="space-y-3">
+              {tvSymbol && (
+                <div className="flex items-center gap-1 rounded-lg border p-1 w-fit"
+                  style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)" }}>
+                  {([
+                    ["tradingview", "Graphique avancé"],
+                    ["simple",      "Vue simple"],
+                  ] as const).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setChartMode(mode)}
+                      className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+                      style={chartMode === mode
+                        ? { backgroundColor: "#6366f1", color: "#fff" }
+                        : { color: "var(--text-secondary)" }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {tvSymbol && chartMode === "tradingview"
+                ? <TradingViewChart symbol={tvSymbol} height={560} />
+                : <LiveChart ticker={decodedSymbol} name={decodedSymbol} height={320} defaultCompare="SPY" />}
+            </div>
 
             {/* Stats grid */}
             {quote && (

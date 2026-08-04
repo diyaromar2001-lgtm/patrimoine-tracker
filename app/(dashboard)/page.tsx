@@ -659,9 +659,12 @@ export default function DashboardPage() {
                 const value  = a.livePrice * a.quantity
                 const isGain = a.pnlPct >= 0
                 const color  = ASSET_CLASS_COLORS[a.assetClass as keyof typeof ASSET_CLASS_COLORS] ?? "#6b7280"
-                return (
-                  <div key={a.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-zinc-800/30 transition-colors"
-                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                // Les liquidités n'ont pas de cotation : pas de fiche à ouvrir.
+                const chartable = a.assetClass !== "cash" && a.assetClass !== "real_estate"
+                const rowClass = "flex items-center gap-3 px-5 py-3.5 hover:bg-zinc-800/30 transition-colors"
+                const rowStyle = { borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }
+                const content = (
+                  <>
                     {/* Rank + ticker chip */}
                     <div className="flex items-center gap-2.5 w-8 flex-shrink-0">
                       <span className="text-[11px] font-bold tabular-nums w-4" style={{ color: "var(--text-tertiary)" }}>{i + 1}</span>
@@ -698,7 +701,16 @@ export default function DashboardPage() {
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </>
+                )
+                return chartable ? (
+                  <Link key={a.id} href={`/assets/${encodeURIComponent(a.ticker)}`}
+                    title={`Voir le graphique de ${a.ticker}`}
+                    className={rowClass} style={rowStyle}>
+                    {content}
+                  </Link>
+                ) : (
+                  <div key={a.id} className={rowClass} style={rowStyle}>{content}</div>
                 )
               })}
             </div>
