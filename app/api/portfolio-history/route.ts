@@ -16,6 +16,8 @@ import YahooFinanceClass from "yahoo-finance2"
 import { cacheFetch } from "@/lib/cache"
 import { DEFAULT_FX_RATES } from "@/lib/utils"
 import type { FXRates } from "@/lib/utils"
+import { buildTickerAliases } from "@/lib/import/t212-symbol-map"
+import { normalizeQuotePrice } from "@/lib/quote-currency"
 
 export const runtime = "nodejs"
 
@@ -34,38 +36,66 @@ export interface PortfolioHistoryPoint {
   value: number  // in the requested currency
 }
 
-// Fetch weekly close prices for a ticker
+// T212 EU utilise des tickers bruts (EUNL, WSML, SMH…) que Yahoo ne résout
+// pas : sans alias d'échange, chart() échoue et la courbe restait vide.
+// Même table que /api/prices — l'alias est essayé AVANT le ticker brut.
+const TICKER_ALIASES: Record<string, string[]> = {
+  ...buildTickerAliases(),
+  VUAA: ["VUAA.L", "VUAA.MI", "VUAA.DE"],
+}
+
+/**
+ * Prix hebdomadaires de clôture, en devise NATIVE de la cotation retenue.
+ * Retourne aussi la devise réelle renvoyée par Yahoo : elle peut différer de
+ * celle stockée en base (ex. IDVY coté en GBp), et les pence sont normalisés.
+ */
 async function fetchWeeklyPrices(
   ticker: string,
   period1: string
-): Promise<Map<string, number>> {
+): Promise<{ prices: Map<string, number>; currency: string | null }> {
   const map = new Map<string, number>()
-  try {
-    const raw = await yf.chart(ticker, {
-      period1,
-      period2: new Date().toISOString().slice(0, 10),
-      interval: "1wk",
-    }) as unknown as { quotes: Array<{ date: Date; close: number | null }> }
+  const aliases = TICKER_ALIASES[ticker.toUpperCase()] ?? []
+  const candidates = aliases.length > 0 ? [...new Set([...aliases, ticker])] : [ticker]
 
-    for (const q of raw.quotes ?? []) {
-      if (q.close != null) {
-        const dateStr = new Date(q.date).toISOString().slice(0, 10)
-        map.set(dateStr, q.close)
+  for (const candidate of candidates) {
+    try {
+      const raw = await yf.chart(candidate, {
+        period1,
+        period2: new Date().toISOString().slice(0, 10),
+        interval: "1wk",
+      }) as unknown as {
+        quotes: Array<{ date: Date; close: number | null }>
+        meta?: { currency?: string }
       }
-    }
-  } catch { /* skip ticker on error */ }
-  return map
+
+      const rawCurrency = raw.meta?.currency ?? null
+      for (const q of raw.quotes ?? []) {
+        if (q.close != null) {
+          // GBp/GBX (pence) → GBP, sinon inchangé
+          const { price } = normalizeQuotePrice(q.close, rawCurrency)
+          map.set(new Date(q.date).toISOString().slice(0, 10), price)
+        }
+      }
+      if (map.size > 0) {
+        const currency = rawCurrency
+          ? normalizeQuotePrice(1, rawCurrency).currency
+          : null
+        return { prices: map, currency }
+      }
+    } catch { /* candidat suivant */ }
+  }
+  return { prices: map, currency: null }
 }
 
-// Get live FX rates
+// Get live FX rates — GBP inclus (ETF LSE cotés en GBp/GBP)
 async function getFxRates(): Promise<FXRates> {
   const result = await cacheFetch("fx-for-history", async () => {
     try {
-      const res = await fetch("https://api.frankfurter.app/latest?from=CHF&to=USD,EUR")
+      const res = await fetch("https://api.frankfurter.app/latest?from=CHF&to=USD,EUR,GBP")
       if (!res.ok) throw new Error("FX fetch failed")
-      const d: { rates: { USD: number; EUR: number } } = await res.json()
-      return { CHF: 1, USD: d.rates.USD, EUR: d.rates.EUR }
-    } catch { return DEFAULT_FX_RATES }
+      const d: { rates: { USD: number; EUR: number; GBP: number } } = await res.json()
+      return { CHF: 1, USD: d.rates.USD, EUR: d.rates.EUR, GBP: d.rates.GBP }
+    } catch { return { ...DEFAULT_FX_RATES, GBP: 0.9379 } }
   }, 3600)
   return result as unknown as FXRates
 }
@@ -87,7 +117,7 @@ export async function POST(req: NextRequest) {
   const { assets = [], currency = "CHF", period = "1Y" } = body
 
   if (!assets.length) {
-    return NextResponse.json([])
+    return NextResponse.json({ history: [], coverage: { resolved: 0, total: 0, missing: [] } })
   }
 
   // Determine how far back to go
@@ -100,57 +130,63 @@ export async function POST(req: NextRequest) {
 
   const rates = await getFxRates()
 
-  // Fetch weekly prices for all tickers in parallel (cached 1h)
-  const pricesByTicker = new Map<string, Map<string, number>>()
+  // Prix hebdomadaires pour chaque ticker, en parallèle (cache 1 h)
+  const priceData = new Map<string, { prices: Map<string, number>; currency: string | null }>()
   await Promise.all(
     assets.map(async (asset) => {
-      const cacheKey = `port-history-prices:${asset.ticker}:${period}`
-      const prices = await cacheFetch(cacheKey, () => fetchWeeklyPrices(asset.ticker, period1), 3600)
-      pricesByTicker.set(asset.ticker, prices as Map<string, number>)
+      const cacheKey = `port-history-v2:${asset.ticker}:${period}`
+      const res = await cacheFetch(cacheKey, () => fetchWeeklyPrices(asset.ticker, period1), 3600)
+      priceData.set(asset.ticker, res as { prices: Map<string, number>; currency: string | null })
     })
   )
 
-  // Collect all unique dates across all tickers
-  const allDates = new Set<string>()
-  for (const prices of pricesByTicker.values()) {
-    for (const date of (prices as Map<string, number>).keys()) {
-      allDates.add(date)
-    }
+  // Un ticker non résolu sur Yahoo est EXCLU de la série : l'inclure à 0
+  // fausserait la courbe, et bloquer toute la courbe (ancien comportement
+  // « tous les actifs ou rien ») la rendait vide dès qu'un seul ticker
+  // échouait. On signale la couverture au client pour rester honnête.
+  const resolved = assets.filter(a => (priceData.get(a.ticker)?.prices.size ?? 0) > 0)
+  const missing  = assets.filter(a => (priceData.get(a.ticker)?.prices.size ?? 0) === 0).map(a => a.ticker)
+
+  const coverage = { resolved: resolved.length, total: assets.length, missing }
+
+  if (!resolved.length) {
+    return NextResponse.json({ history: [], coverage })
   }
 
+  // Toutes les dates disponibles, tous tickers résolus confondus
+  const allDates = new Set<string>()
+  for (const a of resolved) {
+    for (const date of priceData.get(a.ticker)!.prices.keys()) allDates.add(date)
+  }
   const sortedDates = [...allDates].sort()
-  if (!sortedDates.length) return NextResponse.json([])
 
-  // For each date, compute portfolio value
-  // We carry forward the last known price for each ticker (fill gaps)
+  // Valeur du portefeuille à chaque date, en reportant le dernier prix connu.
+  // Un point n'est émis que lorsque TOUS les actifs résolus ont déjà cotré au
+  // moins une fois — sinon la courbe démarrerait par une marche artificielle.
   const lastKnownPrice = new Map<string, number>()
   const history: PortfolioHistoryPoint[] = []
 
   for (const date of sortedDates) {
-    let totalValue = 0
-    let allPricesKnown = false
-
-    for (const asset of assets) {
-      const prices = pricesByTicker.get(asset.ticker) as Map<string, number> | undefined
-      const price  = prices?.get(date)
+    for (const asset of resolved) {
+      const price = priceData.get(asset.ticker)!.prices.get(date)
       if (price != null) lastKnownPrice.set(asset.ticker, price)
-
-      const p = lastKnownPrice.get(asset.ticker)
-      if (p != null) {
-        const valueInUserCurr = toUserCurrency(p * asset.quantity, asset.nativeCurrency, rates, currency)
-        totalValue += valueInUserCurr
-      }
     }
 
-    // FIX saut vertical: n'affiche un point QUE si TOUS les actifs ont un prix connu
-    // Cela évite le saut au début quand seulement 1 actif/2 a des données
-    const allKnown = assets.every(a => lastKnownPrice.has(a.ticker))
-    allPricesKnown = allKnown
+    if (!resolved.every(a => lastKnownPrice.has(a.ticker))) continue
 
-    if (allPricesKnown && totalValue > 0) {
+    let totalValue = 0
+    for (const asset of resolved) {
+      const p = lastKnownPrice.get(asset.ticker)!
+      // Devise réellement renvoyée par Yahoo si connue (plus fiable que celle
+      // stockée en base, souvent 'CHF' par défaut à l'import).
+      const curr = priceData.get(asset.ticker)!.currency ?? asset.nativeCurrency
+      totalValue += toUserCurrency(p * asset.quantity, curr, rates, currency)
+    }
+
+    if (totalValue > 0) {
       history.push({ date, value: Math.round(totalValue * 100) / 100 })
     }
   }
 
-  return NextResponse.json(history)
+  return NextResponse.json({ history, coverage })
 }

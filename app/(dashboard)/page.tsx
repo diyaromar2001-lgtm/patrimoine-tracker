@@ -62,7 +62,7 @@ export default function DashboardPage() {
     })),
     [allAssets, livePrices]
   )
-  const { history: portfolioHistory, loading: historyLoading, isReal } =
+  const { history: portfolioHistory, loading: historyLoading, isReal, coverage: historyCoverage } =
     usePortfolioHistory(portfolioAssets, API_PERIOD[period] ?? "1Y")
 
   // ── P&L standardisé CHF ─────────────────────────────────────────────────────
@@ -510,8 +510,14 @@ export default function DashboardPage() {
               ) : isReal ? (
                 <>
                   <AreaChart data={portfolioHistory} height={176} />
-                  <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                  <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                     Courbe approximative : quantités actuelles × prix historiques (les achats/ventes passés ne sont pas rejoués).
+                    {historyCoverage.missing.length > 0 && (
+                      <> — <span style={{ color: "#f59e0b" }}>
+                        {historyCoverage.resolved}/{historyCoverage.total} positions incluses ;
+                        historique indisponible pour {historyCoverage.missing.join(", ")}.
+                      </span></>
+                    )}
                   </p>
                 </>
               ) : (
