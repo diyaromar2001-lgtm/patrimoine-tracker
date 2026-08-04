@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import { useAppData } from "@/hooks/use-app-data"
 import { createClient } from "@/lib/supabase/client"
+import type { BrokerId } from "@/lib/import/brokers"
 
 export interface ImportResult {
   portfolioId: string
@@ -48,11 +49,19 @@ export function usePortfolioImport() {
   const { addPortfolio, removePortfolio } = useAppData()
   const supabase = createClient()
 
-  const importTrading212CSV = useCallback(
+  /**
+   * Importe un relevé, quel que soit le courtier.
+   *
+   * La RPC porte encore le nom `..._trading212` pour des raisons historiques,
+   * mais elle est générique : `p_broker` est stocké tel quel sur chaque
+   * transaction et sert de clé de déduplication avec `source_external_id`.
+   */
+  const importBrokerCSV = useCallback(
     async (
       portfolioName: string,
       file: File,
-      operations: any[]
+      operations: any[],
+      broker: BrokerId = "trading_212"
     ): Promise<ImportResult> => {
       const fileChecksum = await computeFileChecksum(file)
 
@@ -65,7 +74,7 @@ export function usePortfolioImport() {
         {
           p_portfolio_name:     portfolioName,
           p_portfolio_currency: "CHF",
-          p_broker:             "trading_212",
+          p_broker:             broker,
           p_filename:           file.name,
           p_file_checksum:      fileChecksum,
           p_operations:         operations,
@@ -85,7 +94,11 @@ export function usePortfolioImport() {
     [supabase]
   )
 
-  return { importTrading212CSV }
+  return {
+    importBrokerCSV,
+    /** @deprecated Utiliser importBrokerCSV. */
+    importTrading212CSV: importBrokerCSV,
+  }
 }
 
 /**

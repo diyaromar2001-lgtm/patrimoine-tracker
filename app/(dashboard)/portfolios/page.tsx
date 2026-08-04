@@ -20,6 +20,7 @@ import type { SearchResult } from "@/hooks/use-asset-search"
 import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import Link from "next/link"
+import type { BrokerId } from "@/lib/import/brokers"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -713,7 +714,7 @@ export default function PortfoliosPage() {
   } = useAppData()
   // setPortfolios not available in AppData — mutations are reflected automatically
   const setPortfolios = (_: unknown) => {} // noop placeholder
-  const { importTrading212CSV } = usePortfolioImport()
+  const { importBrokerCSV } = usePortfolioImport()
   const [activeTab, setActiveTab] = useState("global")
   const [txModal, setTxModal]     = useState<{ defaultPortfolioId?: string; initial?: TransactionFormData } | null>(null)
   const [showPortfolioCreation, setShowPortfolioCreation] = useState(false)
@@ -949,9 +950,10 @@ export default function PortfoliosPage() {
     name: string,
     file: File,
     analysis: any,
-    operations: any[]
+    operations: any[],
+    broker: BrokerId = "trading_212"
   ) {
-    const result = await importTrading212CSV(name, file, operations)
+    const result = await importBrokerCSV(name, file, operations, broker)
     setActiveTab(result.portfolioId)
     return result
   }

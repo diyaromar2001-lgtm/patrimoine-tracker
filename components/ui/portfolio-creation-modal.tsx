@@ -3,7 +3,10 @@
 import { useState, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, Upload, FileText, Loader2, CheckCircle, AlertCircle, ChevronRight } from "lucide-react"
-import { parseTrading212CSVContent } from "@/lib/parsers/trading212-parser-client"
+import {
+  parseBrokerCsv, detectBroker, computeChecksum, reconcilePositions,
+  BROKERS, type BrokerId,
+} from "@/lib/import/brokers"
 import type { Portfolio } from "@/lib/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -11,6 +14,11 @@ type Mode = "choice" | "manual" | "import"
 type ImportStep = "select" | "analyze" | "confirm" | "progress" | "complete" | "error"
 
 interface ImportAnalysis {
+  broker: BrokerId
+  /** true si le courtier a été deviné, false s'il a été choisi à la main. */
+  brokerDetected: boolean
+  /** Écarts entre le rejeu des opérations et les positions déclarées. */
+  reconciliation: Array<{ ticker: string; replayed: number; declared: number; diff: number }>
   filename: string
   fileChecksum: string
   periodStart: string
@@ -33,7 +41,8 @@ interface ImportProps {
     name: string,
     file: File,
     analysis: ImportAnalysis,
-    operations: any[]
+    operations: any[],
+    broker: BrokerId
   ) => Promise<{ portfolioId: string; batchId: string; rowsImported?: number; rowsTotal?: number }>
 }
 
@@ -144,6 +153,57 @@ function ManualCreationForm({
 function AnalysisDisplay({ analysis }: { analysis: ImportAnalysis }) {
   return (
     <div className="space-y-4">
+      {/* Courtier reconnu — visible avant tout le reste : c'est lui qui
+          détermine comment chaque ligne a été interprétée. */}
+      <div className="flex items-center justify-between rounded-lg border p-3"
+        style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
+        <div>
+          <p className="text-[10px] uppercase font-semibold text-zinc-500">Courtier</p>
+          <p className="text-sm font-semibold mt-1" style={{ color: "var(--text-primary)" }}>
+            {BROKERS[analysis.broker].label}
+          </p>
+        </div>
+        <span className="rounded-md px-2 py-1 text-[10px] font-medium"
+          style={{ backgroundColor: "#6366f118", color: "#a5b4fc" }}>
+          {analysis.brokerDetected ? "détecté" : "choisi"}
+        </span>
+      </div>
+
+      {analysis.reconciliation.length > 0 && (
+        <div className="rounded-lg border p-3" style={{ backgroundColor: "#f59e0b12", borderColor: "#f59e0b40" }}>
+          <p className="text-[10px] uppercase font-semibold mb-2" style={{ color: "#f59e0b" }}>
+            Écart avec les positions déclarées
+          </p>
+          <div className="space-y-1">
+            {analysis.reconciliation.slice(0, 5).map(g => (
+              <div key={g.ticker} className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{g.ticker}</span>
+                <span className="text-xs tabular-nums" style={{ color: "var(--text-primary)" }}>
+                  relevé {g.declared} · reconstruit {g.replayed}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+            Une opération manque probablement dans l'export (période tronquée, transfert entrant).
+            L'import reste possible : la position sera celle des transactions du fichier.
+          </p>
+        </div>
+      )}
+
+      {analysis.warnings.length > 0 && (
+        <div className="rounded-lg border p-3" style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
+          <p className="text-[10px] uppercase font-semibold text-zinc-500 mb-2">
+            Avertissements ({analysis.warnings.length})
+          </p>
+          <ul className="space-y-1">
+            {analysis.warnings.slice(0, 4).map((w, i) => (
+              <li key={i} className="text-[11px]" style={{ color: "var(--text-secondary)" }}>• {w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border p-3" style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
           <p className="text-[10px] uppercase font-semibold text-zinc-500">Fichier</p>
@@ -404,63 +464,60 @@ export function PortfolioCreationModal({
     onClose()
   }
 
-  const handleFileSelect = async (file: File) => {
+  const handleFileSelect = async (file: File, brokerOverride?: BrokerId) => {
     if (!file.name.toLowerCase().endsWith(".csv")) {
       setImportError("Le fichier doit être un CSV")
       return
     }
 
     setSelectedFile(file)
+    setImportError("")
     setImportMessage("Analyse du fichier…")
-    setImportProgress(0) // Indeterminate: 0 means no progress bar percent
+    setImportProgress(0)
 
     try {
-      // Read file content and parse it
       const fileContent = await file.text()
-      const parseResult = await parseTrading212CSVContent(fileContent)
-      const ops = parseResult.operations
-      const stats = parseResult.stats
-
-      // Build analysis
-      const periodDates = ops
-        .map((o: any) => new Date(o.date))
-        .filter((d) => !isNaN(d.getTime()))
-        .sort((a, b) => a.getTime() - b.getTime())
-
-      const currencies = new Set<string>()
-      const assetTickers = new Set<string>()
-      const eventsByType: Record<string, number> = {}
-
-      ops.forEach((op: any) => {
-        eventsByType[op.type] = (eventsByType[op.type] || 0) + 1
-        if (op.priceCurrency) currencies.add(op.priceCurrency)
-        if (op.totalCurrency) currencies.add(op.totalCurrency)
-        if (op.ticker) assetTickers.add(op.ticker)
-      })
-
-      if (!currencies.has("CHF")) currencies.add("CHF")
-
-      const anal: ImportAnalysis = {
-        filename: file.name,
-        fileChecksum: parseResult.fileChecksum,
-        periodStart: periodDates.length > 0 ? periodDates[0].toLocaleDateString("fr-CH") : "N/A",
-        periodEnd: periodDates.length > 0 ? periodDates[periodDates.length - 1].toLocaleDateString("fr-CH") : "N/A",
-        csvLines: stats.csvLinesRead,
-        logicalEvents: stats.logicalEvents,
-        eventsByType,
-        currencies: Array.from(currencies).sort(),
-        assetCount: assetTickers.size,
-        splitsDetected: eventsByType["stock_split"] || 0,
-        warnings: [],
-        errors: [],
+      // Le format décide du courtier ; un choix explicite reste prioritaire.
+      const detection = detectBroker(fileContent)
+      const broker    = brokerOverride ?? detection.broker
+      if (!broker) {
+        setImportError(
+          "Format non reconnu. Choisis le courtier ci-dessous, ou vérifie qu'il " +
+          "s'agit bien de l'export CSV brut (non ré-enregistré depuis Excel)."
+        )
+        setImportStep("select")
+        return
       }
 
-      setAnalysis(anal)
+      const parsed   = await parseBrokerCsv(fileContent, broker)
+      const checksum = await computeChecksum(fileContent)
+      const ops      = parsed.operations
+
+      const fmt = (d: string) => d ? new Date(d).toLocaleDateString("fr-CH") : "N/A"
+      const assetTickers = new Set(ops.map(o => o.ticker).filter(Boolean))
+
+      setAnalysis({
+        broker,
+        brokerDetected: !brokerOverride,
+        reconciliation: reconcilePositions(ops, parsed.positions),
+        filename:      file.name,
+        fileChecksum:  checksum,
+        periodStart:   fmt(parsed.stats.period.start),
+        periodEnd:     fmt(parsed.stats.period.end),
+        csvLines:      parsed.stats.linesRead,
+        logicalEvents: ops.length,
+        eventsByType:  parsed.stats.byType,
+        currencies:    parsed.stats.currencies.length ? parsed.stats.currencies : ["CHF"],
+        assetCount:    assetTickers.size,
+        splitsDetected: parsed.stats.byType["stock_split"] ?? 0,
+        warnings:      parsed.warnings,
+        errors:        [],
+      })
       setOperations(ops)
       setImportStep("analyze")
-      setImportProgress(0) // Analysis complete, move to next step
+      setImportProgress(0)
     } catch (e) {
-      setImportError(`Erreur lors de l'analyse: ${e instanceof Error ? e.message : "inconnu"}`)
+      setImportError(`Erreur lors de l'analyse : ${e instanceof Error ? e.message : "inconnu"}`)
       setImportStep("error")
     }
   }
@@ -489,7 +546,7 @@ export function PortfolioCreationModal({
           <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
             {mode === "choice" && "Nouveau portefeuille"}
             {mode === "manual" && "Création manuelle"}
-            {mode === "import" && "Import CSV Trading 212"}
+            {mode === "import" && "Importer depuis un courtier"}
           </h3>
           <button
             onClick={resetModal}
@@ -532,10 +589,10 @@ export function PortfolioCreationModal({
               >
                 <div className="text-left">
                   <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    Import CSV Trading 212
+                    Importer un relevé
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
-                    Depuis un export broker
+                    Trading 212 · Interactive Brokers
                   </p>
                 </div>
                 <ChevronRight className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
@@ -572,7 +629,7 @@ export function PortfolioCreationModal({
                       Sélectionnez un fichier CSV
                     </p>
                     <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
-                      Trading 212 export (from_YYYY-MM-DD_to_YYYY-MM-DD_*.csv)
+                      Le courtier est reconnu automatiquement
                     </p>
                     <input
                       ref={fileInputRef}
@@ -593,6 +650,29 @@ export function PortfolioCreationModal({
                       </span>
                     </div>
                   )}
+
+                  {/* Repli manuel : sert quand la détection échoue (export
+                      modifié, format inhabituel). */}
+                  <div>
+                    <p className="text-[11px] mb-2" style={{ color: "var(--text-tertiary)" }}>
+                      Format non reconnu ? Force le courtier :
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(Object.values(BROKERS)).map(b => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          disabled={!selectedFile}
+                          onClick={() => selectedFile && handleFileSelect(selectedFile, b.id)}
+                          className="rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-zinc-800 disabled:opacity-40"
+                          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                          title={b.hint}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <button
                     onClick={() => setMode("choice")}
                     className="w-full rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
@@ -677,7 +757,8 @@ export function PortfolioCreationModal({
                             analysis.filename.replace(/\.csv$/i, ""),
                             selectedFile,
                             analysis,
-                            operations
+                            operations,
+                            analysis.broker
                           )
 
                           setImportProgress(0) // Still indeterminate
