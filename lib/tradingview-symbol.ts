@@ -37,6 +37,37 @@ const SUFFIX_TO_EXCHANGE: Record<string, string> = {
   AX: "ASX",        // Australie
 }
 
+/**
+ * Le widget TradingView gratuit n'a PAS les droits de diffusion du London
+ * Stock Exchange : `LSE:WSML` renvoie « Ce symbole n'existe pas / disponible
+ * uniquement sur TradingView ». Les mêmes ETF (même ISIN, même fonds) sont
+ * cotés à Francfort et Xetra passe, lui, dans le widget.
+ *
+ * Table construite depuis l'ISIN de chaque ligne londonienne via la recherche
+ * de symboles TradingView, puis vérifiée dans le widget.
+ * Attention : la cotation Xetra est en EUR là où Londres cote en GBP/USD —
+ * c'est le même fonds, pas la même ligne de prix. Le symbole affiché dans
+ * l'en-tête du graphique le dit explicitement.
+ */
+const LSE_TO_TRADINGVIEW: Record<string, string> = {
+  EIMI: "XETR:IS3N",   // iShares Core MSCI EM IMI      — IE00BKM4GZ66
+  WSML: "XETR:IUSN",   // iShares MSCI World Small Cap  — IE00BF4RFH31
+  IDVY: "XETR:IQQA",   // iShares Euro Dividend         — IE00B0M62S72
+  IUSA: "XETR:IUSA",   // iShares Core S&P 500 Dist     — IE0031442068
+  CSPX: "XETR:SXR8",   // iShares Core S&P 500 Acc      — IE00B5BMR087
+  ISAC: "XETR:IUSQ",   // iShares MSCI ACWI             — IE00B6R52259
+  IUIT: "XETR:QDVE",   // iShares S&P 500 IT            — IE00B3WJKG14
+  IGLN: "XETR:PPFB",   // iShares Physical Gold         — IE00B4ND3602
+  SMH:  "XETR:VVSM",   // VanEck Semiconductor UCITS    — IE00BMC38736
+  VUAA: "XETR:VUAA",   // Vanguard S&P 500 Acc          — IE00BFMXXD54
+  VHYL: "XETR:VGWD",   // Vanguard All-World High Div   — IE00B8GKDB10
+  VUSA: "XETR:VUSA",   // Vanguard S&P 500 Dist         — IE00B3XXRP09
+  VWRL: "XETR:VGWL",   // Vanguard FTSE All-World       — IE00B3RBWM25
+  SWRD: "XETR:SPPW",   // SPDR MSCI World Acc           — IE00BFY0GT14
+  LGGG: "XETR:ETLQ",   // L&G Global Equity             — IE00BFXR5S54
+  HMWO: "XETR:H4ZJ",   // HSBC MSCI World               — IE00B4X9L533
+}
+
 /** Actifs sans marché coté : aucun graphique TradingView possible. */
 const UNCHARTABLE: AssetClass[] = ["cash", "real_estate"]
 
@@ -74,8 +105,15 @@ export function toTradingViewSymbol(input: TradingViewSymbolInput): string | nul
   const base     = yahoo.slice(0, dot)
   const suffix   = yahoo.slice(dot + 1)
   const exchange = SUFFIX_TO_EXCHANGE[suffix]
-  // Suffixe inconnu : on renvoie la base seule plutôt qu'un préfixe inventé.
-  return exchange ? `${exchange}:${base}` : base
+  if (!exchange) return base   // suffixe inconnu : pas de place inventée
+
+  // Londres n'est pas diffusé par le widget → on bascule sur la ligne Xetra
+  // du même fonds quand on la connaît.
+  if (exchange === "LSE") {
+    const alt = LSE_TO_TRADINGVIEW[base] ?? LSE_TO_TRADINGVIEW[ticker]
+    if (alt) return alt
+  }
+  return `${exchange}:${base}`
 }
 
 /** Lien vers le graphique complet sur tradingview.com. */

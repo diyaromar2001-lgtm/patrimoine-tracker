@@ -7,11 +7,18 @@ describe("toTradingViewSymbol", () => {
     expect(toTradingViewSymbol({ ticker: "aapl" })).toBe("AAPL")
   })
 
-  test("les ETF londoniens du mapping T212 passent par LSE", () => {
-    expect(toTradingViewSymbol({ ticker: "WSML", assetClass: "etf" })).toBe("LSE:WSML")
-    expect(toTradingViewSymbol({ ticker: "VHYL", assetClass: "etf" })).toBe("LSE:VHYL")
-    // SMH doit rester l'ETF UCITS londonien, pas l'ETF US homonyme
-    expect(toTradingViewSymbol({ ticker: "SMH", assetClass: "etf" })).toBe("LSE:SMH")
+  test("les ETF londoniens basculent sur la ligne Xetra du même fonds", () => {
+    // Le widget gratuit n'a pas les droits LSE : on vise l'autre cotation
+    // du MÊME ISIN plutôt qu'un graphique vide.
+    expect(toTradingViewSymbol({ ticker: "WSML", assetClass: "etf" })).toBe("XETR:IUSN")
+    expect(toTradingViewSymbol({ ticker: "VHYL", assetClass: "etf" })).toBe("XETR:VGWD")
+    expect(toTradingViewSymbol({ ticker: "IDVY", assetClass: "etf" })).toBe("XETR:IQQA")
+    // SMH doit rester l'ETF UCITS (IE00BMC38736), pas l'ETF US homonyme
+    expect(toTradingViewSymbol({ ticker: "SMH", assetClass: "etf" })).toBe("XETR:VVSM")
+  })
+
+  test("un ticker londonien hors table garde le préfixe LSE", () => {
+    expect(toTradingViewSymbol({ ticker: "LCWD", assetClass: "etf" })).toBe("LSE:LCWD")
   })
 
   test("les actions suisses passent par SIX avec le vrai code", () => {
@@ -26,6 +33,10 @@ describe("toTradingViewSymbol", () => {
 
   test("le symbole résolu par /api/prices est prioritaire sur la table", () => {
     expect(toTradingViewSymbol({ ticker: "SMH", resolvedSymbol: "SMH.DE" })).toBe("XETR:SMH")
+  })
+
+  test("le mapping Xetra s'applique aussi via le symbole résolu", () => {
+    expect(toTradingViewSymbol({ ticker: "WSML", resolvedSymbol: "WSML.L" })).toBe("XETR:IUSN")
   })
 
   test("un suffixe inconnu ne fabrique pas de place", () => {
