@@ -108,14 +108,24 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
    * on renonce : mieux vaut un montant non converti et signalé qu'un montant
    * converti à un taux inventé.
    */
-  function rateOn(date: string, currency: string): number | null {
+  function rateOn(date: string, currency: string, allowForward = false): number | null {
     if (!currency || currency === accountCurrency) return 1
-    for (let back = 0; back <= 5; back++) {
+    const at = (offset: number) => {
       const d = new Date(date + "T00:00:00Z")
-      d.setUTCDate(d.getUTCDate() - back)
-      const key = d.toISOString().slice(0, 10)
-      const r = rates.get(key)?.get(currency)
+      d.setUTCDate(d.getUTCDate() + offset)
+      return rates.get(d.toISOString().slice(0, 10))?.get(currency)
+    }
+    for (let back = 0; back <= 5; back++) {
+      const r = at(-back)
       if (r && r > 0) return r
+    }
+    // Seulement pour une reprise de position : sa date peut précéder le début
+    // de la table de taux, alors qu'aucune opération réelle ne le fait.
+    if (allowForward) {
+      for (let fwd = 1; fwd <= 5; fwd++) {
+        const r = at(fwd)
+        if (r && r > 0) return r
+      }
     }
     return null
   }
@@ -125,8 +135,8 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
    * Sans taux connu, on RENVOIE le montant natif et on le signale — jamais
    * un montant converti à un taux approximatif.
    */
-  function toAccount(amount: number, currency: string, date: string, label: string) {
-    const rate = rateOn(date, currency)
+  function toAccount(amount: number, currency: string, date: string, label: string, allowForward = false) {
+    const rate = rateOn(date, currency, allowForward)
     if (rate == null) {
       warnings.push(
         `Taux ${currency}→${accountCurrency} introuvable au ${date} (${label}) : ` +
@@ -176,7 +186,7 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
     // pour ne pas compter chaque opération deux fois.
     if (!has(s, "Symbol", "Buy/Sell", "Quantity", "TradePrice", "NetCash")) continue
 
-    for (const r of s.rows) {
+    for (const [index, r] of s.rows.entries()) {
       const date = ibkrDate(r.TradeDate || r["Date/Time"])
       if (!date) continue
 
@@ -187,7 +197,13 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
       const price    = num(r.TradePrice)
       // NetCash = flux réel, commission incluse. C'est ce qui est débité.
       const netCash  = Math.abs(num(r.NetCash))
-      const sourceId = `ibkr:trade:${symbol}:${r.DateTime || date}:${r.Quantity}:${r.TradePrice}`
+      // Le rang de la ligne fait partie de l'identifiant : un ordre exécuté en
+      // plusieurs fois produit des lignes RIGOUREUSEMENT identiques (même
+      // horodatage, même quantité, même prix). Sans le rang, la déduplication
+      // à l'insertion les prenait pour un doublon et n'en gardait qu'une —
+      // la position restait ouverte alors qu'elle avait été soldée.
+      // Le rang est stable tant que le fichier l'est : le réimport reste idempotent.
+      const sourceId = `ibkr:trade:${index}:${symbol}:${r.DateTime || date}:${r.Quantity}:${r.TradePrice}`
 
       // Les conversions de devises apparaissent comme des « trades » sur une
       // paire (USD.CHF) avec AssetClass CASH.
@@ -219,7 +235,12 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
         name:          meta.name,
         isin:          meta.isin,
         quantity:      qty,
-        price,
+        // Prix unitaire COMMISSION INCLUSE (NetCash / quantité). C'est la
+        // convention de l'application — le prix moyen affiché est « frais
+        // inclus » — et c'est aussi la définition du prix de revient d'IBKR
+        // (CostBasisPrice). Avec le prix d'exécution nu, le prix moyen était
+        // systématiquement inférieur à celui du relevé.
+        price:         netCash / qty,
         priceCurrency: currency,
         exchangeRate:  total.rate,
         // Converti à la date de l'opération : le coût d'acquisition en CHF est
@@ -244,14 +265,16 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
       withholding.set(key, (withholding.get(key) ?? 0) + Math.abs(num(r.Amount)))
     }
 
-    for (const r of s.rows) {
+    for (const [index, r] of s.rows.entries()) {
       const date = ibkrDate(r["Date/Time"])
       if (!date) continue
       const type     = r.Type || ""
       const amount   = num(r.Amount)
       const currency = r.CurrencyPrimary || accountCurrency
       const symbol   = r.Symbol || ""
-      const sourceId = `ibkr:cash:${type}:${symbol}:${r["Date/Time"]}:${r.Amount}`
+      // Rang inclus pour la même raison que les transactions : deux versements
+      // identiques le même jour ne doivent pas être pris pour un doublon.
+      const sourceId = `ibkr:cash:${index}:${type}:${symbol}:${r["Date/Time"]}:${r.Amount}`
 
       if (/withholding/i.test(type)) continue            // déjà rattachée
 
@@ -287,6 +310,45 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
       if (/deposit|withdrawal/i.test(type)) { cash(amount >= 0 ? "deposit" : "withdrawal"); continue }
       if (/interest/i.test(type))           { cash("interest"); continue }
       if (/fee|commission/i.test(type))     { cash("fee") }
+    }
+  }
+
+  // ── Positions sans transaction : solde d'ouverture ───────────────────────
+  // Un relevé commence à une date donnée : une ligne détenue avant cette date,
+  // ou reçue hors transaction (attribution, fraction), n'a aucun ordre dans le
+  // fichier. Sans reprise, elle disparaîtrait du portefeuille et le total ne
+  // correspondrait plus au courtier. On la reprend donc à son prix de revient
+  // déclaré — en le signalant, car ce n'est pas une transaction réelle.
+  {
+    // Seules les transactions comptent : un titre qui n'apparaît que via un
+    // dividende n'a toujours aucune ligne d'achat dans l'export.
+    const traded = new Set(
+      operations.filter(o => o.ticker && (o.type === "buy" || o.type === "sell")).map(o => o.ticker!)
+    )
+    const firstDate = operations.map(o => o.date).filter(Boolean).sort()[0]
+    for (const p of positions) {
+      if (traded.has(p.ticker) || Math.abs(p.quantity) < 1e-9 || !firstDate) continue
+      const meta  = info(p.ticker)
+      const cost  = Math.abs(p.costBasis)
+      const total = toAccount(cost, p.currency, firstDate, `position d'ouverture ${p.ticker}`, true)
+      operations.push({
+        type: "buy",
+        date: firstDate,
+        sourceId: `ibkr:opening:${p.ticker}:${p.quantity}`,
+        rawAction: "Position d'ouverture (aucune transaction dans l'export)",
+        ticker: p.ticker, name: meta.name, isin: meta.isin,
+        quantity: p.quantity,
+        price: cost / p.quantity,
+        priceCurrency: p.currency,
+        exchangeRate: total.rate,
+        totalAmount: total.amount,
+        totalCurrency: total.currency,
+      })
+      warnings.push(
+        `${p.ticker} : ${p.quantity} détenue(s) sans transaction dans l'export — ` +
+        `reprise au prix de revient du relevé. Élargis la période exportée pour ` +
+        `récupérer l'historique réel.`
+      )
     }
   }
 

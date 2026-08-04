@@ -31,7 +31,8 @@ describe("achats et ventes", () => {
     const buy = find("buy", "AMZN")[0]
     expect(buy.date).toBe("2026-04-21")
     expect(buy.quantity).toBe(1)
-    expect(buy.price).toBe(253)
+    // Prix unitaire commission incluse : 253 exécuté + 1 de commission
+    expect(buy.price).toBeCloseTo(254, 6)
     expect(buy.priceCurrency).toBe("USD")
     // NetCash 254 USD (commission incluse) × 0.78081 = 198.3257 CHF
     expect(buy.totalAmount).toBeCloseTo(254 * 0.78081, 6)
@@ -39,9 +40,15 @@ describe("achats et ventes", () => {
     expect(buy.exchangeRate).toBeCloseTo(0.78081, 6)
   })
 
-  test("le total inclut la commission, pas seulement quantité × prix", () => {
+  test("le prix moyen inclut la commission, comme le prix de revient IBKR", () => {
     const buy = find("buy", "AMZN")[0]
-    expect(buy.totalAmount).toBeGreaterThan(1 * 253 * 0.78081)
+    // Le relevé exécute à 253 et prélève 1 : le coût réel est 254 par action.
+    // Avec le prix d'exécution nu, le prix moyen affiché restait sous celui
+    // du relevé.
+    expect(buy.price).toBeGreaterThan(253)
+    expect(buy.quantity! * buy.price!).toBeCloseTo(254, 6)
+    // et le total en CHF reste cohérent avec ce prix
+    expect(buy.totalAmount).toBeCloseTo(buy.quantity! * buy.price! * 0.78081, 6)
   })
 
   test("une vente est convertie au taux de SA date, pas du jour de l'achat", () => {
@@ -60,8 +67,25 @@ describe("achats et ventes", () => {
   test("un achat en EUR utilise le taux EUR, pas le taux USD", () => {
     const vwce = find("buy", "VWCE")[0]
     expect(vwce.priceCurrency).toBe("EUR")
+    expect(vwce.price).toBeCloseTo(985.313296 / 6, 6)   // commission incluse
     expect(vwce.exchangeRate).toBeCloseTo(0.92119, 6)
     expect(vwce.totalAmount).toBeCloseTo(985.313296 * 0.92119, 6)
+  })
+
+  test("deux exécutions partielles identiques restent deux opérations", () => {
+    // Régression : un ordre exécuté en plusieurs fois produit des lignes
+    // rigoureusement identiques (même horodatage, quantité et prix). Quand
+    // l'identifiant ne les distinguait pas, la déduplication à l'insertion
+    // n'en gardait qu'une et la position restait ouverte à tort.
+    const twice = CSV.replace(
+      '"U22434973","AMZN","20260430","20260430;083130","SELL","-1","272.94","-1.005817564","272.94","-254","271.934182436","17.934182","USD","STK"',
+      '"U22434973","AMZN","20260430","20260430;083130","SELL","-1","272.94","-1.005817564","272.94","-254","271.934182436","17.934182","USD","STK"\n' +
+      '"U22434973","AMZN","20260430","20260430;083130","SELL","-1","272.94","-1.005817564","272.94","-254","271.934182436","17.934182","USD","STK"'
+    )
+    const r = parseIbkrCsv(twice)
+    const sells = r.operations.filter(o => o.type === "sell" && o.ticker === "AMZN")
+    expect(sells).toHaveLength(2)
+    expect(new Set(sells.map(o => o.sourceId)).size).toBe(2)
   })
 
   test("chaque opération porte un identifiant stable (import idempotent)", () => {
@@ -128,12 +152,19 @@ describe("réconciliation avec les positions déclarées", () => {
     expect(result.positions.find(p => p.ticker === "VWCE")?.quantity).toBe(6)
   })
 
-  test("un écart entre rejeu et position déclarée est signalé", () => {
-    // Le jeu de test ne contient qu'une partie des transactions GOOGL :
-    // l'écart doit remonter au lieu de passer inaperçu.
-    const gaps = reconcilePositions(ops, result.positions)
-    expect(gaps.find(g => g.ticker === "GOOGL")?.declared).toBe(1)
-    expect(gaps.find(g => g.ticker === "GOOGL")?.replayed).toBe(0)
+  test("une position sans transaction est reprise, pas perdue", () => {
+    // GOOGL est détenue mais aucun ordre ne figure dans le fichier : sans
+    // reprise, la ligne disparaîtrait et le total ne correspondrait plus au
+    // courtier. Elle est donc reprise à son prix de revient déclaré…
+    const opening = ops.find(o => o.sourceId.startsWith("ibkr:opening") && o.ticker === "GOOGL")!
+    expect(opening.type).toBe("buy")
+    expect(opening.quantity).toBe(1)
+    expect(opening.price).toBeCloseTo(333.34726, 5)
+    expect(opening.rawAction).toContain("ouverture")
+    // …et l'utilisateur en est averti : ce n'est pas une transaction réelle.
+    expect(result.warnings.some(w => w.includes("GOOGL") && w.includes("sans transaction"))).toBe(true)
+    // Après reprise, plus aucun écart avec le relevé.
+    expect(reconcilePositions(ops, result.positions)).toHaveLength(0)
   })
 
   test("aucun écart quand rejeu et déclaration coïncident", () => {

@@ -37,6 +37,10 @@ export const T212_TICKER_TO_YAHOO: Record<string, string> = {
   VHY:   "VHYL.L",    // T212 alias used in some CSV export versions
   VUSA:  "VUSA.L",    // Vanguard S&P 500 UCITS ETF — GBP, LSE
   VWRL:  "VWRL.L",    // Vanguard FTSE All-World UCITS ETF — GBP, LSE
+  // IBKR cote la ligne Xetra de l'ETF (IE00BK5BQT80, EUR). Sans ce mapping,
+  // Yahoo ne résout pas "VWCE" : l'actif restait valorisé à son coût, donc
+  // affiché en CHF alors qu'il cote en EUR. Vérifié le 2026-08-04 : VWCE.DE ✓
+  VWCE:  "VWCE.DE",   // Vanguard FTSE All-World UCITS ETF Acc — EUR, Xetra
   SWRD:  "SWRD.L",    // SPDR MSCI World UCITS ETF — GBP, LSE
   SPPW:  "SPPW.DE",   // SPDR MSCI ACWI IMI UCITS ETF — EUR, Xetra
   LGGG:  "LGGG.L",    // L&G Global ETF — GBP, LSE
