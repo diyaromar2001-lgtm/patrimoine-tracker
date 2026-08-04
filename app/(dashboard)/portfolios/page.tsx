@@ -711,6 +711,7 @@ export default function PortfoliosPage() {
     addTransaction,
     depositCash,
     getAvailableCash,
+    refresh: refreshAppData,
   } = useAppData()
   // setPortfolios not available in AppData — mutations are reflected automatically
   const setPortfolios = (_: unknown) => {} // noop placeholder
@@ -954,6 +955,10 @@ export default function PortfoliosPage() {
     broker: BrokerId = "trading_212"
   ) {
     const result = await importBrokerCSV(name, file, operations, broker)
+    // La RPC écrit directement en base, hors du state local d'useAppData :
+    // sans ce refresh, le nouveau portefeuille n'apparaissait qu'au
+    // rechargement manuel de la page.
+    await refreshAppData()
     setActiveTab(result.portfolioId)
     return result
   }
