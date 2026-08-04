@@ -314,53 +314,50 @@ export default function DashboardPage() {
             background: `radial-gradient(ellipse 60% 50% at 80% 50%, ${isUp ? "#22c55e" : "#ef4444"}08, transparent)`,
           }} />
 
-          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-            {/* Left: value + P&L */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
+          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+            {/* Gauche : le chiffre domine, les détails passent en dessous */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-secondary)" }}>
                 Patrimoine net total
               </p>
               <div className="flex items-baseline gap-3 flex-wrap">
-                <span className="text-4xl font-bold tabular-nums tracking-tight" style={{ color: "var(--text-primary)" }}>
+                <span className="hero-value text-5xl font-bold tabular-nums tracking-tight leading-none"
+                  style={{ color: "var(--text-primary)" }}>
                   {format(netWorthValue)}
                 </span>
                 <ChangeBadge value={globalPnlPct} size="md" />
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-sm">
-                <span style={{ color: "var(--text-secondary)" }}
-                  title={`Marché ${totalPnl >= 0 ? "+" : ""}${format(totalPnl)} · Dividendes +${format(totalDividends)} · Revenus +${format(totalRevenus)}`}>
-                  <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>P&L total</span>
-                  <span className="font-semibold tabular-nums" style={{ color: isUp ? "var(--gain)" : "var(--loss)" }}>
-                    {globalPnl >= 0 ? "+" : ""}{format(globalPnl)}
-                  </span>
-                </span>
-                <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
-                <span style={{ color: "var(--text-secondary)" }}>
-                  <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>Aujourd'hui</span>
-                  <span className="font-semibold tabular-nums" style={{ color: isToday ? "var(--gain)" : "var(--loss)" }}>
-                    {todayPnl >= 0 ? "+" : ""}{format(todayPnl)}
-                  </span>
-                </span>
-                {periodChange && (
-                  <>
-                    <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
-                    <span style={{ color: "var(--text-secondary)" }}>
-                      <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>Période {period}</span>
-                      <span className="font-semibold tabular-nums" style={{ color: periodChange.abs >= 0 ? "var(--gain)" : "var(--loss)" }}>
-                        {periodChange.abs >= 0 ? "+" : ""}{format(periodChange.abs)} ({periodChange.pct >= 0 ? "+" : ""}{periodChange.pct.toFixed(2)} %)
-                      </span>
-                    </span>
-                  </>
-                )}
-                {totalCashConverted > 0 && (
-                  <>
-                    <span className="h-3 w-px" style={{ backgroundColor: "var(--border)" }} />
-                    <span style={{ color: "var(--text-secondary)" }}>
-                      <span className="text-xs mr-1" style={{ color: "var(--text-tertiary)" }}>Liquidités</span>
-                      <span className="font-semibold tabular-nums" style={{ color: "#0ea5e9" }}>{format(totalCashConverted)}</span>
-                    </span>
-                  </>
-                )}
+
+              {/* Détails en colonnes régulières plutôt qu'une ligne dense */}
+              <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2 pt-1">
+                {[
+                  {
+                    label: "P&L total",
+                    value: `${globalPnl >= 0 ? "+" : ""}${format(globalPnl)}`,
+                    color: isUp ? "var(--gain)" : "var(--loss)",
+                    title: `Marché ${totalPnl >= 0 ? "+" : ""}${format(totalPnl)} · Dividendes +${format(totalDividends)} · Revenus +${format(totalRevenus)}`,
+                  },
+                  {
+                    label: "Aujourd'hui",
+                    value: `${todayPnl >= 0 ? "+" : ""}${format(todayPnl)}`,
+                    color: isToday ? "var(--gain)" : "var(--loss)",
+                  },
+                  ...(periodChange ? [{
+                    label: `Période ${period}`,
+                    value: `${periodChange.abs >= 0 ? "+" : ""}${format(periodChange.abs)} (${periodChange.pct >= 0 ? "+" : ""}${periodChange.pct.toFixed(2)} %)`,
+                    color: periodChange.abs >= 0 ? "var(--gain)" : "var(--loss)",
+                  }] : []),
+                  ...(totalCashConverted > 0 ? [{
+                    label: "Liquidités",
+                    value: format(totalCashConverted),
+                    color: "var(--text-primary)",
+                  }] : []),
+                ].map(s => (
+                  <div key={s.label} title={s.title}>
+                    <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>{s.label}</p>
+                    <p className="text-sm font-semibold tabular-nums mt-0.5" style={{ color: s.color }}>{s.value}</p>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -443,6 +440,18 @@ export default function DashboardPage() {
             </motion.div>
           ))}
         </div>
+
+        {/* Graphiques masqués : afficher une barre de rappel plutôt que rien —
+            sinon la section disparaît sans explication et l'utilisateur croit
+            à un bug (l'état est mémorisé d'une session à l'autre). */}
+        {!showCharts && (
+          <button onClick={toggleCharts}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border py-3.5 text-sm font-medium transition-colors hover:bg-[var(--bg-muted)]"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", borderStyle: "dashed", color: "var(--text-secondary)" }}>
+            <Eye className="h-4 w-4" />
+            Graphiques masqués — afficher
+          </button>
+        )}
 
         {/* ══ CHART + ALLOCATION ══════════════════════════════════════════════ */}
         {showCharts && (
