@@ -11,6 +11,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
 import { ASSET_CLASS_COLORS, ASSET_CLASS_LABELS } from "@/lib/types"
 import type { AppCurrency } from "@/lib/utils"
+import { chfAmountOrFallback } from "@/lib/finance"
 import {
   Plus, Search, X, Check, ArrowUpRight, ArrowDownLeft,
   Gift, ArrowLeftRight, Pencil, Zap, Wallet,
@@ -53,11 +54,11 @@ export default function TransactionsPage() {
   const toUser    = (chf: number) => chf * userRate
 
   const totalBuy  = transactions.filter(t => t.type === "buy")
-    .reduce((s, t) => s + toUser(t.netAmountChf ?? (t.quantity * t.price * ((fxRates as Record<string,number>)[t.currency] ?? 1) / ((fxRates as Record<string,number>)["CHF"] ?? 1))), 0)
+    .reduce((s, t) => s + toUser(chfAmountOrFallback(t.netAmountChf, t.quantity * t.price * ((fxRates as Record<string,number>)[t.currency] ?? 1) / ((fxRates as Record<string,number>)["CHF"] ?? 1))), 0)
   const totalSell = transactions.filter(t => t.type === "sell")
-    .reduce((s, t) => s + toUser(t.netAmountChf ?? (t.quantity * t.price * ((fxRates as Record<string,number>)[t.currency] ?? 1) / ((fxRates as Record<string,number>)["CHF"] ?? 1))), 0)
+    .reduce((s, t) => s + toUser(chfAmountOrFallback(t.netAmountChf, t.quantity * t.price * ((fxRates as Record<string,number>)[t.currency] ?? 1) / ((fxRates as Record<string,number>)["CHF"] ?? 1))), 0)
   const totalDiv  = transactions.filter(t => t.type === "dividend")
-    .reduce((s, t) => s + toUser(t.netAmountChf ?? convert(t.quantity * t.price, t.currency as AppCurrency)), 0)
+    .reduce((s, t) => s + toUser(chfAmountOrFallback(t.netAmountChf, convert(t.quantity * t.price, t.currency as AppCurrency))), 0)
   const totalFees = transactions
     .reduce((s, t) => s + toUser(t.feesChf ?? convert(t.fees, t.currency as AppCurrency)), 0)
 
@@ -317,8 +318,8 @@ export default function TransactionsPage() {
                         </p>
                         {(() => {
                           const net = tx.type === "buy"
-                            ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price + tx.fees))
-                            : toUser(tx.netAmountChf ?? (tx.quantity * tx.price - tx.fees))
+                            ? toUser(chfAmountOrFallback(tx.netAmountChf, tx.quantity * tx.price + tx.fees))
+                            : toUser(chfAmountOrFallback(tx.netAmountChf, tx.quantity * tx.price - tx.fees))
                           if (!net) return null
                           return (
                             <p className="text-[10px] tabular-nums mt-0.5"
@@ -331,7 +332,7 @@ export default function TransactionsPage() {
                     ) : tx.type === "dividend" ? (
                       <p className="text-xs font-semibold tabular-nums" style={{ color: "var(--gain)" }}
                         title={tx.feesChf ? `Brut ${format(toUser((tx.netAmountChf ?? 0) + tx.feesChf))} · retenue −${format(toUser(tx.feesChf))}` : undefined}>
-                        +{format(toUser(tx.netAmountChf ?? convert(tx.quantity * tx.price, tx.currency as AppCurrency)))}
+                        +{format(toUser(chfAmountOrFallback(tx.netAmountChf, convert(tx.quantity * tx.price, tx.currency as AppCurrency))))}
                         <span className="block text-[10px] font-normal mt-0.5" style={{ color: "var(--text-tertiary)" }}>net · {tx.currency}</span>
                       </p>
                     ) : (
@@ -382,9 +383,9 @@ export default function TransactionsPage() {
           if (!tx) return null
           const ur = (fxRates as Record<string,number>)[currency] ?? 1
           const net = tx.type === "buy"
-            ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price + tx.fees))
+            ? toUser(chfAmountOrFallback(tx.netAmountChf, tx.quantity * tx.price + tx.fees))
             : tx.type === "sell"
-            ? toUser(tx.netAmountChf ?? (tx.quantity * tx.price - tx.fees))
+            ? toUser(chfAmountOrFallback(tx.netAmountChf, tx.quantity * tx.price - tx.fees))
             : 0
           return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}

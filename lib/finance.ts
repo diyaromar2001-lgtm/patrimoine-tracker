@@ -472,6 +472,24 @@ export function computeAllocation(
 }
 
 /**
+ * Montant CHF stocké, avec repli quand la valeur est absente OU nulle.
+ *
+ * L'import CSV a écrit `net_amount_chf = 0` sur une partie des lignes. Comme
+ * un achat/vente de quantité et prix non nuls ne peut PAS valoir 0 CHF, on
+ * traite 0 comme « manquant » et on recalcule depuis le montant natif.
+ * Sans ça, `stored ?? fallback` ne se déclenche jamais (?? ignore 0) et
+ * l'écran affiche « 0.00 CHF » pour de vraies transactions.
+ *
+ * ⚠️ Ne PAS utiliser pour les frais : 0 frais est une valeur légitime.
+ */
+export function chfAmountOrFallback(
+  stored: number | null | undefined,
+  fallback: number
+): number {
+  return stored != null && stored !== 0 ? stored : fallback
+}
+
+/**
  * Indice de Herfindahl-Hirschman (HHI) de concentration du portefeuille.
  * HHI = Σ (poids_i)² avec poids en fraction (0-1). Retourne 0-10000 (échelle
  * classique ×10000). Repères : <1500 diversifié · 1500-2500 modéré · >2500 concentré.

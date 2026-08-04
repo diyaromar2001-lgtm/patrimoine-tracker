@@ -249,3 +249,29 @@ describe("herfindahlIndex", () => {
     expect(herfindahlIndex([0, 0])).toBe(0)
   })
 })
+
+// ───────────────────────────────────────────────────────────────────────────
+// chfAmountOrFallback — 0 stocké = valeur manquante (import CSV)
+// ───────────────────────────────────────────────────────────────────────────
+
+import { chfAmountOrFallback } from "./finance"
+
+describe("chfAmountOrFallback", () => {
+  test("valeur stockée valide → utilisée telle quelle", () => {
+    expect(chfAmountOrFallback(50.8, 999)).toBe(50.8)
+  })
+
+  test("0 stocké (import CSV) → repli, PAS 0", () => {
+    // Régression : `stored ?? fallback` renvoyait 0 → « 0.00 CHF » à l'écran
+    expect(chfAmountOrFallback(0, 50.8)).toBe(50.8)
+  })
+
+  test("null / undefined → repli", () => {
+    expect(chfAmountOrFallback(null, 50.8)).toBe(50.8)
+    expect(chfAmountOrFallback(undefined, 50.8)).toBe(50.8)
+  })
+
+  test("montant négatif stocké reste valide (vente, retrait)", () => {
+    expect(chfAmountOrFallback(-120.5, 999)).toBe(-120.5)
+  })
+})

@@ -13,7 +13,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import { calculatePortfolioPnL, convertPnL } from "@/lib/pnl"
 import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
-import { maxDrawdown, sumDividendsDisplay, computeAllocation } from "@/lib/finance"
+import { maxDrawdown, sumDividendsDisplay, chfAmountOrFallback } from "@/lib/finance"
 import { aggregateCashflow } from "@/lib/cashflow"
 import {
   TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
@@ -134,17 +134,26 @@ export default function DashboardPage() {
     return transactions.reduce((s, t) => s + ((t.feesChf ?? 0) * ur), 0)
   }, [transactions, fxRates, currency])
 
-  // Allocation par classe — cash compté une seule fois, unités homogènes
-  const allocationEntries = useMemo(() =>
-    computeAllocation(
-      allAssets,
-      (ticker) => livePrices[ticker]?.price,
-      totalCashConverted,
-      currency,
-      fxRates as Record<string, number>
-    ),
-    [allAssets, livePrices, totalCashConverted, currency, fxRates]
-  )
+  // Allocation par classe — SOURCE UNIQUE : les valeurs déjà calculées par
+  // calculatePortfolioPnL (prix natif → CHF). Recalculer ici avec les prix
+  // déjà convertis par l'API donnait un total différent du patrimoine net
+  // (deux chemins de conversion FX légèrement divergents).
+  const allocationEntries = useMemo(() => {
+    const userRate = (fxRates as Record<string, number>)[currency] ?? 1
+    const valueByTicker = new Map(pnlResult.perAsset.map(a => [a.ticker, a.valueCHF * userRate]))
+    const byClass: Record<string, number> = {}
+    for (const a of allAssets) {
+      if (a.assetClass === "cash" || a.quantity <= 0) continue
+      const v = valueByTicker.get(a.ticker)
+      if (v == null) continue
+      byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + v
+    }
+    if (totalCashConverted > 0) byClass.cash = (byClass.cash ?? 0) + totalCashConverted
+    const total = Object.values(byClass).reduce((s, v) => s + v, 0)
+    return Object.entries(byClass)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cls, val]) => ({ cls, val, pct: total > 0 ? (val / total) * 100 : 0 }))
+  }, [allAssets, pnlResult, totalCashConverted, currency, fxRates])
 
   // Top 5 positions (par valeur)
   const top5 = useMemo(() =>
@@ -398,7 +407,12 @@ export default function DashboardPage() {
             {
               label: "Capital investi",
               value: format(totalCost),
-              sub:   `${allAssets.filter(a => a.assetClass !== "cash").length} position${allAssets.length !== 1 ? "s" : ""}`,
+              // Positions OUVERTES uniquement (qty > 0) — les lignes soldées
+              // restent dans l'historique mais ne sont plus des positions.
+              sub:   (() => {
+                const open = allAssets.filter(a => a.assetClass !== "cash" && a.quantity > 0).length
+                return `${open} position${open > 1 ? "s" : ""}`
+              })(),
               icon:  BarChart2,
               color: "#6366f1",
             },
@@ -698,7 +712,8 @@ export default function DashboardPage() {
                 const meta  = TYPE[tx.type] ?? { label: tx.type, color: "#64748b", sign: "" }
                 const fxR   = (fxRates as Record<string,number>)[tx.currency ?? "CHF"] ?? 1
                 const userRate = (fxRates as Record<string,number>)[currency] ?? 1
-                const amtUser  = (tx.netAmountChf ?? tx.quantity * tx.price / fxR) * userRate
+                // 0 stocké par l'import CSV = valeur manquante → repli natif
+                const amtUser  = chfAmountOrFallback(tx.netAmountChf, tx.quantity * tx.price / fxR) * userRate
                 return (
                   <div key={tx.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-zinc-800/30 transition-colors"
                     style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
