@@ -40,7 +40,8 @@ export async function parseTrading212(content: string): Promise<BrokerParseResul
   return {
     broker: "trading_212",
     operations: ops,
-    positions: [],   // l'export T212 ne déclare pas de positions
+    positions: [],      // l'export T212 ne déclare ni positions…
+    cashBalances: {},   // …ni soldes de trésorerie
     stats: {
       linesRead:  stats.csvLinesRead ?? ops.length,
       operations: ops.length,

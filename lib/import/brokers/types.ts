@@ -90,6 +90,12 @@ export interface BrokerParseResult {
   operations: BrokerOperation[]
   /** Positions déclarées par le courtier, si l'export les contient. */
   positions:  BrokerPosition[]
+  /**
+   * Soldes de trésorerie déclarés par devise, si l'export les contient.
+   * Vide quand le courtier ne les fournit pas — dans ce cas on n'invente
+   * surtout pas un solde à partir d'un rejeu incomplet.
+   */
+  cashBalances: Record<string, number>
   stats: {
     linesRead:     number
     operations:    number

@@ -177,6 +177,20 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
     }
   }
 
+  // ── Soldes de trésorerie déclarés ────────────────────────────────────────
+  // Le relevé porte une section dédiée (FXCurrency / Quantity) : c'est le
+  // solde réel du compte, devise par devise. On la lit plutôt que de rejouer
+  // les flux — un rejeu dépend de l'exhaustivité de l'export, pas ce solde.
+  const cashBalances: Record<string, number> = {}
+  for (const s of sections) {
+    if (!has(s, "FXCurrency", "Quantity", "ClosePrice")) continue
+    for (const r of s.rows) {
+      const cur = r.FXCurrency
+      if (!cur) continue
+      cashBalances[cur] = num(r.Quantity)
+    }
+  }
+
   const operations: BrokerOperation[] = []
 
   // ── Transactions ─────────────────────────────────────────────────────────
@@ -207,14 +221,23 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
 
       // Les conversions de devises apparaissent comme des « trades » sur une
       // paire (USD.CHF) avec AssetClass CASH.
+      //
+      // Attention : sur ces lignes NetCash vaut 0 — une conversion ne fait pas
+      // entrer ni sortir d'argent du compte, elle déplace entre deux poches.
+      // Les deux jambes sont Quantity (devise de base, signée) et Proceeds
+      // (devise de contrepartie, signe opposé). En lisant NetCash, les 43
+      // conversions étaient enregistrées à zéro.
       if (r.AssetClass === "CASH" || /^[A-Z]{3}\.[A-Z]{3}$/.test(symbol)) {
-        const [from, to] = symbol.split(".")
+        const [base, quote] = symbol.split(".")
+        const baseQty  = num(r.Quantity)      // + on achète la base, − on la vend
+        const quoteAmt = Math.abs(num(r.Proceeds))
+        const gotBase  = baseQty >= 0
         operations.push({
-          type: "fx_conversion", date, sourceId, rawAction: `FX ${symbol}`,
-          fromCurrency: isBuy ? to   : from,
-          toCurrency:   isBuy ? from : to,
-          fromAmount:   isBuy ? netCash : qty,
-          toAmount:     isBuy ? qty     : netCash,
+          type: "fx_conversion", date, sourceId, rawAction: `Conversion ${symbol}`,
+          fromCurrency: gotBase ? quote    : base,
+          fromAmount:   gotBase ? quoteAmt : Math.abs(baseQty),
+          toCurrency:   gotBase ? base            : quote,
+          toAmount:     gotBase ? Math.abs(baseQty) : quoteAmt,
           fxFee: Math.abs(num(r.IBCommission)),
         })
         continue
@@ -370,6 +393,7 @@ export function parseIbkrCsv(content: string): BrokerParseResult {
     broker: "ibkr",
     operations,
     positions,
+    cashBalances,
     stats: {
       linesRead:  sections.reduce((n, s) => n + s.rows.length, 0),
       operations: operations.length,

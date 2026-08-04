@@ -14,8 +14,8 @@ const find = (type: string, ticker?: string) =>
 describe("segmentation du relevé", () => {
   test("chaque tableau concaténé devient une section", () => {
     const sections = splitSections(CSV)
-    // P&L réalisé, positions, trades, trésorerie, titres, taux
-    expect(sections.length).toBe(6)
+    // P&L réalisé, positions, trades, soldes, trésorerie, titres, taux
+    expect(sections.length).toBe(7)
     expect(sections.every(s => s.rows.length > 0)).toBe(true)
   })
 
@@ -104,6 +104,25 @@ describe("conversions de devises", () => {
     expect(fx[0].toAmount).toBeCloseTo(419.53, 6)
     // et surtout : aucune position "USD.CHF" créée
     expect(ops.some(o => o.ticker === "USD.CHF")).toBe(false)
+  })
+
+  test("les deux jambes portent un montant — NetCash vaut 0 sur ces lignes", () => {
+    // Régression : une conversion ne fait ni entrer ni sortir d'argent du
+    // compte, donc IBKR y met NetCash = 0. Les montants réels sont Quantity
+    // (devise de base) et Proceeds (contrepartie). En lisant NetCash, toutes
+    // les conversions étaient enregistrées à zéro.
+    const fx = find("fx_conversion")[0]
+    expect(fx.fromAmount).toBeGreaterThan(0)
+    expect(fx.toAmount).toBeGreaterThan(0)
+    expect(fx.fromAmount).toBeCloseTo(327.57, 2)   // colonne Proceeds
+  })
+})
+
+describe("soldes de trésorerie", () => {
+  test("les soldes déclarés par le courtier sont repris tels quels", () => {
+    // Sans eux, un compte IBKR arrivait avec 0 de liquidités alors qu'elles
+    // représentent un tiers du compte réel.
+    expect(result.cashBalances).toEqual({ CHF: 203.611889858, USD: 1389.587462 })
   })
 })
 

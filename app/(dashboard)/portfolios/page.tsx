@@ -21,6 +21,7 @@ import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import Link from "next/link"
 import type { BrokerId } from "@/lib/import/brokers"
+import * as Q from "@/lib/supabase/queries"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -955,6 +956,21 @@ export default function PortfoliosPage() {
     broker: BrokerId = "trading_212"
   ) {
     const result = await importBrokerCSV(name, file, operations, broker)
+
+    // La RPC crée les mouvements de trésorerie mais n'écrit pas le SOLDE du
+    // portefeuille : sans cette étape, un compte IBKR arrivait avec 0 de
+    // liquidités alors que le relevé en déclare (1 328 CHF dans le cas réel,
+    // soit un tiers du compte). Le solde déclaré par le courtier fait foi —
+    // le rejeu des flux dépendrait de l'exhaustivité de l'export.
+    const declared = analysis?.cashBalances as Record<string, number> | undefined
+    if (declared && Object.keys(declared).length > 0) {
+      await Q.updateCashBalance(result.portfolioId, {
+        CHF: declared.CHF ?? 0,
+        USD: declared.USD ?? 0,
+        EUR: declared.EUR ?? 0,
+      })
+    }
+
     // La RPC écrit directement en base, hors du state local d'useAppData :
     // sans ce refresh, le nouveau portefeuille n'apparaissait qu'au
     // rechargement manuel de la page.
