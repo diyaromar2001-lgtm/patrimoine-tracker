@@ -12,6 +12,7 @@ import type { DividendEvent } from "@/lib/types"
 import type { DividendInfo } from "@/app/api/dividends/route"
 import { estimatedAnnualDividend } from "@/lib/finance"
 import { summarizeDividends } from "@/lib/dividends"
+import { PageHero } from "@/components/ui/page-hero"
 import {
   CalendarDays, TrendingUp, Clock, CheckCircle2,
   Plus, X, Check, ChevronLeft, ChevronRight, Loader2, RefreshCw,
@@ -246,28 +247,36 @@ export default function DividendsPage() {
         </div>
 
         {tab === "overview" && (<>
-        {/* KPIs */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
-          {[
-            // RÉEL — transactions dividende encaissées (net après retenue à la source)
-            { label: "Reçus cette année (net)", value: format(real.receivedYtdNet), sub: real.withholdingYtd > 0 ? `brut ${format(real.receivedYtdGross)} · impôt −${format(real.withholdingYtd)}` : `${real.history.filter(d => d.date >= `${new Date().getFullYear()}-01-01`).length} versement(s) confirmé(s)`, icon: CheckCircle2, color: "#22c55e" },
-            { label: "Moyenne mensuelle (12 m réels)", value: format(real.monthlyAvg12m), sub: `${format(real.received12mNet)} sur 12 mois`, icon: CalendarDays, color: "#3b82f6" },
-            // ESTIMÉ — taux Yahoo × positions actuelles
-            { label: "Revenu annuel estimé", value: format(totalAnnualChf, "CHF"), sub: totalPortValue > 0 ? ((totalAnnualChf / totalPortValue) * 100).toFixed(2) + " % rendement courant · estimation" : "estimation", icon: TrendingUp, color: "#a78bfa" },
-            { label: "Prochain versement (estimé)", value: nextDiv ? "+" + format(nextDiv.amount) : "—", sub: daysToNext !== null ? "dans " + daysToNext + " j" : "", icon: Clock, color: "#f59e0b" },
-          ].map(({ label, value, sub, icon: Icon, color }) => (
-            <div key={label} className="rounded-xl border p-4" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color + "18" }}>
-                  <Icon className="h-3.5 w-3.5" style={{ color }} />
-                </div>
-                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{label}</p>
-              </div>
-              <p className="text-xl font-bold tabular-nums" style={{ color }}>{value}</p>
-              {sub && <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>{sub}</p>}
-            </div>
-          ))}
-        </div>
+        {/* Héro : le revenu RÉEL encaissé domine ; l'estimé reste secondaire */}
+        <PageHero
+          label="Dividendes reçus cette année (net)"
+          value={format(real.receivedYtdNet)}
+          glow="#22c55e"
+          stats={[
+            ...(real.withholdingYtd > 0 ? [{
+              label: "Brut / retenue",
+              value: `${format(real.receivedYtdGross)} · −${format(real.withholdingYtd)}`,
+            }] : []),
+            {
+              label: "Moyenne mensuelle (12 m réels)",
+              value: format(real.monthlyAvg12m),
+              title: `${format(real.received12mNet)} sur 12 mois glissants`,
+            },
+            {
+              label: "Revenu annuel estimé",
+              value: format(totalAnnualChf, "CHF"),
+              title: totalPortValue > 0
+                ? `${((totalAnnualChf / totalPortValue) * 100).toFixed(2)} % de rendement courant — estimation (taux Yahoo × positions)`
+                : "Estimation (taux Yahoo × positions actuelles)",
+            },
+            {
+              label: "Prochain versement (estimé)",
+              value: nextDiv ? `+${format(nextDiv.amount)}` : "—",
+              color: nextDiv ? "#f59e0b" : undefined,
+              title: daysToNext !== null ? `dans ${daysToNext} j` : undefined,
+            },
+          ]}
+        />
 
         {/* Qualité des estimations — diagnostic Yahoo replié (contenu secondaire) */}
         <details className="rounded-xl border overflow-hidden"

@@ -1087,15 +1087,16 @@ export default function PortfoliosPage() {
           {/* ═══════════════ GLOBAL VIEW ═══════════════ */}
           {activeTab === "global" && (
             <>
-              {/* Hero card */}
-              <div className="relative overflow-hidden rounded-2xl border p-6"
-                style={{ background: "linear-gradient(135deg,#0a1628 0%,#0d1117 50%,#0a1d0a 100%)", borderColor: "var(--border)" }}>
-                <div className="pointer-events-none absolute -top-16 -left-12 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ backgroundColor: "#3b82f6" }} />
-                <div className="pointer-events-none absolute -bottom-8 right-12 h-32 w-32 rounded-full opacity-15 blur-2xl" style={{ backgroundColor: "#22c55e" }} />
+              {/* Hero card — même langage que le dashboard : fond sobre,
+                  halo discret, plus de dégradé bleu/vert dominant */}
+              <div className="relative overflow-hidden rounded-2xl border px-6 pt-7 pb-6"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                <div className="pointer-events-none absolute inset-0"
+                  style={{ background: "radial-gradient(ellipse 60% 50% at 80% 50%, #6366f108, transparent)" }} />
 
                 <div className="relative grid gap-6 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs font-medium uppercase tracking-widest text-zinc-600">Patrimoine net total</p>
+                    <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-secondary)" }}>Patrimoine net total</p>
                     <div className="mt-2 flex items-baseline gap-3 flex-wrap">
                       <span className="text-3xl sm:text-4xl font-bold tabular-nums tracking-tight text-white">
                         {format(totalValue)}
@@ -1707,10 +1708,10 @@ export default function PortfoliosPage() {
 
                 return (
                   <details className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-                    <summary className="flex cursor-pointer items-center justify-between px-5 py-3 text-xs font-semibold uppercase tracking-wide select-none hover:bg-zinc-800/40 transition-colors"
-                      style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-elevated)" }}>
-                      <span>🔍 Détail du calcul</span>
-                      <span style={{ color: "var(--text-tertiary)" }}>cliquer pour afficher / masquer</span>
+                    <summary className="flex cursor-pointer items-center justify-between px-5 py-3.5 select-none hover:bg-zinc-800/40 transition-colors list-none"
+                      style={{ backgroundColor: "var(--bg-elevated)" }}>
+                      <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Comprendre ces chiffres</span>
+                      <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>afficher le détail des formules</span>
                     </summary>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-zinc-800" style={{ backgroundColor: "var(--border)" }}>
                       {[

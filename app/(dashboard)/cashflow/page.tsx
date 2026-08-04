@@ -7,7 +7,9 @@ import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import type { AppCurrency } from "@/lib/utils"
 import { PeriodSelector } from "@/components/ui/period-selector"
-import { MetricCard } from "@/components/ui/metric-card"
+import { PageHero } from "@/components/ui/page-hero"
+import { SectionCard } from "@/components/ui/section-card"
+import { EmptyState } from "@/components/ui/empty-state"
 import { SankeyCashflow, type SankeyNode } from "@/components/charts/sankey-cashflow"
 import {
   aggregateCashflow, movementsForMonth,
@@ -261,97 +263,92 @@ export default function CashflowPage() {
     ? "Formule : (entrées − sorties) ÷ entrées, achats/ventes inclus (toggle actif). Les conversions internes entre devises sont toujours exclues."
     : "Formule : (entrées − sorties) ÷ entrées, sur les flux externes uniquement (dépôts, retraits, dividendes, intérêts, frais). Les achats/ventes de titres et les conversions internes sont exclus."
 
-  const kpis = [
-    { label: "Entrées",        value: format(summary.totalIn),  icon: <ArrowDownLeft className="h-4 w-4" />, color: "var(--gain)", title: undefined as string | undefined },
-    { label: "Sorties",        value: format(summary.totalOut), icon: <ArrowUpRight className="h-4 w-4" />,  color: "var(--loss)", title: undefined },
-    { label: "Net",            value: `${summary.net >= 0 ? "+" : ""}${format(summary.net)}`, icon: <ArrowDownUp className="h-4 w-4" />, color: summary.net >= 0 ? "var(--gain)" : "var(--loss)", title: undefined },
-    { label: "Taux d'épargne", value: `${summary.savingsRatePct.toFixed(1)} %`, icon: <PiggyBank className="h-4 w-4" />, color: "var(--accent)", title: savingsFormula },
-  ]
+  const periodLabel = period === "ytd" ? "cette année" : period === "12m" ? "sur 12 mois" : "sur tout l'historique"
 
   return (
     <div className="flex flex-col">
       <Topbar title="Cashflow" subtitle="Flux de trésorerie mensuels" />
-      <div className="flex-1 space-y-5 p-4 sm:p-6">
+      <div className="flex-1 space-y-6 p-4 sm:p-6 max-w-7xl mx-auto w-full">
 
-        {/* ─── Filtres ─── */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <PeriodSelector
-            size="md"
-            options={[
-              { value: "ytd", label: "YTD" },
-              { value: "12m", label: "12 mois" },
-              { value: "all", label: "Tout" },
-            ]}
-            value={period}
-            onChange={(p) => { setPeriod(p); setSelectedMonth(null) }}
-          />
+        {/* ─── Héro : le flux net domine, le détail suit ─── */}
+        <PageHero
+          label={`Flux net ${periodLabel}`}
+          value={`${summary.net >= 0 ? "+" : ""}${format(summary.net)}`}
+          glow={summary.net >= 0 ? "#22c55e" : "#ef4444"}
+          stats={[
+            { label: "Entrées", value: format(summary.totalIn), color: "var(--gain)" },
+            { label: "Sorties", value: format(summary.totalOut), color: "var(--loss)" },
+            {
+              label: "Taux d'épargne",
+              value: `${summary.savingsRatePct.toFixed(1)} %`,
+              title: savingsFormula,
+            },
+            { label: "Mois couverts", value: String(summary.months.length) },
+          ]}
+          actions={
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2.5"
+              style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
+              <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                Inclure achats / ventes
+              </span>
+              <button
+                role="switch"
+                aria-checked={includeInvestments}
+                onClick={() => setIncludeInvestments(v => !v)}
+                className="relative h-5 w-9 rounded-full transition-colors"
+                style={{ backgroundColor: includeInvestments ? "var(--accent)" : "var(--border)" }}
+              >
+                <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all"
+                  style={{ left: includeInvestments ? "18px" : "2px" }} />
+              </button>
+            </label>
+          }
+        />
 
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2"
-            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-              Inclure achats / ventes
-            </span>
-            <button
-              role="switch"
-              aria-checked={includeInvestments}
-              onClick={() => setIncludeInvestments(v => !v)}
-              className="relative h-5 w-9 rounded-full transition-colors"
-              style={{ backgroundColor: includeInvestments ? "var(--accent)" : "var(--border)" }}
-            >
-              <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all"
-                style={{ left: includeInvestments ? "18px" : "2px" }} />
-            </button>
-          </label>
-        </div>
-
-        {/* ─── KPIs ─── */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {kpis.map(k => (
-            <div key={k.label} title={k.title}>
-              <MetricCard label={k.label} value={k.value}
-                icon={k.icon} iconColor={k.color} valueColor={k.color}
-                sub={k.title ? "survolez pour la formule" : undefined} />
-            </div>
-          ))}
-        </div>
+        {/* ─── Période ─── */}
+        <PeriodSelector
+          size="md"
+          options={[
+            { value: "ytd", label: "YTD" },
+            { value: "12m", label: "12 mois" },
+            { value: "all", label: "Tout" },
+          ]}
+          value={period}
+          onChange={(p) => { setPeriod(p); setSelectedMonth(null) }}
+        />
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Chargement…</p>
           </div>
         ) : summary.months.length === 0 ? (
-          <div className="rounded-2xl border p-10 text-center"
-            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-            <ArrowDownUp className="mx-auto mb-3 h-8 w-8" style={{ color: "var(--text-tertiary)" }} />
-            <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Aucun flux sur la période</p>
-            <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-              Les dépôts, retraits, dividendes et intérêts apparaissent ici automatiquement.
-            </p>
-          </div>
+          <SectionCard padded={false}>
+            <EmptyState
+              icon={<ArrowDownUp className="h-5 w-5" />}
+              title="Aucun flux sur la période"
+              description="Les dépôts, retraits, dividendes et intérêts apparaissent ici automatiquement."
+            />
+          </SectionCard>
         ) : (
           <>
             {/* ─── Graphique mensuel ─── */}
-            <div className="rounded-2xl border p-5"
-              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Entrées / sorties par mois</h3>
-                  <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                    Cliquez sur un mois pour voir le détail · montants en {currency}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+            <SectionCard
+              title="Entrées / sorties par mois"
+              description={`Cliquez sur un mois pour voir le détail · montants en ${currency}`}
+              action={
+                <div className="flex items-center gap-3 text-xs" style={{ color: "var(--text-secondary)" }}>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--gain)" }} /> Entrées</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--loss)" }} /> Sorties</span>
                 </div>
-              </div>
+              }
+            >
               <CashflowBarChart
                 months={summary.months}
                 selected={selectedMonth}
                 onSelect={setSelectedMonth}
                 format={format}
               />
-            </div>
+            </SectionCard>
 
             {/* ─── Origine et destination des flux (Sankey, secondaire) ─── */}
             {(sankey.sources.length > 0 || sankey.uses.length > 0) && (
@@ -432,13 +429,12 @@ export default function CashflowPage() {
             </AnimatePresence>
 
             {/* ─── Répartition par catégorie ─── */}
-            <div className="rounded-2xl border p-5"
-              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <h3 className="mb-4 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                Répartition par catégorie
-              </h3>
+            <SectionCard
+              title="Répartition par catégorie"
+              description="Poids de chaque type de flux sur la période"
+            >
               <CategoryDonut data={donutData} format={format} />
-            </div>
+            </SectionCard>
           </>
         )}
       </div>

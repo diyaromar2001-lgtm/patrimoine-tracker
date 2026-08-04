@@ -7,7 +7,8 @@ import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { EmptyState } from "@/components/ui/empty-state"
-import { MetricCard } from "@/components/ui/metric-card"
+import { PageHero } from "@/components/ui/page-hero"
+import { SectionCard } from "@/components/ui/section-card"
 import { ChangeBadge } from "@/components/ui/badge"
 import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
@@ -151,7 +152,7 @@ export default function AnalysesPage() {
       <div className="flex-1 space-y-6 p-4 sm:p-6 max-w-7xl mx-auto w-full">
 
         {!hasData ? (
-          <div className="rounded-2xl border" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+          <SectionCard padded={false}>
             <EmptyState
               icon={<PieChart className="h-5 w-5" />}
               title="Aucune position à analyser"
@@ -162,60 +163,87 @@ export default function AnalysesPage() {
                 </Link>
               }
             />
-          </div>
+          </SectionCard>
         ) : (
           <>
-            {/* ── KPIs ── */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <MetricCard label="Valeur des positions" value={format(totalValue)}
-                icon={<BarChart2 className="h-4 w-4" />} />
-              <MetricCard label="Positions" value={positions.length}
-                sub={`${byClass.length} classe${byClass.length > 1 ? "s" : ""} d'actifs`}
-                icon={<Layers className="h-4 w-4" />} />
-              <MetricCard label="Plus grosse position"
-                value={`${positions[0].ticker} · ${(positions[0].displayValue / totalValue * 100).toFixed(1)} %`}
-                icon={<ShieldAlert className="h-4 w-4" />}
-                iconColor={positions[0].displayValue / totalValue > 0.25 ? "#f59e0b" : "var(--accent)"} />
-              <MetricCard label="Frais cumulés" value={`−${format(totalFees)}`}
-                sub="tous frais de transaction historiques"
-                icon={<Receipt className="h-4 w-4" />} iconColor="#f59e0b" />
-            </div>
+            {/* ── Héro : la valeur analysée domine ── */}
+            <PageHero
+              label="Valeur des positions analysées"
+              value={format(totalValue)}
+              stats={[
+                {
+                  label: "Positions",
+                  value: `${positions.length} · ${byClass.length} classe${byClass.length > 1 ? "s" : ""}`,
+                },
+                {
+                  label: "Plus grosse position",
+                  value: `${positions[0].ticker} · ${(positions[0].displayValue / totalValue * 100).toFixed(1)} %`,
+                  color: positions[0].displayValue / totalValue > 0.25 ? "#f59e0b" : undefined,
+                },
+                {
+                  label: "Concentration (HHI)",
+                  value: `${Math.round(hhi)} · ${hhiLabel}`,
+                  color: hhi > 2500 ? "var(--loss)" : hhi > 1500 ? "#f59e0b" : "var(--gain)",
+                  title: "Indice de Herfindahl-Hirschman : < 1500 diversifié · 1500-2500 modéré · > 2500 concentré",
+                },
+                {
+                  label: "Frais cumulés",
+                  value: `−${format(totalFees)}`,
+                  color: "#f59e0b",
+                  title: "Tous frais de transaction historiques",
+                },
+              ]}
+            />
 
             {/* ── Alertes actionnables ── */}
             {alerts.length > 0 && (
-              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "#f59e0b30" }}>
-                <div className="flex items-center gap-2 border-b px-5 py-3.5"
-                  style={{ backgroundColor: "#f59e0b08", borderColor: "#f59e0b20" }}>
-                  <ShieldAlert className="h-4 w-4" style={{ color: "#f59e0b" }} />
-                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Points d'attention</p>
-                  <span className="ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                    style={{ backgroundColor: hhi > 2500 ? "#ef444420" : hhi > 1500 ? "#f59e0b20" : "#22c55e20", color: hhi > 2500 ? "#ef4444" : hhi > 1500 ? "#f59e0b" : "#22c55e" }}>
-                    HHI {Math.round(hhi)} · {hhiLabel}
-                  </span>
-                </div>
-                <div style={{ backgroundColor: "var(--bg-elevated)" }}>
-                  {alerts.map((a, i) => (
-                    <div key={a.probleme} className="px-5 py-3"
-                      style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
-                      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{a.probleme}</p>
-                      <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>{a.pourquoi}</p>
-                      <p className="mt-0.5 text-[11px]" style={{ color: "var(--accent)" }}>→ {a.action}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <SectionCard
+                title="Points d'attention"
+                description="Chaque alerte explique le problème, pourquoi il compte et l'action possible"
+                padded={false}
+                action={<ShieldAlert className="h-4 w-4" style={{ color: "#f59e0b" }} />}
+              >
+                {alerts.map((a, i) => (
+                  <div key={a.probleme} className="px-5 py-4"
+                    style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                    <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+                      {a.probleme}
+                    </p>
+                    <p className="mt-1 pl-3.5 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{a.pourquoi}</p>
+                    <p className="mt-1 pl-3.5 text-xs" style={{ color: "var(--accent)" }}>→ {a.action}</p>
+                  </div>
+                ))}
+              </SectionCard>
             )}
 
             {/* ── Qualité des données ── */}
             {(dataQuality.stalePrices > 0 || dataQuality.unknownSector > 20 || dataQuality.unknownCountry > 20) && (
-              <div className="rounded-2xl border px-5 py-3.5" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>Qualité des données</p>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                  {dataQuality.stalePrices > 0 && <span>• {dataQuality.stalePrices} position(s) valorisée(s) au coût (prix indisponible)</span>}
-                  {dataQuality.unknownSector > 20 && <span>• Secteur non renseigné pour {dataQuality.unknownSector.toFixed(0)} % du portefeuille</span>}
-                  {dataQuality.unknownCountry > 20 && <span>• Pays non renseigné pour {dataQuality.unknownCountry.toFixed(0)} % du portefeuille</span>}
-                </div>
-              </div>
+              <SectionCard
+                title="Qualité des données"
+                description="Ce qui limite la fiabilité des analyses ci-dessous"
+              >
+                <ul className="space-y-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  {dataQuality.stalePrices > 0 && (
+                    <li className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+                      {dataQuality.stalePrices} position(s) valorisée(s) au coût — prix indisponible
+                    </li>
+                  )}
+                  {dataQuality.unknownSector > 20 && (
+                    <li className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "var(--text-tertiary)" }} />
+                      Secteur non renseigné pour {dataQuality.unknownSector.toFixed(0)} % du portefeuille
+                    </li>
+                  )}
+                  {dataQuality.unknownCountry > 20 && (
+                    <li className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "var(--text-tertiary)" }} />
+                      Pays non renseigné pour {dataQuality.unknownCountry.toFixed(0)} % du portefeuille
+                    </li>
+                  )}
+                </ul>
+              </SectionCard>
             )}
 
             {/* ── Expositions ──
@@ -235,14 +263,9 @@ export default function AnalysesPage() {
                 <>
                   <div className="grid gap-6 lg:grid-cols-2">
                     {sections.map(section => (
-                      <div key={section.title} className="rounded-2xl border p-5"
-                        style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                        <div className="mb-4 flex items-center gap-2">
-                          {section.icon}
-                          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{section.title}</h3>
-                        </div>
+                      <SectionCard key={section.title} title={section.title} action={section.icon}>
                         <ExposureBars data={section.data} format={format} />
-                      </div>
+                      </SectionCard>
                     ))}
                   </div>
                   {(sectorEmpty || countryEmpty) && (
@@ -266,12 +289,11 @@ export default function AnalysesPage() {
             })()}
 
             {/* ── Top positions ── */}
-            <div className="rounded-2xl border overflow-hidden"
-              style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-              <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
-                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top positions</p>
-                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Poids dans le portefeuille et performance</p>
-              </div>
+            <SectionCard
+              title="Top positions"
+              description="Poids dans le portefeuille et performance"
+              padded={false}
+            >
               <div>
                 {positions.slice(0, 10).map((p, i) => {
                   const weight = totalValue > 0 ? (p.displayValue / totalValue) * 100 : 0
@@ -307,7 +329,7 @@ export default function AnalysesPage() {
                   )
                 })}
               </div>
-            </div>
+            </SectionCard>
           </>
         )}
       </div>
