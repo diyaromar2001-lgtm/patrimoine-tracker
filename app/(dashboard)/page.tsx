@@ -54,12 +54,17 @@ export default function DashboardPage() {
   const API_PERIOD: Record<Period, string> = {
     "1S": "1W", "1M": "1M", "3M": "3M", "6M": "6M", "1A": "1Y", "Max": "MAX"
   }
+  // Positions OUVERTES uniquement : envoyer les lignes soldées (qty = 0)
+  // n'ajoutait rien à la valeur mais déclenchait des appels Yahoo inutiles
+  // et faisait chuter le taux de couverture affiché (28/37 au lieu de 9/9).
   const portfolioAssets = useMemo<PortfolioAsset[]>(() =>
-    allAssets.filter(a => a.assetClass !== "cash").map(a => ({
-      ticker:         a.ticker,
-      quantity:       a.quantity,
-      nativeCurrency: livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
-    })),
+    allAssets
+      .filter(a => a.assetClass !== "cash" && a.quantity > 0)
+      .map(a => ({
+        ticker:         a.ticker,
+        quantity:       a.quantity,
+        nativeCurrency: livePrices[a.ticker]?.originalCurrency ?? a.currency ?? "USD",
+      })),
     [allAssets, livePrices]
   )
   const { history: portfolioHistory, loading: historyLoading, isReal, coverage: historyCoverage } =

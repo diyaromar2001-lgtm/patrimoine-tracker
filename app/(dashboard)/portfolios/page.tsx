@@ -993,7 +993,7 @@ export default function PortfoliosPage() {
   const activePortfolioHistoryAssets = useMemo<PortfolioAsset[]>(() => {
     if (!activePortfolio) return []
     return activePortfolio.assets
-      .filter(a => a.assetClass !== "cash")
+      .filter(a => a.assetClass !== "cash" && a.quantity > 0)  // positions ouvertes seulement
       .map(a => ({
         ticker:         a.ticker,
         quantity:       a.quantity,
@@ -1008,7 +1008,7 @@ export default function PortfoliosPage() {
   const globalHistoryAssets = useMemo<PortfolioAsset[]>(() =>
     portfolios.flatMap(p =>
       p.assets
-        .filter(a => a.assetClass !== "cash")
+        .filter(a => a.assetClass !== "cash" && a.quantity > 0)  // positions ouvertes seulement
         .map(a => ({
           ticker:         a.ticker,
           quantity:       a.quantity,
