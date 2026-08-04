@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import type { AppCurrency, FXRates } from "@/lib/utils"
-import { formatCurrency as fmt, DEFAULT_FX_RATES } from "@/lib/utils"
+import { formatCurrency as fmt, DEFAULT_FX_RATES, DEFAULT_GBP_PER_CHF } from "@/lib/utils"
 import type { FxRates } from "@/app/api/fx-rates/route"
 
 interface CurrencyContextValue {
@@ -44,11 +44,11 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     fetch("/api/fx-rates")
       .then(r => r.json())
       .then((data: FxRates) => {
-        setFxRates({ CHF: 1, USD: data.USD, EUR: data.EUR })
+        setFxRates({ CHF: 1, USD: data.USD, EUR: data.EUR, GBP: data.GBP ?? DEFAULT_GBP_PER_CHF })
         setRatesSource(data.source)
         setRatesDate(data.updatedAt)
         // Notify live-price hooks to recalculate with new rates
-        window.dispatchEvent(new CustomEvent("fx-rates-updated", { detail: { CHF: 1, USD: data.USD, EUR: data.EUR } }))
+        window.dispatchEvent(new CustomEvent("fx-rates-updated", { detail: { CHF: 1, USD: data.USD, EUR: data.EUR, GBP: data.GBP ?? DEFAULT_GBP_PER_CHF } }))
       })
       .catch(() => {
         setRatesSource("fallback")

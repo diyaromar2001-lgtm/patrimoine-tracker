@@ -7,6 +7,9 @@ export interface FxRates {
   CHF: number   // = 1 (base)
   USD: number   // 1 CHF = x USD
   EUR: number   // 1 CHF = x EUR
+  /** Nécessaire pour les titres cotés à Londres (VHYL, IDVY…) : sans lui,
+   *  convertCurrency retombe sur 1 et n'applique aucune conversion. */
+  GBP: number   // 1 CHF = x GBP
   updatedAt: string
   source: "ecb" | "fallback"
 }
@@ -15,23 +18,25 @@ export interface FxRates {
 // Will ONLY be used if the API call fails
 const FALLBACK: FxRates = {
   CHF: 1,
-  USD: 1.267,
-  EUR: 1.091,
+  USD: 1.2571,
+  EUR: 1.0862,
+  GBP: 0.9379,
   updatedAt: "fallback",
   source: "fallback",
 }
 
 async function fetchFromFrankfurter(): Promise<FxRates> {
   const res = await fetch(
-    "https://api.frankfurter.app/latest?from=CHF&to=USD,EUR",
+    "https://api.frankfurter.app/latest?from=CHF&to=USD,EUR,GBP",
     { next: { revalidate: 3600 } }   // cache 1h on Vercel edge
   )
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const data: { rates: { USD: number; EUR: number }; date: string } = await res.json()
+  const data: { rates: { USD: number; EUR: number; GBP: number }; date: string } = await res.json()
   return {
     CHF:       1,
     USD:       data.rates.USD,
     EUR:       data.rates.EUR,
+    GBP:       data.rates.GBP,
     updatedAt: data.date,
     source:    "ecb",
   }

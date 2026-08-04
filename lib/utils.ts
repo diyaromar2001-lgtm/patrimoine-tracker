@@ -7,12 +7,20 @@ export function cn(...inputs: ClassValue[]) {
 
 // ─── Currency ──────────────────────────────────────────────────────────────────
 export type AppCurrency = "CHF" | "USD" | "EUR"
-export type FXRates = Record<AppCurrency, number>
+
+/**
+ * Table de taux : garantit les 3 devises d'AFFICHAGE, tout en acceptant les
+ * devises de COTATION (GBP pour les ETF londoniens, etc.).
+ * Sans cette ouverture, convertCurrency retombait sur 1 pour le GBP et les
+ * montants londoniens n'étaient tout simplement pas convertis.
+ */
+export type FXRates = Record<AppCurrency, number> & { [currency: string]: number }
 
 // Default FX rates (BCE approximation) — replaced at runtime by /api/fx-rates
 // 1 CHF = x USD/EUR. TABLE UNIQUE : lib/finance.ts et lib/quote-currency.ts
 // dérivent leurs fallbacks de celle-ci — ne pas dupliquer de littéraux ailleurs.
 export const DEFAULT_FX_RATES: FXRates = {
+  GBP: 0.9379,  // BCE 2026-06 — devise de cotation (ETF Londres)
   CHF: 1,
   USD: 1.2571,  // BCE 2026-06
   EUR: 1.0862,  // BCE 2026-06

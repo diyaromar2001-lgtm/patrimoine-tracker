@@ -175,3 +175,32 @@ describe("nextExpectedDividend", () => {
     expect(nextExpectedDividend(TXS, ev, "CHF", RATES, "2026-08-04")).toBeNull()
   })
 })
+
+// ───────────────────────────────────────────────────────────────────────────
+// Régression : dividendes cotés en GBP (ETF Londres — VHYL, IDVY)
+// La table de taux client ne transportait pas le GBP : convertCurrency
+// retombait sur 1 et le montant n'était PAS converti.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("conversion GBP (ETF londoniens)", () => {
+  const RATES_GBP: FXRates = { CHF: 1, USD: 1.25, EUR: 1.08, GBP: 0.90 }
+  const txs: DividendTxInput[] = [{ ticker: "VHYL", type: "buy", quantity: 10, date: "2025-01-01" }]
+  const ev: DividendEvent[] = [
+    { ticker: "VHYL", exDate: "2025-06-01", amountPerShare: 0.3434, currency: "GBP" },
+  ]
+
+  test("un dividende GBP est bien converti en CHF", () => {
+    const d = computeReceivedDividends(txs, ev, "CHF", RATES_GBP, "2026-08-04")[0]
+    // 10 × 0.3434 = 3.434 GBP → / 0.90 = 3.8156 CHF
+    expect(d.gross).toBeCloseTo(3.434 / 0.90, 6)
+    expect(d.fxRateUsed).toBeCloseTo(1 / 0.90, 6)
+    // Le bug produisait exactement le montant natif, sans conversion
+    expect(d.gross).not.toBeCloseTo(3.434, 4)
+  })
+
+  test("sans taux GBP dans la table, le montant resterait non converti (bug historique)", () => {
+    const noGbp = { CHF: 1, USD: 1.25, EUR: 1.08 } as FXRates
+    const d = computeReceivedDividends(txs, ev, "CHF", noGbp, "2026-08-04")[0]
+    expect(d.gross).toBeCloseTo(3.434, 6)   // documente le comportement de repli
+  })
+})
