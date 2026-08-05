@@ -62,6 +62,8 @@ export interface MobilePortfolioProps {
   onImport:         () => void
   onExport:         () => void
   onSellAsset:      (asset: Asset, price: number, currency: string) => void
+  /** Décalage vertical imposé par la barre de portefeuilles collante. */
+  tabBarOffset?:    number
 }
 
 export interface AnalyticsCard {
@@ -86,13 +88,16 @@ const TABS: Array<{ id: TabId; label: string; icon: typeof LineChart }> = [
 
 export function MobilePortfolio(props: MobilePortfolioProps) {
   const [tab, setTab] = useState<TabId>("apercu")
+  // Les deux barres collantes s'empileraient au même endroit : celle-ci se
+  // cale sous la barre de portefeuilles au lieu de passer dessous.
+  const stickyTop = props.tabBarOffset ?? 0
 
   return (
     <div className="flex flex-col">
       {/* Barre d'onglets — collante : la navigation reste atteignable au pouce
           quel que soit le défilement. */}
-      <div className="sticky top-0 z-20 border-b backdrop-blur"
-        style={{ borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--bg-base) 88%, transparent)" }}>
+      <div className="sticky z-20 border-b backdrop-blur"
+        style={{ top: stickyTop, borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--bg-base) 88%, transparent)" }}>
         <div className="flex">
           {TABS.map(t => {
             const active = tab === t.id

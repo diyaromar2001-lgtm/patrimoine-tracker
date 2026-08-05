@@ -26,6 +26,7 @@ import {
   MobilePortfolio, MOBILE_PERIOD_TO_API,
   type MobilePeriod, type AnalyticsCard,
 } from "@/components/portfolio/mobile-portfolio"
+import { PortfolioChipBar, CHIP_BAR_HEIGHT } from "@/components/portfolio/portfolio-chip-bar"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -746,7 +747,6 @@ export default function PortfoliosPage() {
   // Renommer un portefeuille n'existe nulle part dans l'application : plutôt
   // qu'un bouton qui ne fait rien, on le dit.
   const [editPortfolioNotice, setEditPortfolioNotice] = useState(false)
-  const [showPortfolioPicker, setShowPortfolioPicker] = useState(false)
 
   function openEditModal(asset: Asset) {
     const lastBuy = [...transactions]
@@ -1241,26 +1241,16 @@ export default function PortfoliosPage() {
     <div className="flex flex-col">
       <Topbar title="Portefeuilles" subtitle={`${portfolios.length} portefeuille${portfolios.length > 1 ? "s" : ""} · ${format(totalValue)}`} />
 
-      {/* ─── Sélecteur de portefeuille (mobile) ───
-          Sur un écran étroit, empiler la barre de portefeuilles ET les quatre
-          onglets fait deux rangées de navigation pour une seule page. On
-          remplace la première par une ligne qui ouvre une liste. */}
+      {/* ─── Barre de portefeuilles (mobile) ───
+          Toujours visible en haut : le choix reste sous les yeux et à un seul
+          appui, au lieu d'être caché derrière un menu à ouvrir. */}
       {isMobile && (
-        <button
-          onClick={() => setShowPortfolioPicker(true)}
-          className="flex items-center justify-between gap-3 border-b px-4 py-3 text-left"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-base)" }}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            {activePortfolio
-              ? <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: activePortfolio.color }} />
-              : <Layers className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-secondary)" }} />}
-            <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-              {activePortfolio ? activePortfolio.name : "Vue Globale"}
-            </span>
-          </span>
-          <ChevronsUpDown className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-tertiary)" }} />
-        </button>
+        <PortfolioChipBar
+          portfolios={portfolios}
+          activeId={activeTab}
+          onSelect={setActiveTab}
+          onCreate={() => setShowPortfolioCreation(true)}
+        />
       )}
 
       {/* ─── Tab bar (bureau) ─── */}
@@ -1734,6 +1724,7 @@ export default function PortfoliosPage() {
             return (
               <div className="-mx-4 -mt-4 sm:-mx-6">
                 <MobilePortfolio
+                  tabBarOffset={CHIP_BAR_HEIGHT}
                   portfolio={activePortfolio}
                   history={mobileHistory}
                   historyLoading={mobileHistoryLoading}
@@ -2333,50 +2324,6 @@ export default function PortfoliosPage() {
         onCreateManual={handleAddPortfolioManual}
         onCreateWithImport={handleAddPortfolioWithImport}
       />
-
-      {/* Liste des portefeuilles — feuille remontante, atteignable au pouce */}
-      {showPortfolioPicker && (
-        <div className="fixed inset-0 z-50 flex items-end" style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
-          onClick={() => setShowPortfolioPicker(false)}>
-          <div className="w-full rounded-t-2xl border-t pb-8"
-            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
-            onClick={e => e.stopPropagation()}>
-            <p className="px-5 py-4 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-              Portefeuilles
-            </p>
-            <button
-              onClick={() => { setActiveTab("global"); setShowPortfolioPicker(false) }}
-              className="flex w-full items-center gap-3 px-5 py-3.5 text-left"
-              style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              <Layers className="h-4 w-4" style={{ color: "var(--text-secondary)" }} />
-              <span className="flex-1 text-sm" style={{ color: activeTab === "global" ? "var(--text-primary)" : "var(--text-secondary)" }}>
-                Vue Globale
-              </span>
-              {activeTab === "global" && <span style={{ color: "var(--accent, #6366f1)" }}>✓</span>}
-            </button>
-            {portfolios.map(p => (
-              <button key={p.id}
-                onClick={() => { setActiveTab(p.id); setShowPortfolioPicker(false) }}
-                className="flex w-full items-center gap-3 px-5 py-3.5 text-left"
-                style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                <span className="min-w-0 flex-1 truncate text-sm"
-                  style={{ color: activeTab === p.id ? "var(--text-primary)" : "var(--text-secondary)" }}>
-                  {p.name}
-                </span>
-                {activeTab === p.id && <span style={{ color: "var(--accent, #6366f1)" }}>✓</span>}
-              </button>
-            ))}
-            <button
-              onClick={() => { setShowPortfolioPicker(false); setShowPortfolioCreation(true) }}
-              className="flex w-full items-center gap-3 px-5 py-3.5 text-left"
-              style={{ borderTop: "1px solid var(--border-subtle)", color: "var(--accent, #6366f1)" }}>
-              <Plus className="h-4 w-4" />
-              <span className="text-sm font-medium">Nouveau portefeuille</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Renommer/modifier un portefeuille n'est pas encore implémenté côté
           données : on le dit au lieu d'afficher un formulaire sans effet. */}
