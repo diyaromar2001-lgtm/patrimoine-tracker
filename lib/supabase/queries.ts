@@ -202,6 +202,30 @@ export async function createPortfolio(portfolio: Omit<Portfolio, "id" | "assets"
   return error ? null : data
 }
 
+/**
+ * Renomme un portefeuille (et, si fournis, sa description / sa couleur).
+ *
+ * Seuls les champs passés sont écrits : un appel qui ne change que le nom ne
+ * doit pas remettre la description à vide.
+ */
+export async function updatePortfolio(
+  portfolioId: string,
+  updates: { name?: string; description?: string; color?: string }
+): Promise<boolean> {
+  const sb = createClient()
+  if (!sb) return false
+
+  const patch: Record<string, string> = {}
+  if (updates.name        !== undefined) patch.name        = updates.name
+  if (updates.description !== undefined) patch.description = updates.description
+  if (updates.color       !== undefined) patch.color       = updates.color
+  if (Object.keys(patch).length === 0) return true
+
+  const { error } = await sb.from("portfolios").update(patch).eq("id", portfolioId)
+  if (error) console.error("[updatePortfolio]", error.message)
+  return !error
+}
+
 /** Update the cash_balances JSON column for a portfolio */
 export async function updateCashBalance(portfolioId: string, cash: CashBalance) {
   const sb = createClient()

@@ -37,6 +37,8 @@ interface AppData {
   // Portfolio mutations
   addPortfolio:    (p: Omit<Portfolio, "id" | "assets">) => Promise<string | null>
   removePortfolio: (id: string) => Promise<void>
+  /** Renomme un portefeuille (description et couleur optionnelles). */
+  updatePortfolio: (id: string, updates: { name?: string; description?: string; color?: string }) => Promise<{ ok: boolean; error?: string }>
   addAsset:        (portfolioId: string, asset: Omit<Asset, "currentPrice">) => Promise<void>
   removeAsset:     (portfolioId: string, assetId: string) => Promise<void>
   /** Modifie directement quantité + prix moyen d'une position (sans créer de transaction) */
@@ -75,6 +77,7 @@ const DEFAULT: AppData = {
   realizedPnLEvents: [], totalRealizedPnL: 0,
   addPortfolio:    async () => null,
   removePortfolio: async () => {},
+  updatePortfolio: async () => ({ ok: true }),
   addAsset:        async () => {},
   removeAsset:     async () => {},
   editAsset:       async () => {},
@@ -245,6 +248,34 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         await refresh()
       }
     }
+  }
+
+  /**
+   * Renomme un portefeuille. Mise à jour optimiste puis persistance : en cas
+   * d'échec on remet l'état d'origine plutôt que de laisser l'écran afficher
+   * un nom qui n'existe pas en base.
+   */
+  async function updatePortfolio(
+    id: string,
+    updates: { name?: string; description?: string; color?: string }
+  ): Promise<{ ok: boolean; error?: string }> {
+    const name = updates.name?.trim()
+    if (updates.name !== undefined && !name) {
+      return { ok: false, error: "Le nom ne peut pas être vide." }
+    }
+    const clean = { ...updates, ...(name !== undefined ? { name } : {}) }
+
+    const previous = portfolios.find(p => p.id === id)
+    setPortfolios(prev => prev.map(p => p.id === id ? { ...p, ...clean } : p))
+
+    if (!isSupabaseConfigured) return { ok: true }
+
+    const ok = await Q.updatePortfolio(id, clean)
+    if (!ok && previous) {
+      setPortfolios(prev => prev.map(p => p.id === id ? previous : p))
+      return { ok: false, error: "Enregistrement impossible. Réessaie." }
+    }
+    return { ok: true }
   }
 
   async function addAsset(portfolioId: string, asset: Omit<Asset, "currentPrice">) {
@@ -833,7 +864,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     <AppDataContext.Provider value={{
       portfolios, transactions, revenus, globalCash, cashMovements, loading,
       realizedPnLEvents, totalRealizedPnL,
-      addPortfolio, removePortfolio, addAsset, removeAsset, editAsset, updateAssetCostBasis,
+      addPortfolio, removePortfolio, updatePortfolio, addAsset, removeAsset, editAsset, updateAssetCostBasis,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,
       cashAccounts, depositCash, withdrawCash, convertCash, transferCash,

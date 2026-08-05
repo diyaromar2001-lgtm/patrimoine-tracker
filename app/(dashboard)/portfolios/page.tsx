@@ -712,6 +712,7 @@ export default function PortfoliosPage() {
     loading: dbLoading,
     addPortfolio: dbAddPortfolio,
     removePortfolio: dbRemovePortfolio,
+    updatePortfolio,
     addAsset: dbAddAsset,
     removeAsset: dbRemoveAsset,
     addTransaction,
@@ -744,9 +745,29 @@ export default function PortfoliosPage() {
   // Confirmation before deletion
   const [deleteConfirm, setDeleteConfirm] = useState<{ portfolioId: string; assetId: string } | null>(null)
   const [deletePortfolioConfirm, setDeletePortfolioConfirm] = useState<string | null>(null) // portfolio ID to delete
-  // Renommer un portefeuille n'existe nulle part dans l'application : plutôt
-  // qu'un bouton qui ne fait rien, on le dit.
-  const [editPortfolioNotice, setEditPortfolioNotice] = useState(false)
+  // Édition d'un portefeuille : id ciblé + brouillon du formulaire.
+  const [editingPortfolio, setEditingPortfolio] = useState<Portfolio | null>(null)
+  const [editName,  setEditName]  = useState("")
+  const [editColor, setEditColor] = useState("#3b82f6")
+  const [editError, setEditError] = useState("")
+  const [editSaving, setEditSaving] = useState(false)
+
+  function openEditPortfolio(p: Portfolio) {
+    setEditingPortfolio(p)
+    setEditName(p.name)
+    setEditColor(p.color)
+    setEditError("")
+  }
+
+  async function saveEditPortfolio() {
+    if (!editingPortfolio) return
+    setEditSaving(true)
+    setEditError("")
+    const res = await updatePortfolio(editingPortfolio.id, { name: editName, color: editColor })
+    setEditSaving(false)
+    if (!res.ok) { setEditError(res.error ?? "Enregistrement impossible."); return }
+    setEditingPortfolio(null)
+  }
 
   function openEditModal(asset: Asset) {
     const lastBuy = [...transactions]
@@ -1774,7 +1795,7 @@ export default function PortfoliosPage() {
                   currency={currency}
                   analytics={mobileAnalytics}
                   onAddTransaction={() => openTxModal(activePortfolio.id)}
-                  onEdit={() => setEditPortfolioNotice(true)}
+                  onEdit={() => openEditPortfolio(activePortfolio)}
                   onDelete={() => setDeletePortfolioConfirm(activePortfolio.id)}
                   onImport={() => setShowPortfolioCreation(true)}
                   onExport={() => exportPortfolioCsv(activePortfolio)}
@@ -1796,6 +1817,15 @@ export default function PortfoliosPage() {
                     <div className="flex items-center gap-2">
                       <h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{activePortfolio.name}</h2>
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: activePortfolio.color }} />
+                      <button
+                        onClick={() => openEditPortfolio(activePortfolio)}
+                        title="Renommer ce portefeuille"
+                        aria-label="Renommer ce portefeuille"
+                        className="rounded-lg p-1 transition-colors hover:bg-zinc-800"
+                        style={{ color: "var(--text-tertiary)" }}
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                     {activePortfolio.description && (
                       <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{activePortfolio.description}</p>
@@ -2334,28 +2364,70 @@ export default function PortfoliosPage() {
         onCreateWithImport={handleAddPortfolioWithImport}
       />
 
-      {/* Renommer/modifier un portefeuille n'est pas encore implémenté côté
-          données : on le dit au lieu d'afficher un formulaire sans effet. */}
-      {editPortfolioNotice && (
+      {/* Renommer un portefeuille */}
+      {editingPortfolio && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center"
           style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
-          onClick={() => setEditPortfolioNotice(false)}>
+          onClick={() => setEditingPortfolio(null)}>
           <div className="w-full rounded-t-2xl border-t p-5 pb-8 sm:max-w-sm sm:rounded-2xl sm:border"
             style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
             onClick={e => e.stopPropagation()}>
-            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-              Modification indisponible
-            </p>
-            <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-              Renommer un portefeuille ou changer sa couleur n&apos;est pas encore possible :
-              l&apos;application ne sait pas mettre à jour un portefeuille existant. Tu peux en
-              créer un nouveau et y réimporter ton relevé.
-            </p>
-            <button onClick={() => setEditPortfolioNotice(false)}
-              className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white"
-              style={{ backgroundColor: "var(--accent, #6366f1)" }}>
-              Compris
-            </button>
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                Modifier le portefeuille
+              </p>
+              <button onClick={() => setEditingPortfolio(null)}
+                className="rounded-lg p-1.5" style={{ color: "var(--text-tertiary)" }}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Nom
+            </label>
+            <input
+              type="text"
+              value={editName}
+              onChange={e => { setEditName(e.target.value); setEditError("") }}
+              onKeyDown={e => { if (e.key === "Enter") saveEditPortfolio() }}
+              autoFocus
+              className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+              style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+            />
+
+            <label className="mb-1.5 mt-4 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Couleur
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {["#3b82f6", "#22c55e", "#a78bfa", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6"].map(c => (
+                <button key={c} onClick={() => setEditColor(c)}
+                  aria-label={`Couleur ${c}`}
+                  className="h-7 w-7 rounded-full transition-transform active:scale-90"
+                  style={{
+                    backgroundColor: c,
+                    outline: editColor === c ? "2px solid white" : "none",
+                    outlineOffset: "2px",
+                  }} />
+              ))}
+            </div>
+
+            {editError && (
+              <p className="mt-3 rounded-lg px-3 py-2 text-xs"
+                style={{ backgroundColor: "#ef444415", color: "#ef4444" }}>{editError}</p>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button onClick={() => setEditingPortfolio(null)}
+                className="flex-1 rounded-xl border py-2.5 text-sm font-medium"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                Annuler
+              </button>
+              <button onClick={saveEditPortfolio} disabled={editSaving || !editName.trim()}
+                className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: "var(--accent, #6366f1)" }}>
+                {editSaving ? "Enregistrement…" : "Enregistrer"}
+              </button>
+            </div>
           </div>
         </div>
       )}
