@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { ChangeBadge } from "@/components/ui/badge"
+import { UNASSIGNED_CASH, UNASSIGNED_LABEL } from "@/lib/cash"
 import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
@@ -89,7 +90,8 @@ function RevenuDonut({ data }: { data: Array<{ type: RevenuType; amount: number;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function RevenusPage() {
-  const { revenus, portfolios, globalCash, cashMovements, addRevenu, removeRevenu, depositGlobalCash, withdrawGlobalCash, convertGlobalCash } = useAppData()
+  const { revenus, portfolios, globalCash, cashAccounts, cashMovements, addRevenu, removeRevenu,
+          depositCash, withdrawCash, convertCash, transferCash } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
 
   const [activeTab, setActiveTab] = useState<"liquidite" | "revenus" | "dividends">("liquidite")
@@ -102,8 +104,12 @@ export default function RevenusPage() {
   const [actionAmount,      setActionAmount]      = useState("")
   const [actionCurrency,    setActionCurrency]    = useState<"CHF"|"USD"|"EUR">("CHF")
   const [actionToCurrency,  setActionToCurrency]  = useState<"CHF"|"USD"|"EUR">("USD")
+  const [showTransferModal, setShowTransferModal] = useState(false)
   const [actionError,       setActionError]       = useState("")
   const [actionNote,        setActionNote]        = useState("")
+  /** Compte de trésorerie visé par l'action en cours. */
+  const [actionAccount,     setActionAccount]     = useState<string>("")
+  const [transferTarget,    setTransferTarget]    = useState<string>("")
 
   // Total in CHF
   const totalCHF = useMemo(() =>
@@ -218,34 +224,59 @@ export default function RevenusPage() {
 
           return (
             <div className="space-y-5">
-              {/* ── KPI Liquidités ── */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="col-span-2 sm:col-span-4 rounded-xl border px-5 py-4 flex items-center justify-between"
-                  style={{ backgroundColor: "var(--bg-elevated)", borderColor: "#0ea5e930" }}>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: "#0ea5e9" }}>Total liquidités</p>
-                    <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: "var(--text-primary)" }}>{format(totalUser)}</p>
-                    <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
-                      Commune à tous les portefeuilles · hors positions
-                    </p>
-                  </div>
-                  <Wallet className="h-8 w-8" style={{ color: "var(--accent)" }} />
+              {/* ── Total + détail par compte ── */}
+              <div className="rounded-xl border px-5 py-4 flex items-center justify-between"
+                style={{ backgroundColor: "var(--bg-elevated)", borderColor: "#0ea5e930" }}>
+                <div>
+                  <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: "#0ea5e9" }}>Total liquidités</p>
+                  <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: "var(--text-primary)" }}>{format(totalUser)}</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+                    Somme des comptes ci-dessous · hors positions
+                  </p>
                 </div>
-                {(["CHF","USD","EUR"] as const).map(cur => {
-                  const val = globalCash[cur]
-                  const inUser = convert(val, cur)
+                <Wallet className="h-8 w-8" style={{ color: "var(--accent)" }} />
+              </div>
+
+              {/* Chaque portefeuille a SA trésorerie : le cash d'un courtier ne
+                  finance pas les achats d'un autre. */}
+              <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
+                <div className="grid px-5 py-2.5 border-b text-[11px] font-medium uppercase tracking-wider"
+                  style={{ borderColor: "var(--border)", color: "var(--text-tertiary)", gridTemplateColumns: "minmax(120px,1fr) 90px 90px 90px 110px" }}>
+                  <span>Compte</span>
+                  <span className="text-right">CHF</span>
+                  <span className="text-right">USD</span>
+                  <span className="text-right">EUR</span>
+                  <span className="text-right">Total</span>
+                </div>
+
+                {cashAccounts.length === 0 && (
+                  <p className="px-5 py-6 text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Aucun compte — créez un portefeuille ou déposez du cash.
+                  </p>
+                )}
+
+                {cashAccounts.map((acc, i) => {
+                  const accChf = acc.balances.CHF + acc.balances.USD / fxUsd + acc.balances.EUR / fxEur
                   return (
-                    <div key={cur} className="rounded-xl border px-4 py-3"
-                      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                      <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{cur}</p>
-                      {/* Montant natif formaté (séparateurs de milliers) — cohérent
-                          avec le total affiché juste au-dessus. */}
-                      <p className="text-xl font-bold tabular-nums mt-0.5" style={{ color: val > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}>
-                        {formatCurrency(val, cur)}
-                      </p>
-                      {cur !== currency && val > 0 && (
-                        <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>≈ {format(inUser)}</p>
-                      )}
+                    <div key={acc.id} className="grid items-center px-5 py-3"
+                      style={{ gridTemplateColumns: "minmax(120px,1fr) 90px 90px 90px 110px",
+                               borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="h-2 w-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: acc.isPortfolio ? "#0ea5e9" : "#a855f7" }} />
+                        <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                          {acc.label}
+                        </span>
+                      </div>
+                      {(["CHF","USD","EUR"] as const).map(cur => (
+                        <span key={cur} className="text-right text-sm tabular-nums"
+                          style={{ color: acc.balances[cur] > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+                          {acc.balances[cur] > 0 ? formatCurrency(acc.balances[cur], cur) : "—"}
+                        </span>
+                      ))}
+                      <span className="text-right text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                        {format(accChf * userRate)}
+                      </span>
                     </div>
                   )
                 })}
@@ -253,11 +284,24 @@ export default function RevenusPage() {
 
               {/* ── Action buttons ── */}
               <div className="flex flex-wrap gap-2">
-                {[
-                  { label: "Déposer",   color: "#0ea5e9", onClick: () => { setShowDepositModal(true); setShowWithdrawModal(false); setShowConvertModal(false); setActionError("") } },
-                  { label: "Retirer",   color: "#ef4444", onClick: () => { setShowWithdrawModal(true); setShowDepositModal(false); setShowConvertModal(false); setActionError("") } },
-                  { label: "Convertir",  color: "#f59e0b", onClick: () => { setShowConvertModal(true); setShowDepositModal(false); setShowWithdrawModal(false); setActionError("") } },
-                ].map(btn => (
+                {(() => {
+                  // Une action porte toujours sur UN compte : on le
+                  // présélectionne pour ne jamais laisser le choix implicite.
+                  const openAction = (which: "deposit" | "withdraw" | "convert" | "transfer") => () => {
+                    setShowDepositModal(which === "deposit")
+                    setShowWithdrawModal(which === "withdraw")
+                    setShowConvertModal(which === "convert")
+                    setShowTransferModal(which === "transfer")
+                    setActionError("")
+                    if (!actionAccount) setActionAccount(cashAccounts[0]?.id ?? UNASSIGNED_CASH)
+                    if (!transferTarget) setTransferTarget(portfolios[0]?.id ?? UNASSIGNED_CASH)
+                  }
+                  return [
+                  { label: "Déposer",   color: "#0ea5e9", onClick: openAction("deposit") },
+                  { label: "Retirer",   color: "#ef4444", onClick: openAction("withdraw") },
+                  { label: "Convertir", color: "#f59e0b", onClick: openAction("convert") },
+                  { label: "Virer",     color: "#a855f7", onClick: openAction("transfer") },
+                  ]})().map(btn => (
                   <button key={btn.label} onClick={btn.onClick}
                     className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
                     style={{ backgroundColor: btn.color }}>
@@ -268,13 +312,43 @@ export default function RevenusPage() {
 
               {/* ── Mini forms ── */}
               <AnimatePresence>
-                {(showDepositModal || showWithdrawModal || showConvertModal) && (
+                {(showDepositModal || showWithdrawModal || showConvertModal || showTransferModal) && (
                   <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
                     className="rounded-xl border p-5 space-y-4"
                     style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
                     <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                      {showDepositModal ? "Dépôt de liquidité" : showWithdrawModal ? "Retrait de liquidité" : "Conversion de devises"}
+                      {showDepositModal  ? "Dépôt de liquidité"
+                       : showWithdrawModal ? "Retrait de liquidité"
+                       : showConvertModal  ? "Conversion de devises"
+                       : "Virement entre comptes"}
                     </p>
+
+                    {/* Compte concerné — toujours explicite */}
+                    <div>
+                      <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>
+                        {showTransferModal ? "Depuis le compte" : "Compte"}
+                      </label>
+                      <select value={actionAccount} onChange={e => { setActionAccount(e.target.value); setActionError("") }}
+                        className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                        style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                        {portfolios.map(pf => <option key={pf.id} value={pf.id}>{pf.name}</option>)}
+                        <option value={UNASSIGNED_CASH}>{UNASSIGNED_LABEL}</option>
+                      </select>
+                    </div>
+
+                    {showTransferModal && (
+                      <div>
+                        <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>
+                          Vers le compte
+                        </label>
+                        <select value={transferTarget} onChange={e => { setTransferTarget(e.target.value); setActionError("") }}
+                          className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none"
+                          style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                          {portfolios.map(pf => <option key={pf.id} value={pf.id}>{pf.name}</option>)}
+                          <option value={UNASSIGNED_CASH}>{UNASSIGNED_LABEL}</option>
+                        </select>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>
@@ -318,7 +392,7 @@ export default function RevenusPage() {
                           </div>
                         </div>
                       )}
-                      <div className="col-span-2">
+                      <div className="col-span-2" hidden={showTransferModal || showConvertModal}>
                         <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Note (optionnel)</label>
                         <input type="text" placeholder="Ex: virement BCV…" value={actionNote}
                           onChange={e => setActionNote(e.target.value)}
@@ -334,24 +408,28 @@ export default function RevenusPage() {
                         const amt = parseFloat(actionAmount)
                         if (!amt || amt <= 0) { setActionError("Montant invalide"); return }
                         if (showDepositModal) {
-                          await depositGlobalCash(amt, actionCurrency, actionNote || undefined)
+                          await depositCash(actionAccount, amt, actionCurrency, actionNote || undefined)
                           setShowDepositModal(false)
                         } else if (showWithdrawModal) {
-                          const res = await withdrawGlobalCash(amt, actionCurrency, actionNote || undefined)
+                          const res = await withdrawCash(actionAccount, amt, actionCurrency, actionNote || undefined)
                           if (!res.ok) { setActionError(res.error ?? "Erreur"); return }
                           setShowWithdrawModal(false)
                         } else if (showConvertModal) {
-                          const res = await convertGlobalCash(actionCurrency, actionToCurrency, amt)
+                          const res = await convertCash(actionAccount, actionCurrency, actionToCurrency, amt)
                           if (!res.ok) { setActionError(res.error ?? "Erreur"); return }
                           setShowConvertModal(false)
+                        } else if (showTransferModal) {
+                          const res = await transferCash(actionAccount, transferTarget, amt, actionCurrency)
+                          if (!res.ok) { setActionError(res.error ?? "Erreur"); return }
+                          setShowTransferModal(false)
                         }
                         setActionAmount(""); setActionNote("")
                       }}
                         className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-all"
-                        style={{ backgroundColor: showDepositModal ? "#0ea5e9" : showWithdrawModal ? "#ef4444" : "#f59e0b" }}>
+                        style={{ backgroundColor: showDepositModal ? "#0ea5e9" : showWithdrawModal ? "#ef4444" : showConvertModal ? "#f59e0b" : "#a855f7" }}>
                         Confirmer
                       </button>
-                      <button onClick={() => { setShowDepositModal(false); setShowWithdrawModal(false); setShowConvertModal(false); setActionError("") }}
+                      <button onClick={() => { setShowDepositModal(false); setShowWithdrawModal(false); setShowConvertModal(false); setShowTransferModal(false); setActionError("") }}
                         className="rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-zinc-800 transition-colors"
                         style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
                         Annuler

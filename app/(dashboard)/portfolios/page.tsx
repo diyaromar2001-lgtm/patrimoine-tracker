@@ -21,6 +21,7 @@ import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import Link from "next/link"
 import { BROKERS, type BrokerId } from "@/lib/import/brokers"
+import { UNASSIGNED_CASH } from "@/lib/cash"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -710,7 +711,6 @@ export default function PortfoliosPage() {
     removeAsset: dbRemoveAsset,
     addTransaction,
     depositCash,
-    depositGlobalCash,
     getAvailableCash,
     refresh: refreshAppData,
   } = useAppData()
@@ -776,17 +776,14 @@ export default function PortfoliosPage() {
   }
 
   async function handleSaveTx(form: TransactionFormData) {
-    // ── Dépôt de liquidité globale ───────────────────────────────────────────
-    // La liquidité est globale : elle va dans le 1er portefeuille
-    // mais l'affichage agrège tous les portefeuilles (poche commune).
+    // ── Dépôt de trésorerie ──────────────────────────────────────────────────
     if (form.selectedClass === "cash" || form.type === "deposit") {
       const amount   = parseFloat(form.depositAmount || "0")
       const currency = (form.depositCurrency || "CHF") as "CHF" | "USD" | "EUR"
       if (!amount || amount <= 0) throw new Error("Montant invalide")
-      // Utilise le 1er portefeuille comme réservoir de cash global
-      const globalPid = portfolios[0]?.id
-      if (!globalPid) throw new Error("Aucun portefeuille disponible")
-      await depositCash(globalPid, amount, currency)
+      // Le dépôt va sur le portefeuille choisi ; sans portefeuille désigné il
+      // rejoint la poche « Hors portefeuille » plutôt qu'un courtier au hasard.
+      await depositCash(form.portfolioId || UNASSIGNED_CASH, amount, currency)
       setTxModal(null)
       return
     }
@@ -957,19 +954,20 @@ export default function PortfoliosPage() {
   ) {
     const result = await importBrokerCSV(name, file, operations, broker)
 
-    // Le cash n'a pas sa place dans un portefeuille : c'est de la liquidité,
-    // elle vit dans "Liquidités" (globalCash), jamais dans une position ni
-    // dans un solde par-portefeuille. La RPC crée bien les mouvements de
-    // trésorerie (audit), mais rien n'incrémente encore un solde réel — sans
-    // ce crédit, un compte IBKR arrivait avec 0 de liquidités alors que le
-    // relevé en déclare (1 328 CHF dans le cas réel, un tiers du compte).
-    // Le solde déclaré par le courtier fait foi : le rejeu des flux ne
-    // serait fiable que si l'export couvrait toute l'histoire du compte.
+    // Le cash du relevé appartient à CE compte-titres, pas à une cagnotte
+    // commune : il est crédité sur le portefeuille qui vient d'être créé.
+    // La RPC journalise bien les mouvements (audit) mais n'incrémente aucun
+    // solde — sans ce crédit, un compte IBKR arrivait avec 0 de liquidités
+    // alors que le relevé en déclare (1 328 CHF dans le cas réel, un tiers du
+    // compte). Le solde déclaré par le courtier fait foi : rejouer les flux
+    // ne serait fiable que si l'export couvrait toute l'histoire du compte.
     const declared = analysis?.cashBalances as Record<string, number> | undefined
     if (declared) {
       for (const cur of ["CHF", "USD", "EUR"] as const) {
         const amount = declared[cur]
-        if (amount > 0) await depositGlobalCash(amount, cur, `Import ${BROKERS[broker].label} — ${name}`)
+        if (amount > 0) {
+          await depositCash(result.portfolioId, amount, cur, `Import ${BROKERS[broker].label}`)
+        }
       }
     }
 

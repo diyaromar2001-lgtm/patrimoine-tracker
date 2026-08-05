@@ -6,6 +6,7 @@ import { Topbar } from "@/components/layout/topbar"
 import { SectionHeader } from "@/components/ui/section-header"
 import { AssetClassBadge } from "@/components/ui/badge"
 import { TransactionModal, type TransactionFormData } from "@/components/ui/transaction-modal"
+import { UNASSIGNED_CASH } from "@/lib/cash"
 import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction, AssetClass, TransactionType } from "@/lib/types"
@@ -114,14 +115,14 @@ export default function TransactionsPage() {
   }
 
   async function handleSave(form: TransactionFormData) {
-    // ── Dépôt de liquidité globale ───────────────────────────────────────────
+    // ── Dépôt de trésorerie ──────────────────────────────────────────────────
     if (form.selectedClass === "cash" || form.type === "deposit") {
       const amount   = parseFloat(form.depositAmount || "0")
       const currency = (form.depositCurrency || "CHF") as "CHF" | "USD" | "EUR"
       if (!amount || amount <= 0) throw new Error("Montant invalide")
-      const globalPid = portfolios[0]?.id
-      if (!globalPid) throw new Error("Aucun portefeuille disponible")
-      await depositCash(globalPid, amount, currency)
+      // Le dépôt va sur le portefeuille choisi ; sans portefeuille désigné il
+      // rejoint la poche « Hors portefeuille » plutôt qu'un courtier au hasard.
+      await depositCash(form.portfolioId || UNASSIGNED_CASH, amount, currency)
       setModal(null)
       return
     }
