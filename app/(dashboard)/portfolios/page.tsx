@@ -815,6 +815,17 @@ export default function PortfoliosPage() {
   // Période propre à la vue mobile : elle a sa propre échelle (1J → Tout)
   // et ne doit pas perturber les graphiques de la vue bureau.
   const [mobilePeriod, setMobilePeriod] = useState<MobilePeriod>("1M")
+
+  // Détection JS plutôt que classes Tailwind : le rendu mobile est une
+  // arborescence différente, pas un simple masquage. Faux au premier rendu
+  // pour que le serveur et le client produisent le même HTML.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener("resize", check)
+    return () => window.removeEventListener("resize", check)
+  }, [])
   const [chartMode,  setChartMode]  = useState<"valeur" | "performance">("valeur")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
@@ -1036,9 +1047,9 @@ export default function PortfoliosPage() {
     const header = ["Ticker", "Nom", "Classe", "Quantite", "PrixMoyen", "PrixActuel", "Devise"]
     const csv = [header, ...rows]
       .map(r => r.map(c => typeof c === "string" && c.includes(",") ? `"${c}"` : c).join(","))
-      .join("
-")
+      .join("\n")
 
+    // BOM en tête : sans lui Excel lit le CSV en ANSI et casse les accents.
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement("a")
@@ -1137,25 +1148,30 @@ export default function PortfoliosPage() {
     const total = valued.reduce((s2, v) => s2 + v.value, 0)
     const share = (v: number) => total > 0 ? (v / total) * 100 : 0
 
-    const byKey = (pick: (v: typeof valued[number]) => string, colorOf?: (k: string) => string) => {
+    /** Regroupe les positions par clé et convertit chaque groupe en part du total. */
+    const byKey = (
+      pick: (v: typeof valued[number]) => string,
+      colorOf?: (k: string) => string | undefined,
+    ) => {
       const m = new Map<string, number>()
-      for (const v of valued) m.set(pick(v), (m.get(pick(v)) ?? 0) + v.value)
+      for (const v of valued) {
+        const k = pick(v)
+        m.set(k, (m.get(k) ?? 0) + v.value)
+      }
       return [...m.entries()]
         .sort((a, b) => b[1] - a[1])
-        .map(([label, v]) => ({
-          label,
+        .map(([key, v]) => ({
+          label: key,
           value: `${share(v).toFixed(1)} %`,
-          pct: share(v),
-          color: colorOf?.(label),
+          pct:   share(v),
+          color: colorOf?.(key),
         }))
     }
 
-    const classRows = byKey(
-      v => ASSET_CLASS_LABELS[v.asset.assetClass],
-      k => Object.entries(ASSET_CLASS_LABELS).find(([, l]) => l === k)?.[0]
-        ? ASSET_CLASS_COLORS[Object.entries(ASSET_CLASS_LABELS).find(([, l]) => l === k)![0] as AssetClass]
-        : undefined
-    )
+    // On groupe sur la classe elle-même : la couleur en découle directement,
+    // sans repasser par le libellé traduit.
+    const classRows = byKey(v => v.asset.assetClass, k => ASSET_CLASS_COLORS[k as AssetClass])
+      .map(r => ({ ...r, label: ASSET_CLASS_LABELS[r.label as AssetClass] }))
     const currencyRows = byKey(v => v.cur)
 
     const txs = transactions.filter(t => t.portfolioId === activePortfolio.id)

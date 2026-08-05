@@ -8,7 +8,8 @@ import {
   ArrowUpRight, TrendingUp, TrendingDown, Upload, Download, Trash2, Pencil, Plus,
 } from "lucide-react"
 import { PremiumChart, type PremiumChartPoint } from "@/components/charts/premium-chart"
-import type { Portfolio, Asset, AppCurrency } from "@/lib/types"
+import type { Portfolio, Asset } from "@/lib/types"
+import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
 
 /**
