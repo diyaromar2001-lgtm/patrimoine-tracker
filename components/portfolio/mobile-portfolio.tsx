@@ -48,7 +48,6 @@ export interface MobilePortfolioProps {
   pnlValue:       number
   pnlPct:         number
   positionsCount: number
-  cashValue:      number
 
   livePrices: Record<string, { price?: number; changePct?: number; originalPrice?: number; originalCurrency?: string }>
   format:  (v: number) => string
@@ -152,7 +151,7 @@ export function MobilePortfolio(props: MobilePortfolioProps) {
 
 function OverviewTab({
   portfolio, history, historyLoading, period, onPeriodChange,
-  totalValue, investedValue, pnlValue, pnlPct, positionsCount, cashValue,
+  totalValue, investedValue, pnlValue, pnlPct, positionsCount,
   format, onAddTransaction,
 }: MobilePortfolioProps) {
   const [showInfo, setShowInfo] = useState(false)
@@ -248,7 +247,6 @@ function OverviewTab({
         <Stat label="Performance %"   value={`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)} %`}
               tone={pnlPct >= 0 ? "gain" : "loss"} />
         <Stat label="Positions"       value={String(positionsCount)} />
-        <Stat label="Liquidités"      value={format(cashValue)} />
       </div>
 
       <button
@@ -265,7 +263,6 @@ function OverviewTab({
             <p><strong>Valeur actuelle</strong> — positions valorisées au dernier cours connu, converties dans ta devise d&apos;affichage.</p>
             <p><strong>Variation sur la période</strong> — écart entre le premier et le dernier point de la courbe. Elle ne tient pas compte des versements faits pendant la période.</p>
             <p><strong>Performance</strong> — écart entre la valeur actuelle et le montant réellement investi, frais inclus.</p>
-            <p><strong>Liquidités</strong> — trésorerie propre à ce portefeuille, hors positions.</p>
             <p style={{ color: "var(--text-tertiary)" }}>La courbe applique tes quantités actuelles aux cours passés : elle montre l&apos;évolution des marchés, pas celle de tes versements.</p>
           </InfoSheet>
         )}

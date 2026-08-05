@@ -29,7 +29,7 @@ interface EarningsItem { ticker: string; earningsDate: string; epsAvg: number | 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { portfolios, transactions, revenus, globalCash, cashMovements, loading, realizedPnLEvents } = useAppData()
+  const { portfolios, transactions, revenus, cashMovements, loading, realizedPnLEvents } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
   const [period, setPeriod]     = useState<Period>("1A")
   const [earnings, setEarnings] = useState<EarningsItem[]>([])
@@ -89,15 +89,10 @@ export default function DashboardPage() {
   const { cost: totalCost, value: totalValue, pnl: totalPnl, pct: totalPnlPct } =
     convertPnL(pnlResult, currency, fxRates)
 
-  const totalCashConverted = useMemo(() =>
-    Object.entries(globalCash).reduce((sum, [cur, val]) =>
-      sum + convert(Number(val ?? 0), cur as AppCurrency), 0
-    ),
-    [globalCash, convert]
-  )
-
-  // Patrimoine = positions + cash (PAS + revenus → déjà dans le cash)
-  const netWorthValue = totalValue + totalCashConverted
+  // Patrimoine = positions seules. La trésorerie n'est plus affichée nulle
+  // part (voir archive/liquidites/) : l'inclure ici ajouterait au total un
+  // montant invisible, impossible à recouper pour qui lit l'écran.
+  const netWorthValue = totalValue
 
   // Revenus annexes encaissés (parrainage, cashback, etc.)
   const totalRevenus = useMemo(
@@ -153,12 +148,13 @@ export default function DashboardPage() {
       if (v == null) continue
       byClass[a.assetClass] = (byClass[a.assetClass] ?? 0) + v
     }
-    if (totalCashConverted > 0) byClass.cash = (byClass.cash ?? 0) + totalCashConverted
+    // Plus de part « Liquidités » : la trésorerie n'est plus une ligne visible
+    // de l'application, la répartition ne porte que sur les positions.
     const total = Object.values(byClass).reduce((s, v) => s + v, 0)
     return Object.entries(byClass)
       .sort(([, a], [, b]) => b - a)
       .map(([cls, val]) => ({ cls, val, pct: total > 0 ? (val / total) * 100 : 0 }))
-  }, [allAssets, pnlResult, totalCashConverted, currency, fxRates])
+  }, [allAssets, pnlResult, currency, fxRates])
 
   // Top 5 positions (par valeur)
   const top5 = useMemo(() =>
@@ -223,7 +219,7 @@ export default function DashboardPage() {
       }))
       .filter(p => p.value > 0)
       .sort((a, b) => b.value - a.value)
-    const total = positions.reduce((s, p) => s + p.value, 0) + totalCashConverted
+    const total = positions.reduce((s, p) => s + p.value, 0)
     if (total <= 0 || positions.length === 0) return null
 
     const top1Pct = (positions[0].value / total) * 100
@@ -247,7 +243,7 @@ export default function DashboardPage() {
       alerts: alerts.slice(0, 2),
       positionCount: positions.length,
     }
-  }, [allAssets, livePrices, convert, totalCashConverted, allocationEntries])
+  }, [allAssets, livePrices, convert, allocationEntries])
 
   // Earnings
   useEffect(() => {
@@ -290,11 +286,6 @@ export default function DashboardPage() {
             className="flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white"
             style={{ background: "linear-gradient(135deg,#3b82f6,#6366f1)" }}>
             <Plus className="h-4 w-4" /> Ajouter un actif
-          </Link>
-          <Link href="/revenus"
-            className="flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium hover:bg-zinc-800 transition-colors"
-            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-            Déposer des liquidités
           </Link>
         </div>
       </div>
@@ -351,11 +342,6 @@ export default function DashboardPage() {
                     label: `Période ${period}`,
                     value: `${periodChange.abs >= 0 ? "+" : ""}${format(periodChange.abs)} (${periodChange.pct >= 0 ? "+" : ""}${periodChange.pct.toFixed(2)} %)`,
                     color: periodChange.abs >= 0 ? "var(--gain)" : "var(--loss)",
-                  }] : []),
-                  ...(totalCashConverted > 0 ? [{
-                    label: "Liquidités",
-                    value: format(totalCashConverted),
-                    color: "var(--text-primary)",
                   }] : []),
                 ].map(s => (
                   <div key={s.label} title={s.title}>

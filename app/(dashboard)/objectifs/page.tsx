@@ -36,7 +36,7 @@ function loadGoals(): Goal[] {
 }
 
 export default function ObjectifsPage() {
-  const { portfolios, globalCash, cashMovements } = useAppData()
+  const { portfolios, cashMovements } = useAppData()
   const { format, convert, fxRates, currency } = useCurrency()
 
   const [goals, setGoals] = useState<Goal[]>([])
@@ -67,11 +67,11 @@ export default function ObjectifsPage() {
       const price = livePrices[a.ticker]?.price ?? convert(a.currentPrice, (a.currency ?? "CHF") as AppCurrency)
       return s + price * a.quantity
     }, 0)
-    const cashDisplay = Object.entries(globalCash).reduce(
-      (s, [cur, val]) => s + convert(Number(val ?? 0), cur as AppCurrency), 0)
+    // Trésorerie exclue : elle n'apparaît plus dans l'interface, elle ne peut
+    // donc plus entrer dans un total que l'utilisateur ne peut pas recouper.
     // display → CHF
-    return userRate > 0 ? (positionsDisplay + cashDisplay) / userRate : 0
-  }, [allAssets, livePrices, globalCash, convert, fxRates, currency])
+    return userRate > 0 ? positionsDisplay / userRate : 0
+  }, [allAssets, livePrices, convert, fxRates, currency])
 
   const userRate = (fxRates as Record<string, number>)[currency] ?? 1
 

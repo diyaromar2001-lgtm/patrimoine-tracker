@@ -251,24 +251,6 @@ function AnalysisDisplay({ analysis }: { analysis: ImportAnalysis }) {
         </div>
       </div>
 
-      {Object.keys(analysis.cashBalances).length > 0 && (
-        <div className="rounded-lg border p-3" style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
-          <p className="text-[10px] uppercase font-semibold text-zinc-500 mb-2">
-            Liquidités reprises — créditées sur « Liquidités », pas sur ce portefeuille
-          </p>
-          <div className="space-y-1">
-            {Object.entries(analysis.cashBalances).map(([cur, amount]) => (
-              <div key={cur} className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{cur}</span>
-                <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                  {amount.toLocaleString("fr-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border p-3" style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
           <p className="text-[10px] uppercase font-semibold text-zinc-500">Devises</p>

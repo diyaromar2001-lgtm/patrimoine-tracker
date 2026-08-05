@@ -400,8 +400,14 @@ export function TransactionModal({
               style={{ color: "var(--text-tertiary)" }}>
               Classe d&apos;actif
             </label>
-            <div className="grid grid-cols-4 gap-2">
-              {(Object.entries(CLASS_LABELS) as [ModalAssetClass, string][]).map(([cls, label]) => (
+            {/* « Liquidité » est retirée de la liste : la trésorerie n'est plus
+                exposée dans l'interface (voir archive/liquidites/). Le mode
+                existe toujours dans le code — il suffit de retirer ce filtre
+                pour le remettre. */}
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.entries(CLASS_LABELS) as [ModalAssetClass, string][])
+                .filter(([cls]) => cls !== "cash")
+                .map(([cls, label]) => (
                 <button key={cls}
                   onClick={() => handleClassChange(cls)}
                   className="flex flex-col items-center gap-1.5 rounded-xl border py-3 text-xs font-medium transition-all"

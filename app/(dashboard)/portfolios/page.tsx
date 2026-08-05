@@ -878,11 +878,6 @@ export default function PortfoliosPage() {
       }
     }), [liveEnriched, fxRates])
 
-    // Liquidité globale — depuis AppData.globalCash (source unique, indépendante des portfolios)
-  const globalCashBalances = useMemo(() => ({
-    CHF: globalCash.CHF, USD: globalCash.USD, EUR: globalCash.EUR
-  }), [globalCash])
-
   const portfolioMetricsById = useMemo(() => {
     const metrics = new Map<string, PortfolioMetrics>()
     // Les portfolios n'ont plus de cash propre — on passe {} (vide)
@@ -893,8 +888,10 @@ export default function PortfoliosPage() {
   }, [portfolios, metricAssetsFor, fxRates])
 
   const globalMetrics = useMemo(() =>
-    calculatePortfolioMetrics(metricAssetsFor(portfolios.flatMap(p => p.assets)), globalCashBalances, fxRates),
-    [portfolios, metricAssetsFor, globalCashBalances, fxRates]
+    // Trésorerie exclue : elle n'est plus affichée nulle part, elle ne doit
+    // donc plus gonfler un total que personne ne peut recouper.
+    calculatePortfolioMetrics(metricAssetsFor(portfolios.flatMap(p => p.assets)), {}, fxRates),
+    [portfolios, metricAssetsFor, fxRates]
   )
 
   // ── Global totals — formule stricte CHF (spec) ───────────────────────────
@@ -1344,23 +1341,6 @@ export default function PortfoliosPage() {
                     <p className="mt-1 text-sm text-zinc-500">
                       {totalPnl >= 0 ? "+" : ""}{format(totalPnl)} depuis le début
                     </p>
-                    {/* Liquidité globale — depuis globalCash (source unique) */}
-                    {(() => {
-                      const nonZero = Object.entries(globalCash).filter(([, v]) => (v as number) > 0)
-                      if (!nonZero.length) return null
-                      return (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {nonZero.map(([cur, val]) => (
-                            <span key={cur}
-                              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums"
-                              style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
-                              <Wallet className="h-3 w-3" />
-                              {formatCurrency(val as number, cur as AppCurrency)} en liquidité
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    })()}
                     {/* CTA button */}
                     <button
                       onClick={() => openTxModal()}
@@ -1428,7 +1408,6 @@ export default function PortfoliosPage() {
                       rows: [
                         { k: "Dividendes / an", v: format(annualDivs), c: "#22c55e" },
                         { k: "Yield on cost", v: totalCost > 0 ? ((annualDivs / totalCost) * 100).toFixed(2) + "%" : "—", c: "var(--text-primary)" },
-                        { k: "Liquidités", v: format(globalMetrics.cashChf * userRate), c: "#0ea5e9" },
                       ],
                     },
                   ].map(({ icon: Icon, iconColor, label, rows }) => (
@@ -1750,7 +1729,6 @@ export default function PortfoliosPage() {
                   pnlValue={globalMetrics.totalPnlChf * ur}
                   pnlPct={globalMetrics.totalReturnPercent}
                   positionsCount={globalMetrics.positionLineCount}
-                  cashValue={balancesInChf(globalCash, fxRates as never) * ur}
                   livePrices={liveEnriched}
                   format={format}
                   currency={currency}
@@ -1791,7 +1769,6 @@ export default function PortfoliosPage() {
                   pnlValue={m.totalPnlChf * ur}
                   pnlPct={m.totalReturnPercent}
                   positionsCount={m.positionLineCount}
-                  cashValue={cashChf * ur}
                   livePrices={liveEnriched}
                   format={format}
                   currency={currency}
@@ -1823,28 +1800,6 @@ export default function PortfoliosPage() {
                     {activePortfolio.description && (
                       <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{activePortfolio.description}</p>
                     )}
-                    {/* ── Liquidité globale (commune à tous les portfolios) ── */}
-                    {(() => {
-                      const nonZero = Object.entries(globalCash).filter(([, v]) => (v as number) > 0)
-                      if (!nonZero.length) return (
-                        <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: "var(--text-tertiary)" }}>
-                          <Wallet className="h-3 w-3" />
-                          Aucune liquidité — déposez du cash pour acheter
-                        </p>
-                      )
-                      return (
-                        <div className="flex flex-wrap gap-2 mt-1">
-                          {nonZero.map(([cur, val]) => (
-                            <span key={cur}
-                              className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-semibold tabular-nums"
-                              style={{ backgroundColor: "#0ea5e918", color: "#0ea5e9", border: "1px solid #0ea5e930" }}>
-                              <Wallet className="h-3 w-3" />
-                              {formatCurrency(val as number, cur as AppCurrency)} disponible
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    })()}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -2047,14 +2002,12 @@ export default function PortfoliosPage() {
                         { label: "Valeur actuelle positions", value: format(valueUser), note: "Prix Yahoo Finance × quantité", color: "var(--text-primary)" },
                         { label: "P&L marché (latent)", value: (pnlUser >= 0 ? "+" : "") + format(pnlUser) + "  /  " + (m.totalReturnPercent >= 0 ? "+" : "") + m.totalReturnPercent.toFixed(2) + "%", note: "Valeur − coût historique", color: pnlUser >= 0 ? "var(--gain)" : "var(--loss)" },
                         { label: "P&L réalisé (ventes)", value: (realPnlUser >= 0 ? "+" : "") + format(realPnlUser), note: "Gains/pertes sur ventes clôturées", color: realPnlUser >= 0 ? "var(--gain)" : "var(--loss)" },
-                        { label: "Liquidités (cash)", value: format(cashUser), note: "Cash disponible dans ce portefeuille", color: "#0ea5e9" },
                         { label: "Dividendes encaissés", value: "+" + format(divUser), note: "Transactions type dividende", color: "#22c55e" },
                         { label: "Revenus annexes", value: "+" + format(revUser), note: "Parrainage, cashback, bonus…", color: "#a855f7" },
                         { label: "Frais totaux payés", value: "−" + format(feesUser), note: `Achat: −${format(feesBuyUser)}  ·  Vente: −${format(feesSellUser)}  ·  Inclus dans P&L réalisé et P&L latent`, color: "#f59e0b" },
                         { label: "Taux FX (BCE)", value: fxLine || "CHF uniquement", note: "Source: Banque Centrale Européenne", color: "var(--text-secondary)" },
                         { label: "Source des prix", value: "Yahoo Finance", note: "Délai possible 15 min — différent du broker", color: "var(--text-tertiary)" },
                         { label: "Écart broker possible", value: "±0.5–2%", note: "FX broker ≠ FX BCE · prix temps réel ≠ Yahoo", color: "#f59e0b" },
-                        { label: "Patrimoine total portfolio", value: format(valueUser + cashUser), note: "Positions + liquidités propres", color: "var(--accent)" },
                       ].map(row => (
                         <div key={row.label} className="flex flex-col gap-0.5 px-4 py-3" style={{ backgroundColor: "var(--bg-elevated)" }}>
                           <span className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>{row.label}</span>

@@ -29,7 +29,6 @@ const NAV_SECTIONS = [
     label: "Outils",
     items: [
       { label: "Watchlist",       href: "/watchlist",      icon: Eye            },
-      { label: "Liquidités",      href: "/revenus",        icon: Wallet         },
       { label: "Transactions",    href: "/transactions",   icon: ArrowLeftRight },
       { label: "Calculateur DCA", href: "/dca-calculator", icon: Calculator     },
     ],
