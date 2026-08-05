@@ -20,8 +20,7 @@ import type { SearchResult } from "@/hooks/use-asset-search"
 import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import Link from "next/link"
-import type { BrokerId } from "@/lib/import/brokers"
-import * as Q from "@/lib/supabase/queries"
+import { BROKERS, type BrokerId } from "@/lib/import/brokers"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -711,6 +710,7 @@ export default function PortfoliosPage() {
     removeAsset: dbRemoveAsset,
     addTransaction,
     depositCash,
+    depositGlobalCash,
     getAvailableCash,
     refresh: refreshAppData,
   } = useAppData()
@@ -957,18 +957,20 @@ export default function PortfoliosPage() {
   ) {
     const result = await importBrokerCSV(name, file, operations, broker)
 
-    // La RPC crée les mouvements de trésorerie mais n'écrit pas le SOLDE du
-    // portefeuille : sans cette étape, un compte IBKR arrivait avec 0 de
-    // liquidités alors que le relevé en déclare (1 328 CHF dans le cas réel,
-    // soit un tiers du compte). Le solde déclaré par le courtier fait foi —
-    // le rejeu des flux dépendrait de l'exhaustivité de l'export.
+    // Le cash n'a pas sa place dans un portefeuille : c'est de la liquidité,
+    // elle vit dans "Liquidités" (globalCash), jamais dans une position ni
+    // dans un solde par-portefeuille. La RPC crée bien les mouvements de
+    // trésorerie (audit), mais rien n'incrémente encore un solde réel — sans
+    // ce crédit, un compte IBKR arrivait avec 0 de liquidités alors que le
+    // relevé en déclare (1 328 CHF dans le cas réel, un tiers du compte).
+    // Le solde déclaré par le courtier fait foi : le rejeu des flux ne
+    // serait fiable que si l'export couvrait toute l'histoire du compte.
     const declared = analysis?.cashBalances as Record<string, number> | undefined
-    if (declared && Object.keys(declared).length > 0) {
-      await Q.updateCashBalance(result.portfolioId, {
-        CHF: declared.CHF ?? 0,
-        USD: declared.USD ?? 0,
-        EUR: declared.EUR ?? 0,
-      })
+    if (declared) {
+      for (const cur of ["CHF", "USD", "EUR"] as const) {
+        const amount = declared[cur]
+        if (amount > 0) await depositGlobalCash(amount, cur, `Import ${BROKERS[broker].label} — ${name}`)
+      }
     }
 
     // La RPC écrit directement en base, hors du state local d'useAppData :

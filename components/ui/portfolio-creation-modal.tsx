@@ -253,7 +253,9 @@ function AnalysisDisplay({ analysis }: { analysis: ImportAnalysis }) {
 
       {Object.keys(analysis.cashBalances).length > 0 && (
         <div className="rounded-lg border p-3" style={{ backgroundColor: "var(--bg-base)", borderColor: "var(--border)" }}>
-          <p className="text-[10px] uppercase font-semibold text-zinc-500 mb-2">Liquidités reprises</p>
+          <p className="text-[10px] uppercase font-semibold text-zinc-500 mb-2">
+            Liquidités reprises — créditées sur « Liquidités », pas sur ce portefeuille
+          </p>
           <div className="space-y-1">
             {Object.entries(analysis.cashBalances).map(([cur, amount]) => (
               <div key={cur} className="flex items-center justify-between">
