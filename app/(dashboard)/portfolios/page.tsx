@@ -21,7 +21,11 @@ import { useAppData } from "@/hooks/use-app-data"
 import type { Portfolio, Asset, AssetClass } from "@/lib/types"
 import Link from "next/link"
 import { BROKERS, type BrokerId } from "@/lib/import/brokers"
-import { UNASSIGNED_CASH } from "@/lib/cash"
+import { UNASSIGNED_CASH, balancesInChf, normalizeBalances } from "@/lib/cash"
+import {
+  MobilePortfolio, MOBILE_PERIOD_TO_API,
+  type MobilePeriod, type AnalyticsCard,
+} from "@/components/portfolio/mobile-portfolio"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -739,6 +743,9 @@ export default function PortfoliosPage() {
   // Confirmation before deletion
   const [deleteConfirm, setDeleteConfirm] = useState<{ portfolioId: string; assetId: string } | null>(null)
   const [deletePortfolioConfirm, setDeletePortfolioConfirm] = useState<string | null>(null) // portfolio ID to delete
+  // Renommer un portefeuille n'existe nulle part dans l'application : plutôt
+  // qu'un bouton qui ne fait rien, on le dit.
+  const [editPortfolioNotice, setEditPortfolioNotice] = useState(false)
 
   function openEditModal(asset: Asset) {
     const lastBuy = [...transactions]
@@ -805,6 +812,9 @@ export default function PortfoliosPage() {
     setTxModal(null)
   }
   const [period,     setPeriod]     = useState<Period>("1Y")
+  // Période propre à la vue mobile : elle a sa propre échelle (1J → Tout)
+  // et ne doit pas perturber les graphiques de la vue bureau.
+  const [mobilePeriod, setMobilePeriod] = useState<MobilePeriod>("1M")
   const [chartMode,  setChartMode]  = useState<"valeur" | "performance">("valeur")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
@@ -1004,6 +1014,40 @@ export default function PortfoliosPage() {
     }
   }
 
+  /**
+   * Export CSV des positions ouvertes — remise en forme de ce qui est déjà à
+   * l'écran, aucune valeur recalculée.
+   */
+  function exportPortfolioCsv(p: Portfolio) {
+    const rows = p.assets
+      .filter(a => a.assetClass !== "cash" && a.quantity > 0)
+      .map(a => {
+        const live = liveEnriched[a.ticker]
+        return [
+          a.ticker,
+          a.name.replace(/"/g, '""'),
+          ASSET_CLASS_LABELS[a.assetClass],
+          a.quantity,
+          a.avgBuyPrice,
+          live?.originalPrice ?? a.currentPrice,
+          live?.originalCurrency ?? a.currency ?? "CHF",
+        ]
+      })
+    const header = ["Ticker", "Nom", "Classe", "Quantite", "PrixMoyen", "PrixActuel", "Devise"]
+    const csv = [header, ...rows]
+      .map(r => r.map(c => typeof c === "string" && c.includes(",") ? `"${c}"` : c).join(","))
+      .join("
+")
+
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href = url
+    a.download = `${p.name.replace(/[^\w-]+/g, "_")}_positions.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function handleDeleteAsset(portfolioId: string, assetId: string) {
     // Show confirmation dialog instead of deleting immediately
     setDeleteConfirm({ portfolioId, assetId })
@@ -1052,6 +1096,13 @@ export default function PortfoliosPage() {
   const { history: activePortfolioHistory, loading: activeHistoryLoading } =
     usePortfolioHistory(activePortfolioHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
 
+  // Historique de la vue mobile — même source, échelle de périodes différente.
+  // On ne demande rien quand on n'est pas sur mobile : pas de requête inutile.
+  const { history: mobileHistory, loading: mobileHistoryLoading } = usePortfolioHistory(
+    isMobile ? activePortfolioHistoryAssets : [],
+    MOBILE_PERIOD_TO_API[mobilePeriod] ?? "1M"
+  )
+
   // Vue globale — tous les portefeuilles agrégés
   const globalHistoryAssets = useMemo<PortfolioAsset[]>(() =>
     portfolios.flatMap(p =>
@@ -1068,6 +1119,106 @@ export default function PortfoliosPage() {
 
   const { history: globalPortfolioHistory, loading: globalHistoryLoading } =
     usePortfolioHistory(globalHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
+
+  // ── Cartes d'analyse de la vue mobile ────────────────────────────────────
+  // Construites uniquement à partir de ce que l'application collecte
+  // réellement. Une carte sans donnée le dit — elle n'affiche pas un zéro
+  // qui passerait pour une mesure.
+  const mobileAnalytics = useMemo<AnalyticsCard[]>(() => {
+    if (!activePortfolio) return []
+    const ur = (fxRates as Record<string, number>)[currency] ?? 1
+    const open = activePortfolio.assets.filter(a => a.assetClass !== "cash" && a.quantity > 0)
+
+    const valued = open.map(a => ({
+      asset: a,
+      value: (liveEnriched[a.ticker]?.price ?? a.currentPrice) * a.quantity,
+      cur:   liveEnriched[a.ticker]?.originalCurrency ?? a.currency ?? "CHF",
+    }))
+    const total = valued.reduce((s2, v) => s2 + v.value, 0)
+    const share = (v: number) => total > 0 ? (v / total) * 100 : 0
+
+    const byKey = (pick: (v: typeof valued[number]) => string, colorOf?: (k: string) => string) => {
+      const m = new Map<string, number>()
+      for (const v of valued) m.set(pick(v), (m.get(pick(v)) ?? 0) + v.value)
+      return [...m.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, v]) => ({
+          label,
+          value: `${share(v).toFixed(1)} %`,
+          pct: share(v),
+          color: colorOf?.(label),
+        }))
+    }
+
+    const classRows = byKey(
+      v => ASSET_CLASS_LABELS[v.asset.assetClass],
+      k => Object.entries(ASSET_CLASS_LABELS).find(([, l]) => l === k)?.[0]
+        ? ASSET_CLASS_COLORS[Object.entries(ASSET_CLASS_LABELS).find(([, l]) => l === k)![0] as AssetClass]
+        : undefined
+    )
+    const currencyRows = byKey(v => v.cur)
+
+    const txs = transactions.filter(t => t.portfolioId === activePortfolio.id)
+    const feesChf = txs.reduce((s2, t) => s2 + (t.feesChf ?? 0), 0)
+
+    const since = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10)
+    const divChf = txs
+      .filter(t => t.type === "dividend" && String(t.date).slice(0, 10) >= since)
+      .reduce((s2, t) => s2 + (t.netAmountChf ?? 0), 0)
+    const yieldPct = total > 0 ? (divChf * ur / total) * 100 : 0
+
+    const sorted = [...valued].sort((a, b) => b.value - a.value)
+    const topShare = sorted.length ? share(sorted[0].value) : 0
+    const hhi = valued.reduce((s2, v) => s2 + Math.pow(share(v.value), 2), 0)
+
+    return [
+      {
+        key: "classes", label: "Répartition par classe",
+        value: classRows[0] ? `${classRows[0].label} ${classRows[0].value}` : "—",
+        hint: `${open.length} ligne${open.length > 1 ? "s" : ""}`,
+        rows: classRows,
+      },
+      {
+        key: "devises", label: "Répartition par devise",
+        value: currencyRows[0] ? `${currencyRows[0].label} ${currencyRows[0].value}` : "—",
+        hint: "Devise de cotation, pas de conversion",
+        rows: currencyRows,
+      },
+      {
+        key: "concentration", label: "Concentration",
+        value: sorted.length ? `${topShare.toFixed(0)} % sur ${sorted[0].asset.ticker}` : "—",
+        hint: hhi > 2500 ? "Portefeuille très concentré" : hhi > 1500 ? "Concentration modérée" : "Bien réparti",
+        rows: sorted.slice(0, 5).map(v => ({
+          label: v.asset.ticker, value: `${share(v.value).toFixed(1)} %`, pct: share(v.value),
+        })),
+      },
+      {
+        key: "frais", label: "Frais payés",
+        value: format(feesChf * ur),
+        hint: "Cumul depuis l'origine du portefeuille",
+        rows: feesChf > 0
+          ? [{ label: "Total des frais de transaction", value: format(feesChf * ur) }]
+          : [],
+        empty: "Aucun frais enregistré sur les transactions de ce portefeuille.",
+      },
+      {
+        key: "dividendes", label: "Rendement dividendes",
+        value: divChf > 0 ? `${yieldPct.toFixed(2)} %` : "—",
+        hint: "12 derniers mois / valeur actuelle",
+        rows: divChf > 0
+          ? [{ label: "Dividendes encaissés sur 12 mois", value: format(divChf * ur) }]
+          : [],
+        empty: "Aucun dividende encaissé sur les 12 derniers mois.",
+      },
+      {
+        key: "secteurs", label: "Répartition sectorielle",
+        value: "—",
+        hint: "Donnée non collectée",
+        rows: [],
+        empty: "L'application ne récupère pas encore le secteur ni le pays des titres. Rien n'est affiché plutôt qu'une estimation.",
+      },
+    ]
+  }, [activePortfolio, liveEnriched, transactions, fxRates, currency, format])
 
   return (
     <div className="flex flex-col">
@@ -1531,7 +1682,46 @@ export default function PortfoliosPage() {
           )}
 
           {/* ═══════════════ INDIVIDUAL PORTFOLIO VIEW ═══════════════ */}
-          {activePortfolio && (
+          {/* Sur mobile, le portefeuille devient une mini-application en
+              quatre onglets : une page unique qui empile tout est illisible
+              sur un écran étroit. La vue bureau reste inchangée. */}
+          {activePortfolio && isMobile && (() => {
+            const ur = (fxRates as Record<string, number>)[currency] ?? 1
+            const m  = activePortfolioMetrics
+              ?? calculatePortfolioMetrics(metricAssetsFor(activePortfolio.assets), {}, fxRates)
+            const cashChf = balancesInChf(
+              normalizeBalances(activePortfolio.cashBalances), fxRates as never
+            )
+            return (
+              <div className="-mx-4 -mt-4 sm:-mx-6">
+                <MobilePortfolio
+                  portfolio={activePortfolio}
+                  history={mobileHistory}
+                  historyLoading={mobileHistoryLoading}
+                  period={mobilePeriod}
+                  onPeriodChange={setMobilePeriod}
+                  totalValue={m.portfolioValueChf * ur}
+                  investedValue={m.investedChf * ur}
+                  pnlValue={m.totalPnlChf * ur}
+                  pnlPct={m.totalReturnPercent}
+                  positionsCount={m.positionLineCount}
+                  cashValue={cashChf * ur}
+                  livePrices={liveEnriched}
+                  format={format}
+                  currency={currency}
+                  analytics={mobileAnalytics}
+                  onAddTransaction={() => openTxModal(activePortfolio.id)}
+                  onEdit={() => setEditPortfolioNotice(true)}
+                  onDelete={() => setDeletePortfolioConfirm(activePortfolio.id)}
+                  onImport={() => setShowPortfolioCreation(true)}
+                  onExport={() => exportPortfolioCsv(activePortfolio)}
+                  onSellAsset={openSellModal}
+                />
+              </div>
+            )
+          })()}
+
+          {activePortfolio && !isMobile && (
             <>
               {/* Portfolio header */}
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2104,6 +2294,32 @@ export default function PortfoliosPage() {
         onCreateManual={handleAddPortfolioManual}
         onCreateWithImport={handleAddPortfolioWithImport}
       />
+
+      {/* Renommer/modifier un portefeuille n'est pas encore implémenté côté
+          données : on le dit au lieu d'afficher un formulaire sans effet. */}
+      {editPortfolioNotice && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
+          onClick={() => setEditPortfolioNotice(false)}>
+          <div className="w-full rounded-t-2xl border-t p-5 pb-8 sm:max-w-sm sm:rounded-2xl sm:border"
+            style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+            onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+              Modification indisponible
+            </p>
+            <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              Renommer un portefeuille ou changer sa couleur n&apos;est pas encore possible :
+              l&apos;application ne sait pas mettre à jour un portefeuille existant. Tu peux en
+              créer un nouveau et y réimporter ton relevé.
+            </p>
+            <button onClick={() => setEditPortfolioNotice(false)}
+              className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white"
+              style={{ backgroundColor: "var(--accent, #6366f1)" }}>
+              Compris
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

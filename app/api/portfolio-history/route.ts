@@ -51,7 +51,8 @@ const TICKER_ALIASES: Record<string, string[]> = {
  */
 async function fetchWeeklyPrices(
   ticker: string,
-  period1: string
+  period1: string,
+  interval: "1d" | "1wk" = "1wk"
 ): Promise<{ prices: Map<string, number>; currency: string | null }> {
   const map = new Map<string, number>()
   const aliases = TICKER_ALIASES[ticker.toUpperCase()] ?? []
@@ -62,7 +63,7 @@ async function fetchWeeklyPrices(
       const raw = await yf.chart(candidate, {
         period1,
         period2: new Date().toISOString().slice(0, 10),
-        interval: "1wk",
+        interval,
       }) as unknown as {
         quotes: Array<{ date: Date; close: number | null }>
         meta?: { currency?: string }
@@ -122,11 +123,20 @@ export async function POST(req: NextRequest) {
 
   // Determine how far back to go
   const daysBack: Record<string, number> = {
+    "1D": 4,          // marge week-end/férié : il faut au moins deux séances
     "1W": 7, "1M": 30, "3M": 90, "6M": 180,
     "1Y": 365, "2Y": 730, "5Y": 1825, "MAX": 1825,
   }
-  const days = daysBack[period] ?? 365
+  const days = period === "YTD"
+    ? Math.max(2, Math.ceil((Date.now() - new Date(new Date().getUTCFullYear(), 0, 1).getTime()) / 86_400_000))
+    : (daysBack[period] ?? 365)
   const period1 = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString().slice(0, 10)
+
+  // Un pas hebdomadaire ne peut pas dessiner une journée ni une semaine : sur
+  // les fenêtres courtes on passe au pas journalier. Le calcul de la valeur
+  // reste identique (quantité actuelle × prix historique, converti) — seule
+  // la résolution change.
+  const interval: "1d" | "1wk" = days <= 120 ? "1d" : "1wk"
 
   const rates = await getFxRates()
 
@@ -134,8 +144,8 @@ export async function POST(req: NextRequest) {
   const priceData = new Map<string, { prices: Map<string, number>; currency: string | null }>()
   await Promise.all(
     assets.map(async (asset) => {
-      const cacheKey = `port-history-v2:${asset.ticker}:${period}`
-      const res = await cacheFetch(cacheKey, () => fetchWeeklyPrices(asset.ticker, period1), 3600)
+      const cacheKey = `port-history-v3:${asset.ticker}:${period}`
+      const res = await cacheFetch(cacheKey, () => fetchWeeklyPrices(asset.ticker, period1, interval), 3600)
       priceData.set(asset.ticker, res as { prices: Map<string, number>; currency: string | null })
     })
   )
