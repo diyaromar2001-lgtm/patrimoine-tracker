@@ -1108,13 +1108,6 @@ export default function PortfoliosPage() {
   const { history: activePortfolioHistory, loading: activeHistoryLoading } =
     usePortfolioHistory(activePortfolioHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
 
-  // Historique de la vue mobile — même source, échelle de périodes différente.
-  // On ne demande rien quand on n'est pas sur mobile : pas de requête inutile.
-  const { history: mobileHistory, loading: mobileHistoryLoading } = usePortfolioHistory(
-    isMobile ? activePortfolioHistoryAssets : [],
-    MOBILE_PERIOD_TO_API[mobilePeriod] ?? "1M"
-  )
-
   // Vue globale — tous les portefeuilles agrégés
   const globalHistoryAssets = useMemo<PortfolioAsset[]>(() =>
     portfolios.flatMap(p =>
@@ -1132,14 +1125,29 @@ export default function PortfoliosPage() {
   const { history: globalPortfolioHistory, loading: globalHistoryLoading } =
     usePortfolioHistory(globalHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
 
+  // Historique de la vue mobile — même source, échelle de périodes propre.
+  // La pastille « Tous » montre l'agrégat ; hors mobile on ne demande rien.
+  const mobileHistoryAssets = useMemo<PortfolioAsset[]>(() => {
+    if (!isMobile) return []
+    return activeTab === "global" ? globalHistoryAssets : activePortfolioHistoryAssets
+  }, [isMobile, activeTab, globalHistoryAssets, activePortfolioHistoryAssets])
+
+  const { history: mobileHistory, loading: mobileHistoryLoading } =
+    usePortfolioHistory(mobileHistoryAssets, MOBILE_PERIOD_TO_API[mobilePeriod] ?? "1M")
+
   // ── Cartes d'analyse de la vue mobile ────────────────────────────────────
   // Construites uniquement à partir de ce que l'application collecte
   // réellement. Une carte sans donnée le dit — elle n'affiche pas un zéro
   // qui passerait pour une mesure.
   const mobileAnalytics = useMemo<AnalyticsCard[]>(() => {
-    if (!activePortfolio) return []
+    // Même jeu de cartes pour un portefeuille ou pour l'agrégat : seul le
+    // périmètre des positions change.
+    const scopeAssets = activeTab === "global"
+      ? portfolios.flatMap(p => p.assets)
+      : activePortfolio?.assets
+    if (!scopeAssets) return []
     const ur = (fxRates as Record<string, number>)[currency] ?? 1
-    const open = activePortfolio.assets.filter(a => a.assetClass !== "cash" && a.quantity > 0)
+    const open = scopeAssets.filter(a => a.assetClass !== "cash" && a.quantity > 0)
 
     const valued = open.map(a => ({
       asset: a,
@@ -1175,7 +1183,9 @@ export default function PortfoliosPage() {
       .map(r => ({ ...r, label: ASSET_CLASS_LABELS[r.label as AssetClass] }))
     const currencyRows = byKey(v => v.cur)
 
-    const txs = transactions.filter(t => t.portfolioId === activePortfolio.id)
+    const txs = activeTab === "global"
+      ? transactions
+      : transactions.filter(t => t.portfolioId === activePortfolio?.id)
     const feesChf = txs.reduce((s2, t) => s2 + (t.feesChf ?? 0), 0)
 
     const since = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10)
@@ -1212,7 +1222,7 @@ export default function PortfoliosPage() {
       {
         key: "frais", label: "Frais payés",
         value: format(feesChf * ur),
-        hint: "Cumul depuis l'origine du portefeuille",
+        hint: activeTab === "global" ? "Tous portefeuilles confondus" : "Cumul depuis l'origine",
         rows: feesChf > 0
           ? [{ label: "Total des frais de transaction", value: format(feesChf * ur) }]
           : [],
@@ -1235,7 +1245,7 @@ export default function PortfoliosPage() {
         empty: "L'application ne récupère pas encore le secteur ni le pays des titres. Rien n'est affiché plutôt qu'une estimation.",
       },
     ]
-  }, [activePortfolio, liveEnriched, transactions, fxRates, currency, format])
+  }, [activePortfolio, activeTab, portfolios, liveEnriched, transactions, fxRates, currency, format])
 
   return (
     <div className="flex flex-col">
@@ -1313,7 +1323,7 @@ export default function PortfoliosPage() {
         >
 
           {/* ═══════════════ GLOBAL VIEW ═══════════════ */}
-          {activeTab === "global" && (
+          {activeTab === "global" && !isMobile && (
             <>
               {/* Hero card — même langage que le dashboard : fond sobre,
                   halo discret, plus de dégradé bleu/vert dominant */}
@@ -1709,6 +1719,52 @@ export default function PortfoliosPage() {
               )}
             </>
           )}
+
+          {/* Vue agrégée sur mobile — même écran que pour un portefeuille,
+              alimenté par le total. Sans cela, « Tous » retombait sur la mise
+              en page bureau, illisible sur un écran étroit. */}
+          {activeTab === "global" && isMobile && (() => {
+            const ur = (fxRates as Record<string, number>)[currency] ?? 1
+            const aggregate: Portfolio = {
+              id: "global",
+              name: "Tous les portefeuilles",
+              description: "",
+              color: "#6366f1",
+              currency: "CHF",
+              cashBalances: globalCash,
+              createdAt: "",
+              assets: portfolios.flatMap(p => p.assets),
+            }
+            return (
+              <div className="-mx-4 -mt-4 sm:-mx-6">
+                <MobilePortfolio
+                  tabBarOffset={CHIP_BAR_HEIGHT}
+                  aggregated
+                  portfolio={aggregate}
+                  history={mobileHistory}
+                  historyLoading={mobileHistoryLoading}
+                  period={mobilePeriod}
+                  onPeriodChange={setMobilePeriod}
+                  totalValue={globalMetrics.positionValueChf * ur}
+                  investedValue={globalMetrics.investedChf * ur}
+                  pnlValue={globalMetrics.totalPnlChf * ur}
+                  pnlPct={globalMetrics.totalReturnPercent}
+                  positionsCount={globalMetrics.positionLineCount}
+                  cashValue={balancesInChf(globalCash, fxRates as never) * ur}
+                  livePrices={liveEnriched}
+                  format={format}
+                  currency={currency}
+                  analytics={mobileAnalytics}
+                  onAddTransaction={() => openTxModal()}
+                  onEdit={() => {}}
+                  onDelete={() => {}}
+                  onImport={() => setShowPortfolioCreation(true)}
+                  onExport={() => {}}
+                  onSellAsset={openSellModal}
+                />
+              </div>
+            )
+          })()}
 
           {/* ═══════════════ INDIVIDUAL PORTFOLIO VIEW ═══════════════ */}
           {/* Sur mobile, le portefeuille devient une mini-application en

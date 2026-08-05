@@ -64,6 +64,8 @@ export interface MobilePortfolioProps {
   onSellAsset:      (asset: Asset, price: number, currency: string) => void
   /** Décalage vertical imposé par la barre de portefeuilles collante. */
   tabBarOffset?:    number
+  /** Vue « Tous » : pas de portefeuille unique à administrer. */
+  aggregated?:      boolean
 }
 
 export interface AnalyticsCard {
@@ -91,6 +93,9 @@ export function MobilePortfolio(props: MobilePortfolioProps) {
   // Les deux barres collantes s'empileraient au même endroit : celle-ci se
   // cale sous la barre de portefeuilles au lieu de passer dessous.
   const stickyTop = props.tabBarOffset ?? 0
+  // Sur l'agrégat, « Paramètres » n'a rien à gérer : on retire l'onglet au
+  // lieu d'afficher des actions sans cible.
+  const tabs = props.aggregated ? TABS.filter(t => t.id !== "parametres") : TABS
 
   return (
     <div className="flex flex-col">
@@ -99,7 +104,7 @@ export function MobilePortfolio(props: MobilePortfolioProps) {
       <div className="sticky z-20 border-b backdrop-blur"
         style={{ top: stickyTop, borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--bg-base) 88%, transparent)" }}>
         <div className="flex">
-          {TABS.map(t => {
+          {tabs.map(t => {
             const active = tab === t.id
             const Icon = t.icon
             return (
