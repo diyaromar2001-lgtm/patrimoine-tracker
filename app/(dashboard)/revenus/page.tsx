@@ -240,8 +240,9 @@ export default function RevenusPage() {
               {/* Chaque portefeuille a SA trésorerie : le cash d'un courtier ne
                   finance pas les achats d'un autre. */}
               <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                <div className="grid px-5 py-2.5 border-b text-[11px] font-medium uppercase tracking-wider"
-                  style={{ borderColor: "var(--border)", color: "var(--text-tertiary)", gridTemplateColumns: "minmax(120px,1fr) 90px 90px 90px 110px" }}>
+              <div className="overflow-x-auto">
+                <div className="grid px-5 py-2.5 border-b text-[11px] font-medium uppercase tracking-wider gap-2"
+                  style={{ borderColor: "var(--border)", color: "var(--text-tertiary)", gridTemplateColumns: "minmax(120px,1fr) repeat(3, minmax(110px,auto)) 130px", minWidth: 580 }}>
                   <span>Compte</span>
                   <span className="text-right">CHF</span>
                   <span className="text-right">USD</span>
@@ -258,8 +259,8 @@ export default function RevenusPage() {
                 {cashAccounts.map((acc, i) => {
                   const accChf = acc.balances.CHF + acc.balances.USD / fxUsd + acc.balances.EUR / fxEur
                   return (
-                    <div key={acc.id} className="grid items-center px-5 py-3"
-                      style={{ gridTemplateColumns: "minmax(120px,1fr) 90px 90px 90px 110px",
+                    <div key={acc.id} className="grid items-center px-5 py-3 gap-2"
+                      style={{ gridTemplateColumns: "minmax(120px,1fr) repeat(3, minmax(110px,auto)) 130px", minWidth: 580,
                                borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="h-2 w-2 rounded-full flex-shrink-0"
@@ -269,17 +270,18 @@ export default function RevenusPage() {
                         </span>
                       </div>
                       {(["CHF","USD","EUR"] as const).map(cur => (
-                        <span key={cur} className="text-right text-sm tabular-nums"
+                        <span key={cur} className="text-right text-sm tabular-nums whitespace-nowrap"
                           style={{ color: acc.balances[cur] > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}>
                           {acc.balances[cur] > 0 ? formatCurrency(acc.balances[cur], cur) : "—"}
                         </span>
                       ))}
-                      <span className="text-right text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                      <span className="text-right text-sm font-semibold tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
                         {format(accChf * userRate)}
                       </span>
                     </div>
                   )
                 })}
+              </div>{/* /overflow-x-auto */}
               </div>
 
               {/* ── Action buttons ── */}
