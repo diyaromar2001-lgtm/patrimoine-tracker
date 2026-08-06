@@ -13,7 +13,8 @@ import { useCurrency } from "@/hooks/use-currency"
 import { calculatePortfolioPnL, convertPnL } from "@/lib/pnl"
 import type { AppCurrency } from "@/lib/utils"
 import { ASSET_CLASS_LABELS, ASSET_CLASS_COLORS } from "@/lib/types"
-import { maxDrawdown, sumDividendsDisplay, chfAmountOrFallback } from "@/lib/finance"
+import { maxDrawdown, chfAmountOrFallback } from "@/lib/finance"
+import { useRealDividends } from "@/hooks/use-real-dividends"
 import { aggregateCashflow } from "@/lib/cashflow"
 import {
   TrendingUp, Wallet, Activity, BadgeCheck, ArrowRight, Plus,
@@ -100,11 +101,15 @@ export default function DashboardPage() {
     [revenus, convert]
   )
 
-  // Dividendes encaissés — une seule conversion (fix double FX)
-  const totalDividends = useMemo(
-    () => sumDividendsDisplay(transactions, currency, fxRates as Record<string, number>),
-    [transactions, fxRates, currency]
+  // Dividendes encaissés — MÊME source que la page Dividendes.
+  // Additionner les transactions `dividend` sous-estimait fortement le total :
+  // l'import laisse la plupart d'entre elles à zéro. La reconstruction
+  // (calendrier Yahoo × quantités détenues) ne dépend pas de ce que le
+  // courtier a écrit dans son export.
+  const { summary: dividendSummary } = useRealDividends(
+    transactions, currency, fxRates as Record<string, number>
   )
+  const totalDividends = dividendSummary.totalNet
 
   // P&L global = P&L marché + P&L réalisé + dividendes + revenus annexes
   const globalPnl    = totalPnl + totalRevenus + totalDividends
@@ -590,7 +595,7 @@ export default function DashboardPage() {
                 {
                   // Le cash est exclu du classement : sans cette précision, on lisait
                   // « classe dominante : Crypto 13 % » alors que 63 % était en liquidités.
-                  label: "1re classe (hors cash)",
+                  label: "Première classe",
                   value: riskInfo.topClass
                     ? `${ASSET_CLASS_LABELS[riskInfo.topClass.cls as keyof typeof ASSET_CLASS_LABELS] ?? riskInfo.topClass.cls} · ${riskInfo.topClass.pct.toFixed(0)} %`
                     : "—",

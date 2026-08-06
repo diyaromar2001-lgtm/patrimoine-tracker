@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import Link from "next/link"
 import { Topbar } from "@/components/layout/topbar"
+import { useFundamentals, sectorBreakdown, countryBreakdown } from "@/hooks/use-fundamentals"
 import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import { useLivePrices } from "@/hooks/use-live-prices"
@@ -72,6 +73,20 @@ export default function AnalysesPage() {
 
   const totalValue = useMemo(() => positions.reduce((s, p) => s + p.displayValue, 0), [positions])
 
+  // Secteur / pays : rien ne remplissait ces champs, d'où « non renseigné pour
+  // 100 % du portefeuille ». Ils viennent maintenant de Yahoo, avec la
+  // transparence sectorielle des ETF — indispensable ici, la majorité de la
+  // valeur étant en fonds.
+  const { data: fundamentals, loading: fundamentalsLoading } = useFundamentals(
+    useMemo(() => positions.map(p => p.ticker), [positions])
+  )
+  const valuedPositions = useMemo(
+    () => positions.map(p => ({ ticker: p.ticker, value: p.displayValue })),
+    [positions]
+  )
+  const sectors   = useMemo(() => sectorBreakdown(valuedPositions, fundamentals), [valuedPositions, fundamentals])
+  const countries = useMemo(() => countryBreakdown(valuedPositions, fundamentals), [valuedPositions, fundamentals])
+
   // Agrégation générique par champ
   const groupBy = (getKey: (p: typeof positions[number]) => string) => {
     const map: Record<string, number> = {}
@@ -86,8 +101,6 @@ export default function AnalysesPage() {
 
   const byClass    = useMemo(() => groupBy(p => ASSET_CLASS_LABELS[p.assetClass as keyof typeof ASSET_CLASS_LABELS] ?? p.assetClass)
     .map((d, i) => ({ ...d, color: Object.values(ASSET_CLASS_COLORS)[i] })), [positions, totalValue]) // eslint-disable-line
-  const bySector   = useMemo(() => groupBy(p => p.sector?.trim() && p.sector !== "-" ? p.sector : "Non renseigné"), [positions, totalValue]) // eslint-disable-line
-  const byCountry  = useMemo(() => groupBy(p => p.country?.trim() && p.country !== "-" ? p.country : "Non renseigné"), [positions, totalValue]) // eslint-disable-line
   const byCurrency = useMemo(() => groupBy(p => livePrices[p.ticker]?.originalCurrency ?? p.currency ?? "CHF"), [positions, totalValue, livePrices]) // eslint-disable-line
 
   // Frais cumulés (historiques, en devise d'affichage)
@@ -139,10 +152,12 @@ export default function AnalysesPage() {
   // Qualité des données (transparence, pas de fallback silencieux)
   const dataQuality = useMemo(() => {
     const stalePrices = positions.filter(p => p.priceIsStale).length
-    const unknownSector = bySector.find(s => s.label === "Non renseigné")?.pct ?? 0
-    const unknownCountry = byCountry.find(s => s.label === "Non renseigné")?.pct ?? 0
+    // Part de la valeur qu'on n'a PAS su classer — annoncée telle quelle
+    // plutôt que noyée dans les pourcentages affichés.
+    const unknownSector  = totalValue > 0 ? (sectors.unclassified   / totalValue) * 100 : 0
+    const unknownCountry = totalValue > 0 ? (countries.unclassified / totalValue) * 100 : 0
     return { stalePrices, unknownSector, unknownCountry }
-  }, [positions, bySector, byCountry])
+  }, [positions, totalValue, sectors, countries])
 
   const hasData = positions.length > 0
 
@@ -251,13 +266,26 @@ export default function AnalysesPage() {
                 comme de grandes cartes vides : une seule carte compacte les
                 remplace (règle : jamais d'écran qui semble cassé). */}
             {(() => {
-              const sectorEmpty = bySector.length === 1 && bySector[0].label === "Non renseigné"
-              const countryEmpty = byCountry.length === 1 && byCountry[0].label === "Non renseigné"
               const sections = [
-                { title: "Par classe d'actifs", icon: <PieChart className="h-4 w-4" style={{ color: "#6366f1" }} />, data: byClass },
-                { title: "Par devise", icon: <Banknote className="h-4 w-4" style={{ color: "#22c55e" }} />, data: byCurrency },
-                ...(!sectorEmpty ? [{ title: "Par secteur", icon: <Factory className="h-4 w-4" style={{ color: "#a855f7" }} />, data: bySector.slice(0, 8) }] : []),
-                ...(!countryEmpty ? [{ title: "Par zone géographique", icon: <Globe2 className="h-4 w-4" style={{ color: "#0ea5e9" }} />, data: byCountry.slice(0, 8) }] : []),
+                { title: "Par classe d'actifs", icon: <PieChart className="h-4 w-4" style={{ color: "#6366f1" }} />, data: byClass, note: undefined as string | undefined },
+                { title: "Par devise", icon: <Banknote className="h-4 w-4" style={{ color: "#22c55e" }} />, data: byCurrency, note: undefined as string | undefined },
+                ...(sectors.rows.length ? [{
+                  title: "Par secteur",
+                  icon: <Factory className="h-4 w-4" style={{ color: "#a855f7" }} />,
+                  data: sectors.rows.slice(0, 9),
+                  // Un ETF n'a pas de secteur propre : sa valeur est ventilée
+                  // selon la composition du fonds. On le dit, sinon le lecteur
+                  // croirait que ses ETF sont classés comme des actions.
+                  note: "Les ETF sont ventilés selon la composition réelle du fonds.",
+                }] : []),
+                ...(countries.rows.length ? [{
+                  title: "Par pays",
+                  icon: <Globe2 className="h-4 w-4" style={{ color: "#0ea5e9" }} />,
+                  data: countries.rows.slice(0, 9),
+                  note: countries.unclassified > 0
+                    ? `${format(countries.unclassified)} en fonds internationaux, sans pays unique.`
+                    : undefined,
+                }] : []),
               ]
               return (
                 <>
@@ -265,24 +293,19 @@ export default function AnalysesPage() {
                     {sections.map(section => (
                       <SectionCard key={section.title} title={section.title} action={section.icon}>
                         <ExposureBars data={section.data} format={format} />
+                        {section.note && (
+                          <p className="mt-3 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                            {section.note}
+                          </p>
+                        )}
                       </SectionCard>
                     ))}
                   </div>
-                  {(sectorEmpty || countryEmpty) && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-4"
-                      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}>
-                      <div>
-                        <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                          Analyses {sectorEmpty && countryEmpty ? "sectorielle et géographique indisponibles" : sectorEmpty ? "sectorielle indisponible" : "géographique indisponible"}
-                        </p>
-                        <p className="mt-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
-                          {sectorEmpty && countryEmpty ? "Les secteurs et pays" : sectorEmpty ? "Les secteurs" : "Les pays"} de vos positions ne sont pas renseignés.
-                        </p>
-                      </div>
-                      <Link href="/portfolios" className="btn-ghost text-xs">
-                        Compléter les données <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    </div>
+
+                  {fundamentalsLoading && !sectors.rows.length && (
+                    <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                      Chargement des secteurs et pays…
+                    </p>
                   )}
                 </>
               )
