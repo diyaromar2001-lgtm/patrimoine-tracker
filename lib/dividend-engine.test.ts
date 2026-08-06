@@ -7,6 +7,9 @@ import {
   groupByTicker,
   summarizeReal,
   nextExpectedDividend,
+  inferFrequency,
+  projectUpcomingDividends,
+  groupProjectionByMonth,
   type DividendTxInput,
   type DividendEvent,
 } from "./dividend-engine"
@@ -202,5 +205,107 @@ describe("conversion GBP (ETF londoniens)", () => {
     const noGbp = { CHF: 1, USD: 1.25, EUR: 1.08 } as FXRates
     const d = computeReceivedDividends(txs, ev, "CHF", noGbp, "2026-08-04")[0]
     expect(d.gross).toBeCloseTo(3.434, 6)   // documente le comportement de repli
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Projection des versements à venir
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("inferFrequency — rythme déduit de l'historique", () => {
+  const every = (n: number, count: number, start = "2025-01-15") => {
+    const out: string[] = []
+    const d = new Date(start + "T00:00:00Z")
+    for (let i = 0; i < count; i++) {
+      out.push(d.toISOString().slice(0, 10))
+      d.setUTCDate(d.getUTCDate() + n)
+    }
+    return out
+  }
+
+  test("reconnaît les rythmes usuels", () => {
+    expect(inferFrequency(every(30, 6))).toBe("monthly")
+    expect(inferFrequency(every(91, 6))).toBe("quarterly")
+    expect(inferFrequency(every(182, 5))).toBe("semiannual")
+    expect(inferFrequency(every(365, 4))).toBe("annual")
+  })
+
+  test("deux versements ne suffisent pas à établir un rythme", () => {
+    expect(inferFrequency(["2025-01-15", "2025-04-15"])).toBe("unknown")
+  })
+
+  test("un versement exceptionnel ne fausse pas le rythme", () => {
+    // Trimestriel régulier + un dividende spécial intercalé : la médiane tient,
+    // là où une moyenne aurait glissé vers « mensuel ».
+    const dates = [...every(91, 6), "2025-02-01"]
+    expect(inferFrequency(dates)).toBe("quarterly")
+  })
+})
+
+describe("projectUpcomingDividends", () => {
+  const TXS_P: DividendTxInput[] = [{ ticker: "O", type: "buy", quantity: 10, date: "2025-01-01" }]
+  // Mensuel, dernier versement connu au 2026-01-10
+  const EV_P: DividendEvent[] = [
+    { ticker: "O", exDate: "2025-10-10", amountPerShare: 0.26, currency: "CHF" },
+    { ticker: "O", exDate: "2025-11-10", amountPerShare: 0.26, currency: "CHF" },
+    { ticker: "O", exDate: "2025-12-10", amountPerShare: 0.26, currency: "CHF" },
+    { ticker: "O", exDate: "2026-01-10", amountPerShare: 0.27, currency: "CHF" },
+  ]
+
+  test("extrapole au rythme déduit et s'arrête à l'horizon", () => {
+    const p = projectUpcomingDividends(TXS_P, EV_P, "CHF", RATES, 6, "2026-01-15")
+    expect(p.length).toBeGreaterThan(3)
+    expect(p.every(x => x.exDate > "2026-01-15")).toBe(true)
+    expect(p.every(x => x.frequency === "monthly")).toBe(true)
+  })
+
+  test("le montant retenu est le DERNIER connu, sans croissance supposée", () => {
+    const p = projectUpcomingDividends(TXS_P, EV_P, "CHF", RATES, 3, "2026-01-15")
+    expect(p[0].amountPerShare).toBeCloseTo(0.27, 6)
+    expect(p[0].amount).toBeCloseTo(10 * 0.27, 6)
+  })
+
+  test("une ex-date déjà publiée est marquée confirmée, une extrapolation non", () => {
+    const withFuture: DividendEvent[] = [
+      ...EV_P,
+      { ticker: "O", exDate: "2026-02-10", amountPerShare: 0.27, currency: "CHF" },
+    ]
+    const p = projectUpcomingDividends(TXS_P, withFuture, "CHF", RATES, 4, "2026-01-15")
+    expect(p.find(x => x.exDate === "2026-02-10")?.confirmed).toBe(true)
+    expect(p.filter(x => !x.confirmed).length).toBeGreaterThan(0)
+  })
+
+  test("une ligne soldée ne projette rien", () => {
+    const sold: DividendTxInput[] = [
+      ...TXS_P,
+      { ticker: "O", type: "sell", quantity: 10, date: "2026-01-12" },
+    ]
+    expect(projectUpcomingDividends(sold, EV_P, "CHF", RATES, 6, "2026-01-15")).toHaveLength(0)
+  })
+
+  test("un rythme indéterminable ne produit que les dates confirmées", () => {
+    const irregular: DividendEvent[] = [
+      { ticker: "X", exDate: "2025-03-01", amountPerShare: 1, currency: "CHF" },
+      { ticker: "X", exDate: "2026-03-01", amountPerShare: 1, currency: "CHF" },
+    ]
+    const txs: DividendTxInput[] = [{ ticker: "X", type: "buy", quantity: 5, date: "2024-01-01" }]
+    const p = projectUpcomingDividends(txs, irregular, "CHF", RATES, 12, "2025-06-01")
+    expect(p).toHaveLength(1)
+    expect(p[0].confirmed).toBe(true)
+  })
+})
+
+describe("groupProjectionByMonth", () => {
+  test("un mois n'est confirmé que si toutes ses lignes le sont", () => {
+    const items = [
+      { ticker: "A", exDate: "2026-03-05", month: "2026-03", quantityHeld: 1, amountPerShare: 1,
+        nativeCurrency: "CHF", amount: 10, frequency: "quarterly" as const, confirmed: true },
+      { ticker: "B", exDate: "2026-03-20", month: "2026-03", quantityHeld: 1, amountPerShare: 1,
+        nativeCurrency: "CHF", amount: 5, frequency: "monthly" as const, confirmed: false },
+    ]
+    const [march] = groupProjectionByMonth(items)
+    expect(march.total).toBe(15)
+    expect(march.confirmed).toBe(false)
+    expect(march.items[0].ticker).toBe("A")   // trié par montant décroissant
   })
 })

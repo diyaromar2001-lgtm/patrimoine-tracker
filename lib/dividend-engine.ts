@@ -265,3 +265,153 @@ function shiftMonths(date: string, delta: number): string {
   d.setUTCMonth(d.getUTCMonth() + delta)
   return d.toISOString().slice(0, 10)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Projection des versements à venir
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type DividendFrequency = "monthly" | "quarterly" | "semiannual" | "annual" | "unknown"
+
+export const FREQUENCY_LABELS: Record<DividendFrequency, string> = {
+  monthly:    "Mensuel",
+  quarterly:  "Trimestriel",
+  semiannual: "Semestriel",
+  annual:     "Annuel",
+  unknown:    "Irrégulier",
+}
+
+/** Nombre de jours entre deux versements, par rythme. */
+const FREQUENCY_DAYS: Record<Exclude<DividendFrequency, "unknown">, number> = {
+  monthly: 30, quarterly: 91, semiannual: 182, annual: 365,
+}
+
+/**
+ * Déduit le rythme de versement d'un titre à partir de son historique.
+ *
+ * On prend l'écart MÉDIAN entre ex-dates, pas la moyenne : un versement
+ * exceptionnel (dividende spécial) fausserait une moyenne, alors qu'il ne
+ * déplace guère une médiane.
+ */
+export function inferFrequency(exDates: string[]): DividendFrequency {
+  const sorted = [...new Set(exDates)].sort()
+  if (sorted.length < 3) return "unknown"   // deux points ne font pas un rythme
+
+  const gaps: number[] = []
+  for (let i = 1; i < sorted.length; i++) gaps.push(daysBetween(sorted[i], sorted[i - 1]))
+  gaps.sort((a, b) => a - b)
+  const median = gaps[Math.floor(gaps.length / 2)]
+
+  if (median <= 45)  return "monthly"
+  if (median <= 135) return "quarterly"
+  if (median <= 250) return "semiannual"
+  if (median <= 450) return "annual"
+  return "unknown"
+}
+
+export interface ProjectedDividend {
+  ticker:        string
+  /** Date ex-dividende estimée (AAAA-MM-JJ). */
+  exDate:        string
+  /** "AAAA-MM" — sert au regroupement par mois. */
+  month:         string
+  quantityHeld:  number
+  amountPerShare: number
+  nativeCurrency: string
+  /** Montant estimé dans la devise d'affichage. */
+  amount:        number
+  frequency:     DividendFrequency
+  /** true quand la date vient du calendrier Yahoo, false quand elle est extrapolée. */
+  confirmed:     boolean
+}
+
+/**
+ * Projette les versements des prochains mois pour les lignes détenues.
+ *
+ * Deux sources, dans cet ordre :
+ *   1. les ex-dates futures déjà publiées par Yahoo — marquées « confirmé » ;
+ *   2. au-delà, une extrapolation au rythme déduit de l'historique.
+ *
+ * Le montant par action retenu est le DERNIER connu : on n'applique aucune
+ * croissance supposée, ce serait inventer une hausse de dividende.
+ */
+export function projectUpcomingDividends(
+  transactions: DividendTxInput[],
+  events: DividendEvent[],
+  displayCurrency: string,
+  rates: FXRates,
+  monthsAhead = 12,
+  today: string = new Date().toISOString().slice(0, 10)
+): ProjectedDividend[] {
+  const horizon = shiftMonths(today, monthsAhead)
+  const byTicker = new Map<string, DividendEvent[]>()
+  for (const e of events) {
+    if (!byTicker.has(e.ticker)) byTicker.set(e.ticker, [])
+    byTicker.get(e.ticker)!.push(e)
+  }
+
+  const out: ProjectedDividend[] = []
+
+  for (const [ticker, list] of byTicker) {
+    const qty = quantityHeldAt(transactions, ticker, today, false)
+    if (qty <= 0) continue                       // ligne soldée : rien à projeter
+
+    const sorted = [...list].sort((a, b) => a.exDate.localeCompare(b.exDate))
+    const last   = sorted[sorted.length - 1]
+    if (!last) continue
+
+    const frequency = inferFrequency(sorted.map(e => e.exDate))
+    const perShare  = last.amountPerShare
+    const currency  = last.currency
+
+    const push = (exDate: string, confirmed: boolean) => {
+      out.push({
+        ticker, exDate, month: exDate.slice(0, 7),
+        quantityHeld: qty,
+        amountPerShare: perShare,
+        nativeCurrency: currency,
+        amount: convertCurrency(qty * perShare, currency, displayCurrency, rates),
+        frequency, confirmed,
+      })
+    }
+
+    // 1. Ex-dates déjà annoncées
+    const announced = sorted.filter(e => e.exDate > today && e.exDate <= horizon)
+    for (const e of announced) push(e.exDate, true)
+
+    // 2. Extrapolation au-delà de ce qui est annoncé
+    if (frequency === "unknown") continue
+    const step = FREQUENCY_DAYS[frequency]
+    let cursor = announced.length ? announced[announced.length - 1].exDate : last.exDate
+
+    // Rattrape le présent si le dernier versement connu est ancien
+    let guard = 0
+    while (cursor <= horizon && guard++ < 60) {
+      const d = new Date(cursor + "T00:00:00Z")
+      d.setUTCDate(d.getUTCDate() + step)
+      cursor = d.toISOString().slice(0, 10)
+      if (cursor > today && cursor <= horizon) push(cursor, false)
+    }
+  }
+
+  return out.sort((a, b) => a.exDate.localeCompare(b.exDate))
+}
+
+/** Regroupe une projection par mois, dans l'ordre chronologique. */
+export function groupProjectionByMonth(
+  projected: ProjectedDividend[]
+): Array<{ month: string; total: number; items: ProjectedDividend[]; confirmed: boolean }> {
+  const map = new Map<string, ProjectedDividend[]>()
+  for (const p of projected) {
+    if (!map.has(p.month)) map.set(p.month, [])
+    map.get(p.month)!.push(p)
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, items]) => ({
+      month,
+      total: sum(items.map(i => i.amount)),
+      items: items.sort((a, b) => b.amount - a.amount),
+      // Un mois n'est « confirmé » que si TOUTES ses lignes le sont.
+      confirmed: items.every(i => i.confirmed),
+    }))
+}

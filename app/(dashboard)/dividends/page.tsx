@@ -10,11 +10,13 @@ import { useAppData } from "@/hooks/use-app-data"
 import { useCurrency } from "@/hooks/use-currency"
 import { useLivePrices } from "@/hooks/use-live-prices"
 import { useDividendHistory } from "@/hooks/use-dividend-history"
+import { UpcomingCalendar } from "@/components/dividends/upcoming-calendar"
 import { safeCostBasisChf } from "@/lib/finance"
 import type { AppCurrency } from "@/lib/utils"
 import {
   computeReceivedDividends, groupByMonth, groupByYear, groupByTicker,
   summarizeReal, nextExpectedDividend,
+  projectUpcomingDividends, groupProjectionByMonth,
   type DividendTxInput, type ReceivedDividendDetail,
 } from "@/lib/dividend-engine"
 import {
@@ -201,6 +203,15 @@ export default function DividendsPage() {
   )
 
   const summary   = useMemo(() => summarizeReal(received), [received])
+
+  // Projection sur 12 mois : ex-dates déjà publiées, puis extrapolation au
+  // rythme déduit de l'historique de chaque ligne.
+  const upcoming = useMemo(
+    () => groupProjectionByMonth(
+      projectUpcomingDividends(filteredTxs, events, currency, fxRates as Record<string, number>, 12)
+    ),
+    [filteredTxs, events, currency, fxRates]
+  )
   const byMonth   = useMemo(() => groupByMonth(received), [received])
   const byYear    = useMemo(() => groupByYear(received), [received])
   const byTicker  = useMemo(() => groupByTicker(received), [received])
@@ -510,7 +521,14 @@ export default function DividendsPage() {
             )}
 
             <SectionCard
-              title="Versements par mois"
+              title="Les 12 prochains mois"
+              description="Cliquez sur un mois pour voir qui paie, quand et combien"
+            >
+              <UpcomingCalendar months={upcoming} format={format} />
+            </SectionCard>
+
+            <SectionCard
+              title="Versements déjà encaissés, par mois"
               description="Chaque barre est cliquable pour ouvrir le détail complet"
             >
               <MonthlyIncomeChart
