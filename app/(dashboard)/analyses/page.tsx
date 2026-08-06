@@ -202,10 +202,16 @@ export default function AnalysesPage() {
                   title: "Indice de Herfindahl-Hirschman : < 1500 diversifié · 1500-2500 modéré · > 2500 concentré",
                 },
                 {
+                  // Les deux imports (T212, IBKR) intègrent la commission au
+                  // prix de revient sans la stocker à part. Afficher « −0.00 »
+                  // laisserait croire à une absence de frais : on dit plutôt
+                  // qu'ils ne sont pas isolables.
                   label: "Frais cumulés",
-                  value: `−${format(totalFees)}`,
-                  color: "#f59e0b",
-                  title: "Tous frais de transaction historiques",
+                  value: totalFees > 0 ? `−${format(totalFees)}` : "—",
+                  color: totalFees > 0 ? "#f59e0b" : "var(--text-tertiary)",
+                  title: totalFees > 0
+                    ? "Tous frais de transaction historiques"
+                    : "Les frais des relevés importés sont inclus dans le prix de revient et ne sont pas comptabilisés séparément.",
                 },
               ]}
             />
