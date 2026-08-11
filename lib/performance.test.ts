@@ -309,3 +309,25 @@ describe("riskMetrics", () => {
     expect(m.beta).toBeNull()          // aucun indice fourni
   })
 })
+
+describe("régression : un montant à zéro ne doit pas effacer le flux", () => {
+  test("zéro est traité comme inconnu par l'appelant, pas comme gratuit", () => {
+    // L'import laissait net_amount_chf vide : toutes les transactions
+    // valaient 0, il ne restait que la valeur finale, et l'IRR ne pouvait
+    // plus être calculé faute de flux négatif.
+    const onlyFinalValue = portfolioCashFlows(
+      [{ type: "buy", date: "2025-01-01", amountChf: 0 }],
+      3950, "2026-01-01"
+    )
+    expect(onlyFinalValue).toHaveLength(1)
+    expect(xirr(onlyFinalValue)).toBeNull()
+
+    // Avec le montant réel, le taux redevient calculable.
+    const withAmount = portfolioCashFlows(
+      [{ type: "buy", date: "2025-01-01", amountChf: 3500 }],
+      3950, "2026-01-01"
+    )
+    expect(withAmount).toHaveLength(2)
+    expect(xirr(withAmount)! * 100).toBeCloseTo(12.86, 1)
+  })
+})

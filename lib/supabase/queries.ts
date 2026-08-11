@@ -401,7 +401,11 @@ export async function fetchTransactions(): Promise<Transaction[] | null> {
     fxRateToChf: Number(t.fx_rate_to_chf ?? 1),
     grossAmountChf: Number(t.gross_amount_chf ?? 0),
     feesChf: Number(t.fees_chf ?? 0),
-    netAmountChf: Number(t.net_amount_chf ?? 0),
+    // La RPC d'import renseigne base_amount_chf et laisse net_amount_chf vide.
+    // Sans ce repli, toute transaction importée valait 0 CHF : le rendement
+    // annualisé n'avait plus aucun flux à mesurer, et le capital investi
+    // était sous-évalué.
+    netAmountChf: Number(t.net_amount_chf || t.base_amount_chf || 0),
     realizedPnlChf: Number(t.realized_pnl_chf ?? 0),
     date:        t.date,
     notes:       t.notes ?? undefined,

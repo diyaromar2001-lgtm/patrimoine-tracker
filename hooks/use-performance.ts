@@ -47,9 +47,10 @@ export function usePerformance(
       transactions.map(t => ({
         type: t.type,
         date: String(t.date).slice(0, 10),
-        // netAmountChf est le montant réellement déboursé/encaissé, frais
-        // inclus. À défaut, on retombe sur quantité × prix.
-        amountChf: t.netAmountChf ?? (t.quantity * t.price),
+        // Montant réellement déboursé/encaissé, frais inclus. Un 0 vaut
+        // « inconnu », pas « gratuit » : `??` laisserait passer le zéro et
+        // ferait disparaître le flux.
+        amountChf: t.netAmountChf || (t.quantity * t.price),
       })),
       currentValue
     )
