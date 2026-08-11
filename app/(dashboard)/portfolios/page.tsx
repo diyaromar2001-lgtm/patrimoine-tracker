@@ -27,6 +27,7 @@ import {
   type MobilePeriod, type AnalyticsCard,
 } from "@/components/portfolio/mobile-portfolio"
 import { PortfolioChipBar, CHIP_BAR_HEIGHT } from "@/components/portfolio/portfolio-chip-bar"
+import { usePerformance } from "@/hooks/use-performance"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -1143,6 +1144,21 @@ export default function PortfoliosPage() {
   const { history: globalPortfolioHistory, loading: globalHistoryLoading } =
     usePortfolioHistory(globalHistoryAssets, API_PERIOD_MAP[period] ?? "1Y")
 
+  // Performance et risque — l'IRR vient des transactions réelles, la
+  // volatilité et le bêta de la courbe de valorisation (cf. use-performance).
+  const perfTransactions = useMemo(
+    () => activePortfolio
+      ? transactions.filter(t => t.portfolioId === activePortfolio.id)
+      : transactions,
+    [transactions, activePortfolio]
+  )
+  const perfHistory = activePortfolio ? activePortfolioHistory : globalPortfolioHistory
+  const performance = usePerformance(
+    perfTransactions,
+    perfHistory,
+    (activePortfolio ? (activePortfolioMetrics?.portfolioValueChf ?? 0) : globalMetrics.portfolioValueChf) * userRate
+  )
+
   // Historique de la vue mobile — même source, échelle de périodes propre.
   // La pastille « Tous » montre l'agrégat ; hors mobile on ne demande rien.
   const mobileHistoryAssets = useMemo<PortfolioAsset[]>(() => {
@@ -1411,17 +1427,41 @@ export default function PortfoliosPage() {
                       rows: [
                         { k: "Rendement", v: (totalPnlPct >= 0 ? "+" : "") + totalPnlPct.toFixed(2) + "%", c: totalPnlPct >= 0 ? "#22c55e" : "#ef4444" },
                         { k: "P&L latent", v: (totalPnl >= 0 ? "+" : "") + format(totalPnl), c: totalPnl >= 0 ? "#22c55e" : "#ef4444" },
-                        { k: "Frais payés", v: "−" + format(transactions.reduce((s,t) => s + ((t.feesChf ?? 0) * userRate), 0)), c: "#f59e0b" },
+                        {
+                          // Le rendement annualisé qui tient compte de la DATE
+                          // des versements — le seul comparable à un indice.
+                          k: "Rendement annualisé",
+                          v: performance.irrPct != null
+                            ? (performance.irrPct >= 0 ? "+" : "") + performance.irrPct.toFixed(1) + "%"
+                            : "—",
+                          c: (performance.irrPct ?? 0) >= 0 ? "#22c55e" : "#ef4444",
+                        },
                       ],
                     },
                     {
                       icon: Activity, iconColor: "#a78bfa", label: "Risque",
                       rows: [
-                        // Valeurs réelles non calculées pour l'instant — afficher
-                        // "—" plutôt que des chiffres inventés.
-                        { k: "Bêta (SPY)", v: "—", c: "var(--text-tertiary)" },
-                        { k: "Volatilité", v: "—", c: "var(--text-tertiary)" },
-                        { k: "Sharpe",     v: "—", c: "var(--text-tertiary)" },
+                        {
+                          k: "Volatilité",
+                          v: performance.risk.volatility != null
+                            ? performance.risk.volatility.toFixed(1) + "%"
+                            : "—",
+                          c: "var(--text-primary)",
+                        },
+                        {
+                          k: "Sharpe",
+                          v: performance.risk.sharpe != null
+                            ? performance.risk.sharpe.toFixed(2)
+                            : "—",
+                          c: (performance.risk.sharpe ?? 0) >= 1 ? "#22c55e" : "var(--text-primary)",
+                        },
+                        {
+                          k: "Baisse max.",
+                          v: performance.risk.maxDrawdown != null
+                            ? performance.risk.maxDrawdown.toFixed(1) + "%"
+                            : "—",
+                          c: "#ef4444",
+                        },
                       ],
                     },
                     {
