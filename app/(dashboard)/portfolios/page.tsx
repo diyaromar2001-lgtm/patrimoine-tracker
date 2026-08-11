@@ -28,6 +28,7 @@ import {
 } from "@/components/portfolio/mobile-portfolio"
 import { PortfolioChipBar, CHIP_BAR_HEIGHT } from "@/components/portfolio/portfolio-chip-bar"
 import { usePerformance } from "@/hooks/use-performance"
+import { useRealDividends } from "@/hooks/use-real-dividends"
 import {
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
 } from "@/lib/types"
@@ -959,20 +960,13 @@ export default function PortfoliosPage() {
     byClass.cash = (byClass.cash ?? 0) + globalMetrics.cashChf * userRate
   }
 
-  // Dividendes encaissés sur les 12 derniers mois (transactions réelles),
-  // exprimés en devise d'affichage — plus de valeur codée en dur.
-  const annualDivs = useMemo(() => {
-    const cutoff = new Date()
-    cutoff.setFullYear(cutoff.getFullYear() - 1)
-    const cutoffStr = cutoff.toISOString().slice(0, 10)
-    return transactions
-      .filter(t => t.type === "dividend" && t.date >= cutoffStr)
-      .reduce((s, t) => {
-        if (t.netAmountChf != null) return s + t.netAmountChf * userRate
-        const fxN = (fxRates as Record<string, number>)[t.currency ?? "CHF"] ?? 1
-        return s + (t.quantity * t.price / fxN) * userRate
-      }, 0)
-  }, [transactions, fxRates, userRate])
+  // Dividendes des 12 derniers mois — MÊME source que le tableau de bord et
+  // la page Dividendes. Les additionner depuis les transactions donnait 0 :
+  // l'import ne renseigne pas les montants de dividende.
+  const { summary: dividendSummary } = useRealDividends(
+    transactions, currency, fxRates as Record<string, number>
+  )
+  const annualDivs = dividendSummary.last12mNet
 
   // Best/worst
   const best  = moversData[0]
