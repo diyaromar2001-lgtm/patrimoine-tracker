@@ -109,6 +109,8 @@ export interface Portfolio {
   assets:       Asset[]
   /** Poche de liquidité disponible par devise */
   cashBalances: CashBalance
+  /** Allocation cible « Pie » : ticker → pourcentage voulu. */
+  targetAllocation?: Record<string, number>
 }
 
 export interface Asset {

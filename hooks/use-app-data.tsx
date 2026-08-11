@@ -39,6 +39,8 @@ interface AppData {
   removePortfolio: (id: string) => Promise<void>
   /** Renomme un portefeuille (description et couleur optionnelles). */
   updatePortfolio: (id: string, updates: { name?: string; description?: string; color?: string }) => Promise<{ ok: boolean; error?: string }>
+  /** Enregistre l'allocation cible (« Pie ») d'un portefeuille. */
+  setTargetAllocation: (id: string, targets: Record<string, number> | null) => Promise<{ ok: boolean; needsMigration?: boolean; error?: string }>
   addAsset:        (portfolioId: string, asset: Omit<Asset, "currentPrice">) => Promise<void>
   removeAsset:     (portfolioId: string, assetId: string) => Promise<void>
   /** Modifie directement quantité + prix moyen d'une position (sans créer de transaction) */
@@ -78,6 +80,7 @@ const DEFAULT: AppData = {
   addPortfolio:    async () => null,
   removePortfolio: async () => {},
   updatePortfolio: async () => ({ ok: true }),
+  setTargetAllocation: async () => ({ ok: true }),
   addAsset:        async () => {},
   removeAsset:     async () => {},
   editAsset:       async () => {},
@@ -276,6 +279,30 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: "Enregistrement impossible. Réessaie." }
     }
     return { ok: true }
+  }
+
+  /**
+   * Écrit l'allocation cible. Mise à jour optimiste, annulée si la base
+   * refuse — typiquement quand la migration n'a pas encore été exécutée.
+   */
+  async function setTargetAllocation(
+    id: string,
+    targets: Record<string, number> | null
+  ): Promise<{ ok: boolean; needsMigration?: boolean; error?: string }> {
+    const previous = portfolios.find(p => p.id === id)?.targetAllocation
+    setPortfolios(prev => prev.map(p =>
+      p.id === id ? { ...p, targetAllocation: targets ?? undefined } : p
+    ))
+
+    if (!isSupabaseConfigured) return { ok: true }
+
+    const res = await Q.updateTargetAllocation(id, targets)
+    if (!res.ok) {
+      setPortfolios(prev => prev.map(p =>
+        p.id === id ? { ...p, targetAllocation: previous } : p
+      ))
+    }
+    return res
   }
 
   async function addAsset(portfolioId: string, asset: Omit<Asset, "currentPrice">) {
@@ -864,7 +891,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     <AppDataContext.Provider value={{
       portfolios, transactions, revenus, globalCash, cashMovements, loading,
       realizedPnLEvents, totalRealizedPnL,
-      addPortfolio, removePortfolio, updatePortfolio, addAsset, removeAsset, editAsset, updateAssetCostBasis,
+      addPortfolio, removePortfolio, updatePortfolio, setTargetAllocation, addAsset, removeAsset, editAsset, updateAssetCostBasis,
       addTransaction, editTransaction, removeTransaction,
       addRevenu, removeRevenu,
       cashAccounts, depositCash, withdrawCash, convertCash, transferCash,

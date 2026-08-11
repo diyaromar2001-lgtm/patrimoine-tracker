@@ -159,6 +159,9 @@ export async function fetchPortfolios(): Promise<Portfolio[] | null> {
     currency:     p.currency,
     createdAt:    p.created_at,
     cashBalances: { ...EMPTY_CASH, ...(p.cash_balances ?? {}) } as CashBalance,
+    // Absent tant que la migration target_allocation n'est pas passée : on
+    // laisse undefined plutôt que d'inventer une cible vide.
+    targetAllocation: (p.target_allocation ?? undefined) as Record<string, number> | undefined,
     assets: (assetsData ?? [])
       .filter(a => a.portfolio_id === p.id)
       .map(a => ({
@@ -224,6 +227,39 @@ export async function updatePortfolio(
   const { error } = await sb.from("portfolios").update(patch).eq("id", portfolioId)
   if (error) console.error("[updatePortfolio]", error.message)
   return !error
+}
+
+/**
+ * Écrit l'allocation cible d'un portefeuille.
+ *
+ * Renvoie `false` avec un message explicite quand la colonne n'existe pas
+ * encore : mieux vaut dire à l'utilisateur qu'il lui manque une migration
+ * que d'échouer en silence.
+ */
+export async function updateTargetAllocation(
+  portfolioId: string,
+  targets: Record<string, number> | null
+): Promise<{ ok: boolean; needsMigration?: boolean; error?: string }> {
+  const sb = createClient()
+  if (!sb) return { ok: false, error: "Client Supabase indisponible." }
+
+  const { error } = await sb
+    .from("portfolios")
+    .update({ target_allocation: targets })
+    .eq("id", portfolioId)
+
+  if (!error) return { ok: true }
+
+  // PostgREST renvoie PGRST204 quand la colonne est inconnue du schéma.
+  const missing = error.code === "PGRST204" || /target_allocation/.test(error.message)
+  if (missing) {
+    return {
+      ok: false, needsMigration: true,
+      error: "La colonne target_allocation n'existe pas encore : exécute la migration 20260806000001_target_allocation.sql.",
+    }
+  }
+  console.error("[updateTargetAllocation]", error.message)
+  return { ok: false, error: "Enregistrement impossible." }
 }
 
 /** Update the cash_balances JSON column for a portfolio */

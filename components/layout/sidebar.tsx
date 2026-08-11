@@ -23,6 +23,7 @@ const NAV_SECTIONS = [
       { label: "Dividendes",      href: "/dividends",  icon: TrendingUp      },
       { label: "Analyses",        href: "/analyses",   icon: PieChart        },
       { label: "Objectifs",       href: "/objectifs",  icon: Target          },
+      { label: "Allocation",      href: "/allocation", icon: PieChart        },
     ],
   },
   {
