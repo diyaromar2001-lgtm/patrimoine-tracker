@@ -27,25 +27,32 @@ export function AreaChart({ data, height = 240 }: AreaChartProps) {
         height,
         layout: {
           background: { color: "transparent" },
-          textColor:  "#84849a",
+          textColor:  "#62627e",
           fontSize:   11,
           fontFamily: "Inter, ui-sans-serif, system-ui",
+          // lightweight-charts affiche par défaut un logo TradingView en bas
+          // à gauche, qui se superposait à la courbe comme un artefact.
+          attributionLogo: false,
         },
         grid: {
-          vertLines: { color: "#1e1e28", style: 1 },  // dotted, very subtle
-          horzLines: { color: "#1e1e28", style: 1 },
+          // Verticales retirées : sur une courbe de patrimoine elles
+          // n'apportent rien et quadrillent inutilement la carte.
+          vertLines: { visible: false },
+          horzLines: { color: "#1b1b23", style: 1 },
         },
         crosshair: {
           vertLine: { color: "#6366f160", width: 1, labelBackgroundColor: "#111117" },
           horzLine: { color: "#6366f160", width: 1, labelBackgroundColor: "#111117" },
         },
         rightPriceScale: {
-          borderColor: "#1e1e28",
-          textColor:   "#84849a",
-          scaleMargins: { top: 0.08, bottom: 0.08 },
+          borderVisible: false,
+          textColor:   "#62627e",
+          // Un peu d'air en haut pour le dernier point, très peu en bas :
+          // la courbe occupe ainsi la hauteur disponible.
+          scaleMargins: { top: 0.12, bottom: 0.06 },
         },
         timeScale: {
-          borderColor: "#1e1e28",
+          borderVisible: false,
           timeVisible: false,
           fixLeftEdge: true,
           fixRightEdge: true,
@@ -57,7 +64,7 @@ export function AreaChart({ data, height = 240 }: AreaChartProps) {
       // v5 API: chart.addSeries(SeriesType, options)
       const series = chart.addSeries(AreaSeries, {
         lineColor:   "#6366f1",
-        topColor:    "#6366f128",
+        topColor:    "#6366f13a",
         bottomColor: "#6366f100",
         lineWidth:   2,
         crosshairMarkerVisible:         true,
