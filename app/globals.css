@@ -7,16 +7,24 @@
 
 :root {
   /* ── Backgrounds ─────────────────────────────────────────────────────── */
-  --bg-base:      #09090b;   /* page */
-  --bg-elevated:  #0d0d11;   /* cards */
-  --bg-overlay:   #111117;   /* modals, dropdowns */
-  --bg-muted:     #16161d;   /* hover */
-  --bg-subtle:    #1a1a23;   /* active / selected */
+  /* Échelle d'élévation RÉELLE. Auparavant la page (#09090b) et les cartes
+     (#0d0d11) ne différaient que de 4 unités : les cartes ne se lisaient pas
+     comme des objets, et seule la bordure les délimitait — d'où un aspect de
+     grille en fil de fer. Un écart franc laisse la surface porter la
+     hiérarchie, la bordure n'est plus qu'un liseré. */
+  --bg-base:      #08080a;   /* page — le fond le plus profond */
+  --bg-elevated:  #121218;   /* cartes — nettement détachées du fond */
+  --bg-overlay:   #191921;   /* modales, menus — au-dessus des cartes */
+  --bg-muted:     #1d1d26;   /* survol */
+  --bg-subtle:    #23232e;   /* actif / sélectionné */
+  /* Renfoncement à l'intérieur d'une carte (champs, lignes de liste). */
+  --bg-inset:     #0c0c10;
 
   /* ── Borders ─────────────────────────────────────────────────────────── */
-  --border:         #1e1e28;
-  --border-subtle:  #17171f;
-  --border-strong:  #2a2a38;
+  /* Adoucies : avec de vraies élévations, une bordure marquée alourdit. */
+  --border:         #24242f;
+  --border-subtle:  #1b1b23;
+  --border-strong:  #33333f;
 
   /* ── Text ────────────────────────────────────────────────────────────── */
   /* Contraste renforcé : secondary/tertiary étaient trop faibles pour des
@@ -128,7 +136,7 @@ body {
 .card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
   position: relative;
   overflow: hidden;
@@ -143,8 +151,8 @@ body {
   border-radius: inherit;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.025) 0%,
-    transparent 60%
+    rgba(255, 255, 255, 0.015) 0%,
+    transparent 45%
   );
   pointer-events: none;
 }
@@ -159,21 +167,11 @@ body {
 .kpi-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
+  border-radius: var(--radius-xl);
+  padding: 18px 20px;
   position: relative;
   overflow: hidden;
   transition: border-color 200ms var(--ease-out), transform 150ms var(--ease-out);
-}
-
-.kpi-card::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
 }
 
 .kpi-card:hover {
@@ -473,4 +471,32 @@ html, body { overflow-x: hidden; }
 /* ═══ Mobile bottom nav safe area ═══════════════════════════════════════════ */
 @media (max-width: 1024px) {
   main { padding-bottom: env(safe-area-inset-bottom, 16px); }
+}
+
+
+/* ═══ Typographie de données ════════════════════════════════════════════════
+   Sur un tableau de bord financier, le chiffre doit dominer et l'étiquette
+   s'effacer. Ces deux classes fixent ce rapport une fois pour toutes, au lieu
+   de le réinventer page par page.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.data-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.data-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* Renfoncement : une ligne ou un champ CREUSÉ dans une carte, plutôt qu'une
+   sous-carte posée dessus — moins de bordures, lecture plus calme. */
+.inset {
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
 }

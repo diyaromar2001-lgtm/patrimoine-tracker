@@ -44,8 +44,8 @@ export function PageHero({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="relative overflow-hidden rounded-2xl border px-6 pt-7 pb-6"
-      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+      className="relative overflow-hidden rounded-2xl border px-6 pt-8 pb-7 sm:px-8"
+      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)", boxShadow: "var(--shadow-md)" }}
     >
       {glow && (
         <div
@@ -56,14 +56,12 @@ export function PageHero({
 
       <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3 min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-secondary)" }}>
-            {label}
-          </p>
+          <p className="data-label">{label}</p>
 
           <div className="flex items-baseline gap-3 flex-wrap">
             <span
-              className="hero-value text-5xl font-bold tabular-nums tracking-tight leading-none"
-              style={{ color: "var(--text-primary)" }}
+              className="hero-value text-5xl sm:text-[3.4rem] font-bold tabular-nums leading-none"
+              style={{ color: "var(--text-primary)", letterSpacing: "-0.03em" }}
             >
               {value}
             </span>
@@ -71,11 +69,11 @@ export function PageHero({
           </div>
 
           {stats.length > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2 pt-1">
+            <div className="flex flex-wrap items-baseline gap-x-10 gap-y-3 pt-2">
               {stats.map(s => (
                 <div key={s.label} title={s.title}>
-                  <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>{s.label}</p>
-                  <p className="text-sm font-semibold tabular-nums mt-0.5"
+                  <p className="data-label">{s.label}</p>
+                  <p className="data-value mt-1 text-[15px] font-semibold"
                     style={{ color: s.color ?? "var(--text-primary)" }}>
                     {s.value}
                   </p>

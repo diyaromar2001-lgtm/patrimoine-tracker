@@ -32,13 +32,17 @@ export function SectionCard({
   return (
     <div
       className={`rounded-2xl border overflow-hidden ${className}`}
-      style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+      style={{
+        backgroundColor: "var(--bg-elevated)",
+        borderColor: "var(--border)",
+        boxShadow: "var(--shadow-sm)",
+      }}
     >
       {hasHeader && (
-        <div
-          className="flex items-start justify-between gap-4 border-b px-5 py-4"
-          style={{ borderColor: "var(--border)" }}
-        >
+        // Pas de trait de séparation : la carte se détache déjà du fond, et
+        // un filet sous chaque titre rajoutait une ligne à lire pour rien.
+        // C'est l'espacement qui sépare l'en-tête du contenu.
+        <div className="flex items-start justify-between gap-4 px-5 pt-4 pb-3">
           <div className="min-w-0">
             {title && (
               <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
@@ -46,7 +50,7 @@ export function SectionCard({
               </h2>
             )}
             {description && (
-              <p className="mt-0.5 text-xs" style={{ color: "var(--text-tertiary)" }}>
+              <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
                 {description}
               </p>
             )}
@@ -54,7 +58,7 @@ export function SectionCard({
           {action && <div className="flex-shrink-0">{action}</div>}
         </div>
       )}
-      <div className={padded ? "p-5" : ""}>{children}</div>
+      <div className={padded ? (hasHeader ? "px-5 pb-5" : "p-5") : ""}>{children}</div>
     </div>
   )
 }
